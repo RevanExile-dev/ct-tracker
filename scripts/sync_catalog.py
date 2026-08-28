@@ -55,8 +55,8 @@ def main():
     db.init_db()
     client = CardTraderClient()
 
-    print("Recupero elenco espansioni da CardTrader...")
-    all_expansions = client.get_expansions()
+    print("Recupero elenco espansioni Pokemon da CardTrader...")
+    all_expansions = client.get_pokemon_expansions()
     by_code = {e["code"]: e for e in all_expansions}
 
     conn = db.get_connection()
@@ -93,8 +93,14 @@ def main():
         conn.commit()
         total_cards += len(blueprints)
 
-    # Pulizia: rimuove eventuali prodotti non-carta inseriti da sync precedenti
+    # Pulizia: rimuove eventuali prodotti non-carta (e i loro snapshot di
+    # prezzo, per via del vincolo di foreign key) inseriti da sync precedenti
     # a questo filtro (booster, box, sleeve...).
+    conn.execute(
+        "DELETE FROM price_snapshots WHERE blueprint_id IN "
+        "(SELECT id FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?)",
+        (POKEMON_SINGLES_CATEGORY_ID,),
+    )
     removed = conn.execute(
         "DELETE FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?",
         (POKEMON_SINGLES_CATEGORY_ID,),

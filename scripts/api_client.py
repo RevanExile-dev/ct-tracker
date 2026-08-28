@@ -9,9 +9,16 @@ non finisce mai nel codice o nei log).
 import os
 import time
 import sys
+import unicodedata
 import requests
 
 BASE_URL = "https://api.cardtrader.com/api/v2"
+
+
+def _normalize(name: str) -> str:
+    """Confronto senza accenti: su CardTrader il gioco si chiama "Pokémon"."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
 
 
 class RateLimiter:
@@ -91,6 +98,22 @@ class CardTraderClient:
 
     def get_games(self):
         return self._as_list(self._get("/games"))
+
+    def get_pokemon_game(self):
+        """Trova il game Pokemon tra quelli disponibili su CardTrader (ce ne sono
+        molti altri: Magic, Yu-Gi-Oh, One Piece...). Ritorna None se non trovato."""
+        games = self.get_games()
+        return next((g for g in games if _normalize(g["name"]) == "pokemon"), None)
+
+    def get_pokemon_expansions(self):
+        """Tutte le espansioni Pokemon (filtrate per game_id): NON tutte le
+        espansioni di CardTrader, che coprono anche altri giochi/prodotti e
+        possono avere codici in collisione con quelli usati da Pokemon."""
+        pokemon = self.get_pokemon_game()
+        if not pokemon:
+            return []
+        expansions = self.get_expansions()
+        return [e for e in expansions if e.get("game_id") == pokemon["id"]]
 
     def get_categories(self, game_id: int | None = None):
         params = {"game_id": game_id} if game_id else None
