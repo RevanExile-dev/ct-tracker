@@ -5,13 +5,21 @@ con il loro "code" da usare in config/tracked_sets.json.
 Uso: python scripts/list_expansions.py
 (nel repo, di solito lanciato tramite il workflow manuale "List expansions")
 """
+import unicodedata
+
 from api_client import CardTraderClient
+
+
+def _normalize(name: str) -> str:
+    """Confronto senza accenti: su CardTrader il gioco si chiama "Pokémon"."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
 
 
 def main():
     client = CardTraderClient()
     games = client.get_games()
-    pokemon = next((g for g in games if g["name"].lower() == "pokemon"), None)
+    pokemon = next((g for g in games if _normalize(g["name"]) == "pokemon"), None)
     if not pokemon:
         print("Gioco 'pokemon' non trovato tra i games disponibili:")
         for g in games:
