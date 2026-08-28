@@ -2,6 +2,6 @@
   "_readme": "Aggiungi qui i CODICI delle espansioni Pokemon che vuoi tracciare. Puoi trovare i codici lanciando lo script scripts/list_expansions.py (via workflow manuale 'List expansions'), oppure guardando l'URL/nome set su CardTrader. Esempio già incluso qui sotto: modifica pure liberamente, un codice per riga nell'array.",
   "expansion_codes": [
     "sv8",
-    "sv8pt5"
+    "pre"
   ]
 }
