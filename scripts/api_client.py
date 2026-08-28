@@ -72,14 +72,20 @@ class CardTraderClient:
     @staticmethod
     def _as_list(data):
         """Alcuni endpoint CardTrader (es. /games, /categories, /expansions)
-        restituiscono un oggetto JSON con gli elementi come valori, indicizzato
-        per id (es. {"1": {...}, "2": {...}}), invece di un array. Normalizza
-        sempre in una lista di oggetti."""
+        non restituiscono direttamente un array JSON, ma un oggetto che lo
+        avvolge (es. {"games": [...]}) oppure un oggetto indicizzato per id
+        (es. {"1": {...}, "2": {...}}). Normalizza sempre in una lista di
+        oggetti, qualunque sia la forma della risposta."""
         if not data:
             return []
+        if isinstance(data, list):
+            return data
         if isinstance(data, dict):
+            for value in data.values():
+                if isinstance(value, list):
+                    return value
             return list(data.values())
-        return data
+        return []
 
     # --- Endpoint pubblici usati dal tool ---
 
