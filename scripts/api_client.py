@@ -69,17 +69,29 @@ class CardTraderClient:
             return resp.json()
         raise RuntimeError(f"Troppi tentativi falliti su {path}")
 
+    @staticmethod
+    def _as_list(data):
+        """Alcuni endpoint CardTrader (es. /games, /categories, /expansions)
+        restituiscono un oggetto JSON con gli elementi come valori, indicizzato
+        per id (es. {"1": {...}, "2": {...}}), invece di un array. Normalizza
+        sempre in una lista di oggetti."""
+        if not data:
+            return []
+        if isinstance(data, dict):
+            return list(data.values())
+        return data
+
     # --- Endpoint pubblici usati dal tool ---
 
     def get_games(self):
-        return self._get("/games") or []
+        return self._as_list(self._get("/games"))
 
     def get_categories(self, game_id: int | None = None):
         params = {"game_id": game_id} if game_id else None
-        return self._get("/categories", params=params) or []
+        return self._as_list(self._get("/categories", params=params))
 
     def get_expansions(self):
-        return self._get("/expansions") or []
+        return self._as_list(self._get("/expansions"))
 
     def get_blueprints(self, expansion_id: int):
         data = self._get("/blueprints/export", params={"expansion_id": expansion_id})
