@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0d0f12;
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(45, 216, 201, 0.06), transparent 40%),
+    radial-gradient(circle at 85% 20%, rgba(232, 95, 209, 0.05), transparent 45%);
+  background-attachment: fixed;
+  color: #f5f3ee;
+}
+
+/* --- Effetto firma: lamina olografica che segue il mouse sulla card --- */
+.holo-frame {
+  position: relative;
+  isolation: isolate;
+}
+
+.holo-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    var(--holo-angle, 115deg),
+    rgba(45, 216, 201, 0.9) 0%,
+    rgba(232, 95, 209, 0.9) 45%,
+    rgba(244, 193, 92, 0.9) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.holo-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    380px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.14),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.holo-frame:hover::before,
+.holo-frame:focus-within::before {
+  opacity: 1;
+}
+.holo-frame:hover::after,
+.holo-frame:focus-within::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .holo-frame::before,
+  .holo-frame::after {
+    transition: none;
+  }
+}
+
+/* Scrollbar discreta, coerente con la palette scura */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #16191d;
+}
+::-webkit-scrollbar-thumb {
+  background: #262b31;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2dd8c9aa;
+}
