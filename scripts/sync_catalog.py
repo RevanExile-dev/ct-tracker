@@ -18,6 +18,13 @@ import db
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "tracked_sets.json"
 
+# Categoria CardTrader "Pokémon Singles" (le carte vere e proprie). Ogni
+# espansione su CardTrader mischia le carte con prodotti sigillati/accessori
+# (booster, box, theme deck, sleeve, dadi...) sotto altre category_id: li
+# escludiamo, non sono carte da tracciare. Verificato con lo script
+# scripts/list_categories.py.
+POKEMON_SINGLES_CATEGORY_ID = 73
+
 # Import PREMIUM_RARITY_KEYWORDS-like logic: dato che il nome del blueprint
 # spesso riporta indicazioni utili (es. "(Illustration Rare)"), usiamo un
 # controllo euristico sul nome. La rarità precisa arriva più avanti dai
@@ -66,8 +73,13 @@ def main():
         db.upsert_expansion(conn, expansion)
         conn.commit()
 
-        blueprints = client.get_blueprints(expansion["id"])
-        print(f"  {len(blueprints)} carte trovate")
+        all_blueprints = client.get_blueprints(expansion["id"])
+        blueprints = [
+            bp for bp in all_blueprints
+            if bp.get("category_id") == POKEMON_SINGLES_CATEGORY_ID
+        ]
+        skipped = len(all_blueprints) - len(blueprints)
+        print(f"  {len(blueprints)} carte trovate" + (f" ({skipped} prodotti non-carta esclusi)" if skipped else ""))
 
         for bp in blueprints:
             premium = is_premium_name(bp.get("name", ""))
@@ -80,6 +92,15 @@ def main():
             )
         conn.commit()
         total_cards += len(blueprints)
+
+    # Pulizia: rimuove eventuali prodotti non-carta inseriti da sync precedenti
+    # a questo filtro (booster, box, sleeve...).
+    removed = conn.execute(
+        "DELETE FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?",
+        (POKEMON_SINGLES_CATEGORY_ID,),
+    ).rowcount
+    if removed:
+        print(f"\nRimossi {removed} prodotti non-carta residui da sync precedenti.")
 
     db.set_meta(conn, "last_catalog_sync", synced_at)
     conn.commit()
