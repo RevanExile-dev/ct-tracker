@@ -11,6 +11,9 @@ web/node_modules/
 web/.next/
 web/out/
 web/.env*.local
+web/next-env.d.ts
+# rigenerato ad ogni "npm install" dallo script postinstall scripts/copy-wasm.js
+web/public/sqljs/
 
 # OS
 .DS_Store
