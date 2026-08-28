@@ -20,4 +20,4 @@ jobs:
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
         working-directory: scripts
-        run: python list_expansions.py
+        run: python list_categories.py
