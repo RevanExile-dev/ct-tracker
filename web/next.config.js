@@ -4,6 +4,10 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
+        hostname: "cardtrader.com",
+      },
+      {
+        protocol: "https",
         hostname: "**.cardtrader.com",
       },
       {
