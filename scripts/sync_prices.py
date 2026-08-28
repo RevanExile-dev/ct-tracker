@@ -3,27 +3,79 @@ Interroga il marketplace CardTrader per ogni carta (blueprint) delle
 espansioni tracciate e salva uno snapshot di prezzo per la giornata odierna.
 
 Eseguito automaticamente ogni giorno dal workflow GitHub Actions
-'.github/workflows/sync_prices.yml'. E' idempotente: se lanciato più
-volte nello stesso giorno, sovrascrive lo snapshot del giorno invece
-di duplicarlo.
+'.github/workflows/sync_prices.yml' (solo sulle espansioni "daily_expansion_codes"
+di config/tracked_sets.json, per restare in tempi ragionevoli) e una volta a
+settimana per intero da '.github/workflows/sync_prices_full.yml'.
+E' idempotente: se lanciato più volte nello stesso giorno, sovrascrive lo
+snapshot del giorno invece di duplicarlo.
 
-Uso: python scripts/sync_prices.py
+Il sync completo puo' durare ore (rate limit di 1 richiesta/secondo sul
+marketplace): per non perdere il lavoro se il job viene interrotto, ogni
+CHECKPOINT_EVERY carte lo script salva e pusha il progresso via git.
+
+Uso:
+  python scripts/sync_prices.py            # tutte le carte del catalogo locale
+  python scripts/sync_prices.py --only-daily  # solo daily_expansion_codes
 """
+import json
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from api_client import CardTraderClient
 import db
 
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "tracked_sets.json"
+WEB_DB_PATH = Path(__file__).resolve().parent.parent / "web" / "public" / "data" / "cardtrader.db"
+CHECKPOINT_EVERY = 300  # ~5 minuti al ritmo di 1 richiesta/secondo
+
+
+def _git(*args):
+    subprocess.run(["git", *args], check=True, cwd=Path(__file__).resolve().parent.parent)
+
+
+def checkpoint_commit(conn, label: str):
+    """Salva il DB copiato per il sito web e fa commit+push del progresso corrente,
+    cosi' un job lungo interrotto a meta' non perde comunque il lavoro gia' fatto."""
+    conn.commit()
+    WEB_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(db.DB_PATH, WEB_DB_PATH)
+    try:
+        _git("add", "data/cardtrader.db", "web/public/data/cardtrader.db")
+        result = subprocess.run(
+            ["git", "diff", "--staged", "--quiet"],
+            cwd=Path(__file__).resolve().parent.parent,
+        )
+        if result.returncode == 0:
+            return  # niente di nuovo da salvare
+        _git("commit", "-m", f"chore: checkpoint sync prezzi ({label})")
+        _git("push")
+    except subprocess.CalledProcessError as exc:
+        print(f"  [ATTENZIONE] checkpoint commit/push fallito: {exc}", file=sys.stderr)
+
 
 def main():
+    only_daily = "--only-daily" in sys.argv
+
     db.init_db()
     client = CardTraderClient()
     conn = db.get_connection()
 
-    blueprints = conn.execute(
-        "SELECT id, name, expansion_name FROM blueprints ORDER BY expansion_id, id"
-    ).fetchall()
+    if only_daily:
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        codes = config.get("daily_expansion_codes", [])
+        placeholders = ",".join("?" * len(codes))
+        blueprints = conn.execute(
+            f"SELECT id, name, expansion_name FROM blueprints "
+            f"WHERE expansion_code IN ({placeholders}) ORDER BY expansion_id, id",
+            codes,
+        ).fetchall()
+    else:
+        blueprints = conn.execute(
+            "SELECT id, name, expansion_name FROM blueprints ORDER BY expansion_id, id"
+        ).fetchall()
 
     if not blueprints:
         print("Nessuna carta nel catalogo locale. Lancia prima scripts/sync_catalog.py")
@@ -69,8 +121,12 @@ def main():
             conn.commit()
             print(f"  ...{i}/{len(blueprints)} carte processate")
 
+        if i % CHECKPOINT_EVERY == 0:
+            checkpoint_commit(conn, label=f"{i}/{len(blueprints)}")
+
     db.set_meta(conn, "last_price_sync", now_iso)
     conn.commit()
+    checkpoint_commit(conn, label="finale")
     conn.close()
 
     print(f"\nCompletato: {ok} carte aggiornate, {errors} errori.")

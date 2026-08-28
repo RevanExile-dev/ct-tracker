@@ -13,11 +13,18 @@ tuo PC.
 
 ---
 
-## 1. Crea il repository privato
+## 1. Crea il repository
 
 1. Vai su github.com → **New repository**
-2. Nome a piacere (es. `ct-tracker`), visibilità **Private**
-3. Crealo vuoto (senza README, senza .gitignore)
+2. Nome a piacere (es. `ct-tracker`)
+3. Visibilità: **Public** se vuoi che GitHub Actions resti gratuito e
+   illimitato (consigliato se tracci molte espansioni: il sync prezzi
+   completo può girare per ore). **Private** va bene solo se traccia poche
+   carte, altrimenti su repo privati GitHub Actions è gratuito solo fino a
+   una soglia di minuti al mese, oltre la quale si paga. Nessun dato
+   sensibile finisce nel repo in nessuno dei due casi: il token CardTrader
+   resta sempre cifrato come Secret.
+4. Crealo vuoto (senza README, senza .gitignore)
 4. Nella pagina del repo appena creato, clicca **"uploading an existing
    file"** (o Add file → Upload files) e trascina dentro **tutte** le
    cartelle e file di questo progetto così come te li ho consegnati
@@ -70,14 +77,26 @@ Puoi tornare qui e aggiungere nuove espansioni ogni volta che vuoi.
 
 ## 6. Primo sync dei prezzi
 
-1. Tab **Actions** → workflow **"Sync prezzi CardTrader"** → **Run
-   workflow** (di norma parte da sola ogni giorno alle 06:00 UTC, ma la
-   prima volta lanciala a mano per avere subito dei dati)
-2. Attenzione: se hai tracciato molte carte questo step può richiedere
-   diversi minuti (l'API prezzi è limitata a 1 richiesta/secondo)
+Ci sono **due workflow prezzi distinti**, perché con molte espansioni
+tracciate un sync completo può richiedere diverse ore (l'API marketplace è
+limitata a 1 richiesta/secondo):
 
-Da qui in poi **non devi fare più nulla**: ogni giorno il workflow gira da
-solo, aggiunge un nuovo punto storico per ogni carta e aggiorna il sito.
+- **"Sync prezzi CardTrader"**: gira da solo ogni giorno alle 06:00 UTC,
+  aggiorna solo le espansioni recenti elencate in `daily_expansion_codes`
+  dentro `config/tracked_sets.json` (di default: era Scarlet & Violet +
+  Mega Evolution)
+- **"Sync prezzi CardTrader (completo, settimanale)"**: gira da sola ogni
+  domenica alle 02:00 UTC, aggiorna **tutte** le carte in
+  `expansion_codes` (può durare ore)
+
+Lancia entrambi manualmente la prima volta (tab **Actions** → workflow →
+**Run workflow**) per avere subito dei dati, invece di aspettare il prossimo
+giro schedulato.
+
+Da qui in poi **non devi fare più nulla**: i workflow girano da soli,
+aggiungono un nuovo punto storico per ogni carta e aggiornano il sito. Se un
+sync lungo viene interrotto a metà, non perde il lavoro già fatto: salva e
+pusha un checkpoint ogni ~300 carte.
 
 ## 7. Metti online il sito (Vercel, gratis)
 
@@ -114,8 +133,10 @@ più il grafico si popola.
 ## Aggiungere una nuova espansione in futuro
 
 1. Trova il `code` (workflow "Elenca espansioni disponibili")
-2. Aggiungilo a `config/tracked_sets.json`
-3. Lancia manualmente "Sync catalogo" e poi "Sync prezzi"
+2. Aggiungilo a `expansion_codes` in `config/tracked_sets.json` (e anche a
+   `daily_expansion_codes` se vuoi che i suoi prezzi si aggiornino ogni
+   giorno invece che solo nel sync settimanale)
+3. Lancia manualmente "Sync catalogo" e poi uno dei due workflow prezzi
 
 ## Sviluppo locale (facoltativo)
 

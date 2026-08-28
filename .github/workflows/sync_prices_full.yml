@@ -1,22 +1,20 @@
-name: Sync prezzi CardTrader
+name: Sync prezzi CardTrader (completo, settimanale)
 
 on:
   schedule:
-    # Ogni giorno alle 06:00 UTC (~08:00 in Italia in orario invernale, 07:00-08:00 estivo)
-    - cron: "0 6 * * *"
+    # Ogni domenica alle 02:00 UTC. Sincronizza TUTTE le carte tracciate
+    # (~30.000+), non solo quelle recenti: puo' richiedere diverse ore per
+    # via del rate limit di 1 richiesta/secondo sul marketplace CardTrader.
+    - cron: "0 2 * * 0"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 jobs:
-  sync-prices:
+  sync-prices-full:
     runs-on: ubuntu-latest
-    # Sync giornaliero: solo le espansioni recenti (daily_expansion_codes in
-    # config/tracked_sets.json, era Scarlet & Violet + Mega Evolution) per
-    # restare in tempi ragionevoli. Il sync completo gira una volta a
-    # settimana da sync_prices_full.yml.
-    timeout-minutes: 240
+    timeout-minutes: 720
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +30,7 @@ jobs:
           git config user.name "ct-tracker-bot"
           git config user.email "actions@users.noreply.github.com"
 
-      - name: Aggiorna prezzi (solo espansioni recenti)
+      - name: Aggiorna prezzi (tutte le espansioni tracciate)
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
-        run: python scripts/sync_prices.py --only-daily
+        run: python scripts/sync_prices.py
