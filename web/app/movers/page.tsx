@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CardRow, fetchCards } from "@/lib/db";
+import { CardRow, fetchCards, fetchLanguages } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import { priceDeltaPct } from "@/lib/format";
+import { languageFlag, languageLabel, priceDeltaPct } from "@/lib/format";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
+import FilterDropdown from "@/components/FilterDropdown";
 
 const MOVERS_LIMIT = 24;
 
@@ -21,19 +22,32 @@ export default function MoversPage() {
   const [drops, setDrops] = useState<CardRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
 
   useEffect(() => {
     setBinderIds(getBinderIds());
-    fetchCards({ sortBy: "rise_first" })
+    fetchLanguages().then(setLanguages).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setError(null);
+    fetchCards({ sortBy: "rise_first", languages: selectedLanguages })
       .then((cards) => setRises(withRealDelta(cards).slice(0, MOVERS_LIMIT)))
       .catch((e) => setError(String(e.message ?? e)));
-    fetchCards({ sortBy: "drop_first" })
+    fetchCards({ sortBy: "drop_first", languages: selectedLanguages })
       .then((cards) => setDrops(withRealDelta(cards).slice(0, MOVERS_LIMIT)))
       .catch((e) => setError(String(e.message ?? e)));
-  }, []);
+  }, [selectedLanguages]);
 
   function handleToggleBinderCard(id: number) {
     setBinderIds(new Set(toggleBinder(id)));
+  }
+
+  function handleToggleLanguage(l: string) {
+    setSelectedLanguages((prev) =>
+      prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]
+    );
   }
 
   return (
@@ -52,6 +66,16 @@ export default function MoversPage() {
         Le variazioni di prezzo più marcate registrate nell&apos;ultimo sync rispetto al
         precedente.
       </p>
+
+      <div className="mt-4">
+        <FilterDropdown
+          label="Filtra per lingua"
+          options={languages}
+          selected={selectedLanguages}
+          onToggle={handleToggleLanguage}
+          renderOption={(l) => `${languageFlag(l)} ${languageLabel(l)}`}
+        />
+      </div>
 
       {error && (
         <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 text-signal-down p-5 font-mono text-sm">
