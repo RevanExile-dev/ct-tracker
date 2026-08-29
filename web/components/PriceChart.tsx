@@ -76,13 +76,16 @@ export default function PriceChart({
         </defs>
         <path d={areaPath} fill="url(#areaFill)" stroke="none" />
         <path
+          className="price-line"
           d={path}
+          pathLength={1}
           fill="none"
           stroke="#2DD8C9"
           strokeWidth="1.4"
           vectorEffect="non-scaling-stroke"
           strokeLinecap="round"
           strokeLinejoin="round"
+          style={{ "--line-length": 1 } as React.CSSProperties}
         />
         {coords.map((c, i) => (
           <rect

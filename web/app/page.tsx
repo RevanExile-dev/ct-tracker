@@ -110,8 +110,26 @@ export default function Home() {
       )}
 
       {!cards && !error && (
-        <div className="mt-16 text-center text-ink-muted font-mono text-sm animate-pulse">
-          Carico il database locale…
+        <div className="mt-8">
+          <div className="text-center text-ink-muted font-mono text-sm mb-6">
+            Carico il database locale…
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={i}
+                className="skeleton rounded-card border border-base-border bg-base-surface overflow-hidden"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
+                <div className="aspect-[5/7] bg-base-surface2" />
+                <div className="p-3 space-y-2">
+                  <div className="h-2.5 w-2/3 rounded bg-base-surface2" />
+                  <div className="h-3.5 w-4/5 rounded bg-base-surface2" />
+                  <div className="h-4 w-1/2 rounded bg-base-surface2 mt-3" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -126,10 +144,11 @@ export default function Home() {
       {visible && visible.length > 0 && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5 mt-8">
-            {visible.map((card) => (
+            {visible.map((card, i) => (
               <CardTile
                 key={card.id}
                 card={card}
+                index={i}
                 inBinder={binderIds.has(card.id)}
                 onToggleBinder={() => handleToggleBinderCard(card.id)}
               />
@@ -140,7 +159,7 @@ export default function Home() {
             <div className="flex justify-center mt-8">
               <button
                 onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
-                className="text-sm px-6 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors"
+                className="text-sm px-6 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
               >
                 Mostra altre {Math.min(PAGE_SIZE, filtered.length - visibleCount)} carte
                 <span className="text-ink-faint"> ({visibleCount}/{filtered.length})</span>
