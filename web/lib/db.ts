@@ -112,6 +112,17 @@ export type CardRow = {
   latest_language: string | null;
   prev_price_cents: number | null;
   languages_available: string | null;
+  // Prezzo "migliore" (Near Mint + CardTrader Zero quando esiste, altrimenti
+  // a cascata Zero/Near Mint/piu' economico in assoluto — vedi
+  // _pick_best_listing in scripts/db.py). NULL finche' una carta non e'
+  // stata ripassata dal sync che calcola questo campo: usare sempre con
+  // fallback a latest_price_cents nei componenti.
+  best_price_cents: number | null;
+  best_price_currency: string | null;
+  best_condition: string | null;
+  best_language: string | null;
+  best_can_sell_via_hub: number | null;
+  prev_best_price_cents: number | null;
 };
 
 export type SortOption =
@@ -130,7 +141,13 @@ const CARD_ROW_SELECT = `
   lp.listings_count AS latest_listings,
   lp.cheapest_language AS latest_language,
   lp.prev_price_cents AS prev_price_cents,
-  lp.languages_available AS languages_available
+  lp.languages_available AS languages_available,
+  lp.best_price_cents AS best_price_cents,
+  lp.best_price_currency AS best_price_currency,
+  lp.best_condition AS best_condition,
+  lp.best_language AS best_language,
+  lp.best_can_sell_via_hub AS best_can_sell_via_hub,
+  lp.prev_best_price_cents AS prev_best_price_cents
 `;
 
 /** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
@@ -169,23 +186,30 @@ export async function fetchCards(opts: {
     where.push(`(${conds.join(" OR ")})`);
   }
 
+  // best_price_cents (Near Mint + CardTrader Zero quando esiste) e' il
+  // prezzo "vero" da mostrare/ordinare; COALESCE su latest_price_cents e'
+  // solo una rete di sicurezza per le carte non ancora ripassate dal sync
+  // che popola best_price_cents.
+  const priceExpr = "COALESCE(best_price_cents, latest_price_cents)";
+  const prevPriceExpr = "COALESCE(prev_best_price_cents, prev_price_cents)";
+
   let orderBy = "b.expansion_id DESC, b.name ASC";
-  if (opts.sortBy === "price_asc") orderBy = "latest_price_cents IS NULL, latest_price_cents ASC";
-  if (opts.sortBy === "price_desc") orderBy = "latest_price_cents IS NULL, latest_price_cents DESC";
+  if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
+  if (opts.sortBy === "price_desc") orderBy = `${priceExpr} IS NULL, ${priceExpr} DESC`;
   if (opts.sortBy === "name") orderBy = "b.name ASC";
   if (opts.sortBy === "drop_first") {
     // Piu' grande calo percentuale prima; le carte senza prezzo precedente
     // (o senza variazione) restano in fondo.
     orderBy = `
-      CASE WHEN latest_price_cents IS NULL OR prev_price_cents IS NULL OR prev_price_cents = 0 THEN 1 ELSE 0 END,
-      (CAST(latest_price_cents AS REAL) - prev_price_cents) / prev_price_cents ASC
+      CASE WHEN ${priceExpr} IS NULL OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} ASC
     `;
   }
   if (opts.sortBy === "rise_first") {
     // Speculare a drop_first: piu' grande rialzo percentuale prima.
     orderBy = `
-      CASE WHEN latest_price_cents IS NULL OR prev_price_cents IS NULL OR prev_price_cents = 0 THEN 1 ELSE 0 END,
-      (CAST(latest_price_cents AS REAL) - prev_price_cents) / prev_price_cents DESC
+      CASE WHEN ${priceExpr} IS NULL OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} DESC
     `;
   }
 
@@ -261,15 +285,18 @@ export type Listing = {
   quantity: number | null;
   seller_username: string | null;
   can_sell_via_hub: number;
+  ships_from_country: string | null;
 };
 
-/** Le migliori (piu' economiche) inserzioni live per una carta, con il flag
- * "CardTrader Zero" (venditore professionale con spedizione gestita da CardTrader). */
+/** Le migliori (piu' economiche) inserzioni live per una carta (fino a 25,
+ * vedi replace_price_listings), con il flag "CardTrader Zero" (venditore
+ * professionale con spedizione gestita da CardTrader) e il paese di
+ * spedizione del venditore. */
 export async function fetchBestListings(blueprintId: number): Promise<Listing[]> {
   const db = await getDb();
   const stmt = db.prepare(`
     SELECT price_cents, price_currency, condition, language, quantity,
-           seller_username, can_sell_via_hub
+           seller_username, can_sell_via_hub, ships_from_country
     FROM price_listings
     WHERE blueprint_id = $id
     ORDER BY price_cents ASC

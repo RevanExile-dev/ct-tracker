@@ -21,7 +21,15 @@ export default function CardTile({
   inBinder?: boolean;
   onToggleBinder?: () => void;
 }) {
-  const delta = priceDeltaPct(card.latest_price_cents, card.prev_price_cents);
+  // best_price_cents preferisce Near Mint + CardTrader Zero quando esiste
+  // (vedi _pick_best_listing lato sync); fallback al vecchio prezzo piu'
+  // basso in assoluto solo per le carte non ancora ripassate dal sync.
+  const priceCents = card.best_price_cents ?? card.latest_price_cents;
+  const priceCurrency = card.best_price_currency ?? card.latest_price_currency;
+  const priceLanguage = card.best_language ?? card.latest_language;
+  const prevPriceCents = card.prev_best_price_cents ?? card.prev_price_cents;
+  const isNmZero = card.best_can_sell_via_hub === 1 && card.best_condition === "Near Mint";
+  const delta = priceDeltaPct(priceCents, prevPriceCents);
   const [popping, setPopping] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
@@ -89,10 +97,18 @@ export default function CardTile({
 
           <div className="flex items-end justify-between mt-2">
             <div className="font-mono text-lg text-ink-primary flex items-center gap-1.5">
-              {formatCents(card.latest_price_cents, card.latest_price_currency ?? "EUR")}
-              {card.latest_language && (
-                <span className="text-xs" title={card.latest_language.toUpperCase()}>
-                  {languageFlag(card.latest_language)}
+              {formatCents(priceCents, priceCurrency ?? "EUR")}
+              {priceLanguage && (
+                <span className="text-xs" title={priceLanguage.toUpperCase()}>
+                  {languageFlag(priceLanguage)}
+                </span>
+              )}
+              {isNmZero && (
+                <span
+                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright"
+                  title="Near Mint, CardTrader Zero"
+                >
+                  NM Zero
                 </span>
               )}
             </div>

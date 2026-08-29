@@ -11,7 +11,9 @@ import {
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import HoloFrame from "@/components/HoloFrame";
 import PriceChart from "@/components/PriceChart";
-import { formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
+import ConditionBadge from "@/components/ConditionBadge";
+import FilterDropdown from "@/components/FilterDropdown";
+import { countryFlag, formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
 
 export default function CardDetailPage() {
   const params = useParams<{ id: string }>();
@@ -22,6 +24,8 @@ export default function CardDetailPage() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [inBinder, setInBinder] = useState(false);
   const [popping, setPopping] = useState(false);
+  const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
+  const [onlyZeroListings, setOnlyZeroListings] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -46,6 +50,30 @@ export default function CardDetailPage() {
     }
     return Array.from(byLang.values()).sort((a, b) => a.price_cents - b.price_cents);
   }, [listings]);
+
+  const availableConditions = useMemo(() => {
+    const order = ["Near Mint", "Slightly Played", "Moderately Played", "Played", "Poor"];
+    const set = new Set(listings.map((l) => l.condition).filter((c): c is string => !!c));
+    return Array.from(set).sort((a, b) => {
+      const ra = order.indexOf(a), rb = order.indexOf(b);
+      return (ra === -1 ? order.length : ra) - (rb === -1 ? order.length : rb);
+    });
+  }, [listings]);
+
+  // Filtro puramente visivo sulla lista "Migliori inserzioni" qui sotto: il
+  // prezzo in evidenza sopra resta calcolato da card.best_price_cents (su
+  // TUTTE le offerte), un filtro applicato qui non deve cambiarlo.
+  const filteredListings = useMemo(() => {
+    return listings.filter(
+      (l) =>
+        (selectedConditions.length === 0 || (l.condition && selectedConditions.includes(l.condition))) &&
+        (!onlyZeroListings || l.can_sell_via_hub === 1)
+    );
+  }, [listings, selectedConditions, onlyZeroListings]);
+
+  function handleToggleCondition(c: string) {
+    setSelectedConditions((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+  }
 
   if (card === undefined) {
     return (
@@ -83,22 +111,23 @@ export default function CardDetailPage() {
     );
   }
 
-  const currency = card.latest_price_currency ?? "EUR";
-  const trend = trendVsMovingAverage(history, card.latest_price_cents, 30);
+  const currency = card.best_price_currency ?? card.latest_price_currency ?? "EUR";
+  const trend = trendVsMovingAverage(history, card.best_price_cents ?? card.latest_price_cents, 30);
 
   // Su CardTrader il prezzo "consigliato" in evidenza e' quasi sempre
-  // un'inserzione CardTrader Zero (spedizione gestita/garantita), anche
-  // quando non e' l'assoluto piu' economico: un venditore normale la batte
-  // solo se il suo prezzo e' cosi' basso da convenire comunque, spedizione
-  // esclusa. Replichiamo la stessa priorita' qui: se esiste una inserzione
-  // Zero tra le migliori 5 gia' scaricate, e' quella la carta principale.
-  const zeroListing = listings.find((l) => l.can_sell_via_hub === 1);
-  const cheapestListing = listings[0];
-  const headlineListing = zeroListing ?? cheapestListing;
-  const headlinePriceCents = headlineListing?.price_cents ?? card.latest_price_cents;
-  const headlineCurrency = headlineListing?.price_currency ?? currency;
-  const hasCheaperNonZero =
-    zeroListing && cheapestListing && cheapestListing.price_cents < zeroListing.price_cents;
+  // un'inserzione Near Mint + CardTrader Zero (spedizione gestita/
+  // garantita), anche quando non e' l'assoluto piu' economico: un
+  // venditore normale/una condizione peggiore batte solo se conviene
+  // comunque, spedizione esclusa. Calcolato lato backend su TUTTE le
+  // offerte scaricate (fino a 25), non solo sulle "migliori inserzioni"
+  // salvate qui sotto — piu' accurato di scegliere tra quelle.
+  const headlinePriceCents = card.best_price_cents ?? card.latest_price_cents;
+  const headlineCurrency = card.best_price_currency ?? currency;
+  const isZero = card.best_can_sell_via_hub === 1;
+  const hasCheaperAbsolute =
+    card.latest_price_cents !== null &&
+    card.best_price_cents !== null &&
+    card.latest_price_cents < card.best_price_cents;
 
   return (
     <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
@@ -172,21 +201,22 @@ export default function CardDetailPage() {
           <div className="mt-6 grid grid-cols-2 gap-4 max-w-sm">
             <div
               className={`rounded-card border p-4 ${
-                zeroListing
+                isZero
                   ? "border-accent/50 bg-accent/10"
                   : "border-base-border bg-base-surface"
               }`}
             >
               <div
                 className={`text-xs font-mono uppercase flex items-center gap-1.5 ${
-                  zeroListing ? "text-accent" : "text-ink-faint"
+                  isZero ? "text-accent" : "text-ink-faint"
                 }`}
               >
-                {zeroListing ? "CardTrader Zero" : "Prezzo minimo"}
+                {isZero ? "CardTrader Zero" : "Prezzo migliore"}
+                {card.best_condition && <ConditionBadge condition={card.best_condition} />}
               </div>
               <div
                 className={`font-display text-2xl font-bold mt-1 ${
-                  zeroListing ? "text-accent-bright" : "text-ink-primary"
+                  isZero ? "text-accent-bright" : "text-ink-primary"
                 }`}
               >
                 {formatCents(headlinePriceCents, headlineCurrency)}
@@ -202,10 +232,10 @@ export default function CardDetailPage() {
                   media {trend.days}gg
                 </div>
               )}
-              {hasCheaperNonZero && (
+              {hasCheaperAbsolute && (
                 <div className="text-xs font-mono text-ink-faint mt-1">
-                  senza Zero da {formatCents(cheapestListing.price_cents, cheapestListing.price_currency ?? currency)}
-                  {" "}(+ spedizione)
+                  prezzo piu' basso in assoluto: {formatCents(card.latest_price_cents, card.latest_price_currency ?? currency)}
+                  {listings[0]?.condition ? ` (${listings[0].condition})` : ""}
                 </div>
               )}
             </div>
@@ -250,35 +280,70 @@ export default function CardDetailPage() {
 
           {listings.length > 0 && (
             <div className="mt-8">
-              <h2 className="font-display font-medium text-ink-primary mb-3">
-                Migliori inserzioni
-              </h2>
-              <div className="rounded-card border border-base-border bg-base-surface divide-y divide-base-border overflow-hidden">
-                {listings.map((l, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-lg leading-none">{languageFlag(l.language)}</span>
-                      <div className="min-w-0">
-                        <div className="text-sm text-ink-primary truncate">
-                          {l.seller_username ?? "venditore"}
-                          {l.can_sell_via_hub === 1 && (
-                            <span className="ml-2 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/40 text-accent-bright align-middle">
-                              CardTrader Zero
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-ink-faint font-mono">
-                          {l.condition ?? "—"}
-                          {l.quantity ? ` · x${l.quantity}` : ""}
+              <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                <h2 className="font-display font-medium text-ink-primary">
+                  Migliori inserzioni
+                </h2>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <FilterDropdown
+                    label="Condizione"
+                    options={availableConditions}
+                    selected={selectedConditions}
+                    onToggle={handleToggleCondition}
+                    renderOption={(c) => <ConditionBadge condition={c} />}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setOnlyZeroListings((v) => !v)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+                      onlyZeroListings
+                        ? "bg-accent/10 border-accent/60 text-accent-bright"
+                        : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+                    }`}
+                  >
+                    ⚡ Solo CardTrader Zero
+                  </button>
+                </div>
+              </div>
+              {filteredListings.length === 0 ? (
+                <div className="text-ink-muted text-sm rounded-card border border-base-border bg-base-surface p-4">
+                  Nessuna inserzione corrisponde ai filtri scelti.
+                </div>
+              ) : (
+                <div className="rounded-card border border-base-border bg-base-surface divide-y divide-base-border overflow-hidden">
+                  {filteredListings.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-lg leading-none" title="Lingua carta">
+                          {languageFlag(l.language)}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-sm text-ink-primary truncate">
+                            {l.seller_username ?? "venditore"}
+                            {l.ships_from_country && (
+                              <span className="ml-1.5 text-xs" title={`Spedisce da ${l.ships_from_country}`}>
+                                {countryFlag(l.ships_from_country)}
+                              </span>
+                            )}
+                            {l.can_sell_via_hub === 1 && (
+                              <span className="ml-2 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/40 text-accent-bright align-middle">
+                                CardTrader Zero
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-ink-faint font-mono mt-0.5 flex items-center gap-1.5">
+                            <ConditionBadge condition={l.condition} />
+                            {l.quantity ? `x${l.quantity}` : ""}
+                          </div>
                         </div>
                       </div>
+                      <div className="font-mono text-sm text-ink-primary shrink-0">
+                        {formatCents(l.price_cents, l.price_currency ?? currency)}
+                      </div>
                     </div>
-                    <div className="font-mono text-sm text-ink-primary shrink-0">
-                      {formatCents(l.price_cents, l.price_currency ?? currency)}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

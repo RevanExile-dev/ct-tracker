@@ -71,6 +71,17 @@ CREATE TABLE IF NOT EXISTS latest_prices (
     languages_available TEXT,
     prev_price_cents INTEGER,
     prev_captured_at TEXT,
+    -- Prezzo "migliore" per un compratore reale: preferisce Near Mint +
+    -- CardTrader Zero, allentando i vincoli a cascata se non esiste (vedi
+    -- _pick_best_listing). min_price_cents sopra resta il puro piu'
+    -- economico in assoluto, tenuto come dato secondario ("prezzo piu'
+    -- basso"), non sostituito.
+    best_price_cents INTEGER,
+    best_price_currency TEXT,
+    best_condition TEXT,
+    best_language TEXT,
+    best_can_sell_via_hub INTEGER,
+    prev_best_price_cents INTEGER,
     FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
 );
 
@@ -88,6 +99,10 @@ CREATE TABLE IF NOT EXISTS price_listings (
     quantity INTEGER,
     seller_username TEXT,
     can_sell_via_hub INTEGER DEFAULT 0,
+    -- Paese di spedizione del venditore (es. "IT"), utile a colpo d'occhio
+    -- quanto la lingua della carta; CardTrader non espone invece nessun
+    -- dato di reputazione/numero vendite in questa risposta (verificato).
+    ships_from_country TEXT,
     FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
 );
 
@@ -112,7 +127,8 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
     listings_count INTEGER,
     cheapest_condition TEXT,
     cheapest_language TEXT,
-    cheapest_foil INTEGER
+    cheapest_foil INTEGER,
+    best_price_cents INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_price_blueprint_date
@@ -146,11 +162,19 @@ def init_db():
     conn.executescript(SCHEMA)
     _migrate_legacy_price_snapshots(conn)
     _ensure_column(conn, "latest_prices", "languages_available", "TEXT")
+    _ensure_column(conn, "latest_prices", "best_price_cents", "INTEGER")
+    _ensure_column(conn, "latest_prices", "best_price_currency", "TEXT")
+    _ensure_column(conn, "latest_prices", "best_condition", "TEXT")
+    _ensure_column(conn, "latest_prices", "best_language", "TEXT")
+    _ensure_column(conn, "latest_prices", "best_can_sell_via_hub", "INTEGER")
+    _ensure_column(conn, "latest_prices", "prev_best_price_cents", "INTEGER")
+    _ensure_column(conn, "price_listings", "ships_from_country", "TEXT")
     conn.commit()
     conn.close()
 
     history_conn = get_history_connection()
     history_conn.executescript(HISTORY_SCHEMA)
+    _ensure_column(history_conn, "price_snapshots", "best_price_cents", "INTEGER")
     history_conn.commit()
     history_conn.close()
 
@@ -286,6 +310,30 @@ def _product_language(p: dict):
     return props.get("pokemon_language") or props.get("mtg_language")
 
 
+def _pick_best_listing(products: list):
+    """Euristica "a colpo d'occhio da compratore": su CardTrader il prezzo
+    piu' economico in assoluto e' spesso una condizione rovinata o un
+    venditore poco affidabile (visto con un caso reale: 0,60€ Slightly
+    Played da venditore nuovo contro 9,16€ Near Mint CardTrader Zero).
+    Preferiamo quindi Near Mint + CardTrader Zero (spedizione gestita/
+    garantita), allentando un vincolo alla volta se non esiste una simile
+    inserzione, fino al puro piu' economico in assoluto (che resta comunque
+    salvato separatamente in min_price_cents, non buttato via)."""
+    def cheapest_matching(pred):
+        matching = [p for p in products if pred(p)]
+        return min(matching, key=lambda p: p["price"]["cents"]) if matching else None
+
+    is_nm = lambda p: (p.get("properties_hash") or {}).get("condition") == "Near Mint"
+    is_zero = lambda p: bool((p.get("user") or {}).get("can_sell_via_hub"))
+
+    return (
+        cheapest_matching(lambda p: is_nm(p) and is_zero(p))
+        or cheapest_matching(is_zero)
+        or cheapest_matching(is_nm)
+        or min(products, key=lambda p: p["price"]["cents"])
+    )
+
+
 def _summarize_products(products: list):
     """Riduce la lista di offerte marketplace ai campi aggregati che salviamo
     (prezzo minimo, medio, condizioni/lingua della piu' economica...)."""
@@ -293,6 +341,7 @@ def _summarize_products(products: list):
         return None
     prices = [p["price"]["cents"] for p in products if p.get("price")]
     cheapest = min(products, key=lambda p: p["price"]["cents"])
+    best = _pick_best_listing(products)
     avg_cents = int(sum(prices) / len(prices)) if prices else None
     # Tutte le lingue con almeno un'inserzione, non solo quella della piu'
     # economica: serve per poter filtrare "disponibile in lingua X" anche
@@ -308,6 +357,11 @@ def _summarize_products(products: list):
         "cheapest_language": _product_language(cheapest),
         "cheapest_foil": int(bool(cheapest.get("properties_hash", {}).get("pokemon_foil"))),
         "languages_available": languages_available,
+        "best_price_cents": best["price"]["cents"],
+        "best_price_currency": best["price"]["currency"],
+        "best_condition": best.get("properties_hash", {}).get("condition"),
+        "best_language": _product_language(best),
+        "best_can_sell_via_hub": int(bool(best.get("user", {}).get("can_sell_via_hub"))),
     }
 
 
@@ -325,8 +379,8 @@ def insert_price_snapshot(history_conn, blueprint_id: int, captured_at: str,
             """INSERT INTO price_snapshots
                (blueprint_id, captured_at, captured_at_ts, min_price_cents,
                 min_price_currency, avg_price_cents, listings_count,
-                cheapest_condition, cheapest_language, cheapest_foil)
-               VALUES (?, ?, ?, NULL, NULL, NULL, 0, NULL, NULL, NULL)""",
+                cheapest_condition, cheapest_language, cheapest_foil, best_price_cents)
+               VALUES (?, ?, ?, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL)""",
             (blueprint_id, captured_at, captured_at_ts),
         )
         return
@@ -334,14 +388,14 @@ def insert_price_snapshot(history_conn, blueprint_id: int, captured_at: str,
         """INSERT INTO price_snapshots
            (blueprint_id, captured_at, captured_at_ts, min_price_cents,
             min_price_currency, avg_price_cents, listings_count,
-            cheapest_condition, cheapest_language, cheapest_foil)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            cheapest_condition, cheapest_language, cheapest_foil, best_price_cents)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             blueprint_id, captured_at, captured_at_ts,
             summary["min_price_cents"], summary["min_price_currency"],
             summary["avg_price_cents"], summary["listings_count"],
             summary["cheapest_condition"], summary["cheapest_language"],
-            summary["cheapest_foil"],
+            summary["cheapest_foil"], summary["best_price_cents"],
         ),
     )
 
@@ -354,17 +408,21 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
     stesso giorno, a differenza di tenere il "prev" copiandolo dal valore
     precedente di latest_prices (che si romperebbe sui rilanci)."""
     prev_row = history_conn.execute(
-        "SELECT captured_at, min_price_cents FROM price_snapshots "
+        "SELECT captured_at, min_price_cents, best_price_cents FROM price_snapshots "
         "WHERE blueprint_id = ? AND captured_at < ? AND min_price_cents IS NOT NULL "
         "ORDER BY captured_at DESC LIMIT 1",
         (blueprint_id, captured_at),
     ).fetchone()
-    prev_captured_at, prev_price_cents = prev_row if prev_row else (None, None)
+    prev_captured_at, prev_price_cents, prev_best_price_cents = (
+        prev_row if prev_row else (None, None, None)
+    )
 
     summary = _summarize_products(products) or {
         "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
         "listings_count": 0, "cheapest_condition": None, "cheapest_language": None,
         "cheapest_foil": None, "languages_available": None,
+        "best_price_cents": None, "best_price_currency": None, "best_condition": None,
+        "best_language": None, "best_can_sell_via_hub": None,
     }
 
     conn.execute(
@@ -373,11 +431,15 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             (blueprint_id, captured_at, captured_at_ts, min_price_cents,
              min_price_currency, avg_price_cents, listings_count,
              cheapest_condition, cheapest_language, cheapest_foil,
-             languages_available, prev_price_cents, prev_captured_at)
+             languages_available, prev_price_cents, prev_captured_at,
+             best_price_cents, best_price_currency, best_condition,
+             best_language, best_can_sell_via_hub, prev_best_price_cents)
         VALUES (:blueprint_id, :captured_at, :captured_at_ts, :min_price_cents,
                 :min_price_currency, :avg_price_cents, :listings_count,
                 :cheapest_condition, :cheapest_language, :cheapest_foil,
-                :languages_available, :prev_price_cents, :prev_captured_at)
+                :languages_available, :prev_price_cents, :prev_captured_at,
+                :best_price_cents, :best_price_currency, :best_condition,
+                :best_language, :best_can_sell_via_hub, :prev_best_price_cents)
         ON CONFLICT(blueprint_id) DO UPDATE SET
             captured_at=excluded.captured_at, captured_at_ts=excluded.captured_at_ts,
             min_price_cents=excluded.min_price_cents,
@@ -389,7 +451,13 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             cheapest_foil=excluded.cheapest_foil,
             languages_available=excluded.languages_available,
             prev_price_cents=excluded.prev_price_cents,
-            prev_captured_at=excluded.prev_captured_at
+            prev_captured_at=excluded.prev_captured_at,
+            best_price_cents=excluded.best_price_cents,
+            best_price_currency=excluded.best_price_currency,
+            best_condition=excluded.best_condition,
+            best_language=excluded.best_language,
+            best_can_sell_via_hub=excluded.best_can_sell_via_hub,
+            prev_best_price_cents=excluded.prev_best_price_cents
         """,
         {
             "blueprint_id": blueprint_id,
@@ -397,14 +465,20 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             "captured_at_ts": captured_at_ts,
             "prev_price_cents": prev_price_cents,
             "prev_captured_at": prev_captured_at,
+            "prev_best_price_cents": prev_best_price_cents,
             **summary,
         },
     )
 
 
-def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: list, top_n: int = 5):
+def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: list, top_n: int = 25):
     """Sostituisce le inserzioni salvate per questa carta con le top_n piu'
-    economiche del momento (non e' uno storico, solo l'ultimo sync)."""
+    economiche del momento (non e' uno storico, solo l'ultimo sync). top_n=25
+    perche' CardTrader restituisce comunque fino a 25 offerte per chiamata
+    (nessun costo API aggiuntivo): salvarle tutte da' abbastanza scelta per
+    filtrare per condizione/venditore invece di essere bloccati alle sole
+    5 piu' economiche, che spesso non includono nessuna inserzione Near
+    Mint/CardTrader Zero decente."""
     conn.execute("DELETE FROM price_listings WHERE blueprint_id = ?", (blueprint_id,))
     if not products:
         return
@@ -412,8 +486,8 @@ def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: 
     conn.executemany(
         """INSERT INTO price_listings
            (blueprint_id, captured_at, price_cents, price_currency, condition,
-            language, quantity, seller_username, can_sell_via_hub)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            language, quantity, seller_username, can_sell_via_hub, ships_from_country)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
                 blueprint_id,
@@ -426,6 +500,7 @@ def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: 
                 p.get("quantity"),
                 p.get("user", {}).get("username"),
                 int(bool(p.get("user", {}).get("can_sell_via_hub"))),
+                p.get("user", {}).get("country_code"),
             )
             for p in cheapest_first
         ],

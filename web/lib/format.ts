@@ -83,3 +83,15 @@ export function languageFlag(code: string | null | undefined): string {
 export function languageLabel(code: string): string {
   return LANGUAGE_LABELS[code.toLowerCase()] ?? code.toUpperCase();
 }
+
+/** Bandiera da un codice paese ISO 3166-1 alpha-2 (es. "IT", "US"), calcolata
+ * componendo i due Regional Indicator Symbol unicode — a differenza di
+ * languageFlag() qui sopra (mappa fissa per codici lingua) funziona per
+ * qualunque paese senza dover elencare ogni possibile "spedisce da". */
+export function countryFlag(code: string | null | undefined): string {
+  if (!code || code.length !== 2) return "";
+  const upper = code.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(upper)) return "";
+  const codePoints = [...upper].map((c) => 0x1f1e6 + (c.charCodeAt(0) - 65));
+  return String.fromCodePoint(...codePoints);
+}

@@ -35,7 +35,13 @@ function MoversSkeleton() {
 /** Tiene solo le carte con una variazione di prezzo reale (prezzo attuale e
  * precedente entrambi noti), nell'ordine gia' deciso dalla query SQL. */
 function withRealDelta(cards: CardRow[]): CardRow[] {
-  return cards.filter((c) => priceDeltaPct(c.latest_price_cents, c.prev_price_cents) !== null);
+  return cards.filter(
+    (c) =>
+      priceDeltaPct(
+        c.best_price_cents ?? c.latest_price_cents,
+        c.prev_best_price_cents ?? c.prev_price_cents
+      ) !== null
+  );
 }
 
 export default function MoversPage() {

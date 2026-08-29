@@ -20,7 +20,10 @@ export default function BinderTable({ cards }: { cards: CardRow[] }) {
         </thead>
         <tbody className="divide-y divide-base-border">
           {cards.map((card) => {
-            const delta = priceDeltaPct(card.latest_price_cents, card.prev_price_cents);
+            const priceCents = card.best_price_cents ?? card.latest_price_cents;
+            const priceCurrency = card.best_price_currency ?? card.latest_price_currency;
+            const prevPriceCents = card.prev_best_price_cents ?? card.prev_price_cents;
+            const delta = priceDeltaPct(priceCents, prevPriceCents);
             return (
               <tr key={card.id} className="hover:bg-base-surface2 transition-colors">
                 <td className="px-4 py-3">
@@ -47,7 +50,7 @@ export default function BinderTable({ cards }: { cards: CardRow[] }) {
                   {card.rarity ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-ink-primary">
-                  {formatCents(card.latest_price_cents, card.latest_price_currency ?? "EUR")}
+                  {formatCents(priceCents, priceCurrency ?? "EUR")}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-xs">
                   {delta !== null ? (

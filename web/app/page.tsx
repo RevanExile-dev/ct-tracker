@@ -105,11 +105,12 @@ function HomeContent() {
 
   const binderSummary = useMemo(() => {
     if (!onlyBinder || !filtered) return null;
-    const priced = filtered.filter((c) => c.latest_price_cents !== null);
-    const totalCents = priced.reduce((sum, c) => sum + (c.latest_price_cents as number), 0);
-    const currency = priced[0]?.latest_price_currency ?? "EUR";
+    const priceOf = (c: CardRow) => c.best_price_cents ?? c.latest_price_cents;
+    const priced = filtered.filter((c) => priceOf(c) !== null);
+    const totalCents = priced.reduce((sum, c) => sum + (priceOf(c) as number), 0);
+    const currency = (priced[0] && (priced[0].best_price_currency ?? priced[0].latest_price_currency)) ?? "EUR";
     const drops = filtered.filter((c) => {
-      const d = priceDeltaPct(c.latest_price_cents, c.prev_price_cents);
+      const d = priceDeltaPct(priceOf(c), c.prev_best_price_cents ?? c.prev_price_cents);
       return d !== null && d < 0;
     }).length;
     return { count: filtered.length, priced: priced.length, totalCents, currency, drops };
@@ -121,7 +122,7 @@ function HomeContent() {
   const expansionSummary = useMemo(() => {
     if (!expansionCode || !cards) return null;
     const deltas = cards
-      .map((c) => priceDeltaPct(c.latest_price_cents, c.prev_price_cents))
+      .map((c) => priceDeltaPct(c.best_price_cents ?? c.latest_price_cents, c.prev_best_price_cents ?? c.prev_price_cents))
       .filter((d): d is number => d !== null);
     if (deltas.length === 0) return null;
     const avgPct = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;

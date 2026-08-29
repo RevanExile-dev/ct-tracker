@@ -32,7 +32,7 @@ export default function SiteHeader({
                   compact ? "text-2xl" : "text-3xl sm:text-4xl"
                 }`}
               >
-                Binder
+                CartaViva
               </h1>
             </Link>
             <span className="font-mono text-xs uppercase tracking-widest text-accent">

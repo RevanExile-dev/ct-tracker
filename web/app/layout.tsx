@@ -16,7 +16,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Binder — CardTrader Tracker",
+  title: "CartaViva — CardTrader Tracker",
   description: "Catalogo, prezzi e andamento delle carte Pokémon TCG tracciate da CardTrader.",
 };
 
