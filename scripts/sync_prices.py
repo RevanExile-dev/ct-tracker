@@ -43,15 +43,23 @@ import db
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "config" / "tracked_sets.json"
 WEB_DATA_DIR = REPO_ROOT / "web" / "public" / "data"
-CHECKPOINT_EVERY = 300  # ~5 minuti al ritmo di 1 richiesta/secondo
-# Se troppe carte di fila falliscono (es. CardTrader inizia a rispondere 429
-# su ogni richiesta perche' il giorno ha gia' visto troppo traffico da
-# questo token, tra sync catalogo/prezzi/full lanciati a ripetizione),
-# fermarsi qui invece di continuare a rifare per ore lo stesso retry perdente
-# su ogni carta rimasta (ogni carta puo' aspettare fino a ~1 minuto di
-# backoff prima di arrendersi - con migliaia di carte rimaste il job sembra
-# "in corso" su GitHub Actions per ore senza produrre nessun checkpoint
-# nuovo, indistinguibile da uno stallo vero finche' non scade il timeout).
+CHECKPOINT_EVERY = 600  # ~10 minuti al ritmo di 1 richiesta/secondo
+# Ogni checkpoint fa un commit+push dei due database SQLite interi (~10MB
+# l'uno, non diff incrementali: git non comprime bene i binari). Un
+# intervallo troppo corto significa tanti commit "pesanti" ravvicinati nella
+# stessa giornata (checkpoint del sync + eventuali push di codice nel
+# frattempo), osservato correlato a un caso reale di errore SQLite
+# "attempt to write a readonly database" sul runner. 600 dimezza la
+# frequenza dei commit rispetto a prima (300) mantenendo comunque poco
+# lavoro a rischio se il job viene interrotto a meta'.
+
+# Se troppe carte di fila falliscono (qualunque sia il motivo: CardTrader
+# che risponde 429, un errore locale come "readonly database" osservato una
+# volta sul runner, o altro), fermarsi qui invece di continuare a perdere
+# tempo su ogni carta rimasta - altrimenti con migliaia di carte ancora da
+# processare il job resta "in corso" su GitHub Actions per ore senza
+# produrre nessun checkpoint nuovo, indistinguibile da un progresso reale
+# finche' non scade il timeout.
 MAX_CONSECUTIVE_ERRORS = 15
 
 
