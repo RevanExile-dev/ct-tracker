@@ -29,9 +29,25 @@ const LANGUAGE_FLAGS: Record<string, string> = {
   pt: "🇵🇹",
   jp: "🇯🇵",
   kr: "🇰🇷",
+  id: "🇮🇩",
+  th: "🇹🇭",
+  ru: "🇷🇺",
+  nl: "🇳🇱",
+  "zh-cn": "🇨🇳",
+  "zh-tw": "🇹🇼",
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: "EN", it: "IT", fr: "FR", de: "DE", es: "ES", pt: "PT",
+  jp: "JP", kr: "KR", id: "ID", th: "TH", ru: "RU", nl: "NL",
+  "zh-cn": "ZH", "zh-tw": "ZH",
 };
 
 export function languageFlag(code: string | null | undefined): string {
   if (!code) return "";
-  return LANGUAGE_FLAGS[code.toLowerCase()] ?? code.toUpperCase();
+  return LANGUAGE_FLAGS[code.toLowerCase()] ?? "🏳️";
+}
+
+export function languageLabel(code: string): string {
+  return LANGUAGE_LABELS[code.toLowerCase()] ?? code.toUpperCase();
 }

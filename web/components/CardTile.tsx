@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import HoloFrame from "./HoloFrame";
 import { CardRow } from "@/lib/db";
-import { formatCents, priceDeltaPct } from "@/lib/format";
+import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
 
 export default function CardTile({
   card,
@@ -62,8 +62,13 @@ export default function CardTile({
           </div>
 
           <div className="flex items-end justify-between mt-2">
-            <div className="font-mono text-lg text-ink-primary">
+            <div className="font-mono text-lg text-ink-primary flex items-center gap-1.5">
               {formatCents(card.latest_price_cents, card.latest_price_currency ?? "EUR")}
+              {card.latest_language && (
+                <span className="text-xs" title={card.latest_language.toUpperCase()}>
+                  {languageFlag(card.latest_language)}
+                </span>
+              )}
             </div>
             {delta !== null && (
               <div

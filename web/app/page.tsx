@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CardRow, ExpansionInfo, SortOption,
-  fetchCards, fetchExpansions, fetchMeta, fetchRarities,
+  fetchCards, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import CardTile from "@/components/CardTile";
@@ -16,12 +16,14 @@ export default function Home() {
   const [cards, setCards] = useState<CardRow[] | null>(null);
   const [expansions, setExpansions] = useState<ExpansionInfo[]>([]);
   const [rarities, setRarities] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [expansionCode, setExpansionCode] = useState("");
   const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortOption>("expansion");
   const [onlyBinder, setOnlyBinder] = useState(false);
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
@@ -31,23 +33,24 @@ export default function Home() {
     setBinderIds(getBinderIds());
     fetchExpansions().then(setExpansions).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
+    fetchLanguages().then(setLanguages).catch(() => {});
     fetchMeta()
       .then((m) => setLastSync(m["last_price_sync"]))
       .catch(() => {});
   }, []);
 
   // Ricarica le carte quando cambiano i filtri lato-query (ricerca, espansione,
-  // rarità, ordinamento): sono gestiti in SQL, non serve rifiltrare in JS.
+  // rarità, lingua, ordinamento): sono gestiti in SQL, non serve rifiltrare in JS.
   useEffect(() => {
     setError(null);
-    fetchCards({ search, expansionCode, rarities: selectedRarities, sortBy })
+    fetchCards({ search, expansionCode, rarities: selectedRarities, languages: selectedLanguages, sortBy })
       .then(setCards)
       .catch((e) => setError(String(e.message ?? e)));
-  }, [search, expansionCode, selectedRarities, sortBy]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, sortBy]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [search, expansionCode, selectedRarities, sortBy, onlyBinder]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, sortBy, onlyBinder]);
 
   const filtered = useMemo(() => {
     if (!cards) return null;
@@ -60,6 +63,12 @@ export default function Home() {
   function handleToggleRarity(r: string) {
     setSelectedRarities((prev) =>
       prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
+  }
+
+  function handleToggleLanguage(l: string) {
+    setSelectedLanguages((prev) =>
+      prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]
     );
   }
 
@@ -80,6 +89,9 @@ export default function Home() {
         rarities={rarities}
         selectedRarities={selectedRarities}
         onToggleRarity={handleToggleRarity}
+        languages={languages}
+        selectedLanguages={selectedLanguages}
+        onToggleLanguage={handleToggleLanguage}
         sortBy={sortBy}
         onSortChange={setSortBy}
         onlyBinder={onlyBinder}

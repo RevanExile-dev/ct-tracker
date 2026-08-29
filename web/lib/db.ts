@@ -86,6 +86,7 @@ export type CardRow = {
   latest_price_cents: number | null;
   latest_price_currency: string | null;
   latest_listings: number | null;
+  latest_language: string | null;
   prev_price_cents: number | null;
 };
 
@@ -96,6 +97,7 @@ export async function fetchCards(opts: {
   search?: string;
   expansionCode?: string;
   rarities?: string[];
+  languages?: string[];
   sortBy?: SortOption;
 }): Promise<CardRow[]> {
   const db = await getDb();
@@ -116,6 +118,11 @@ export async function fetchCards(opts: {
     opts.rarities.forEach((r, i) => (params[`$rarity${i}`] = r));
     where.push(`b.rarity IN (${placeholders})`);
   }
+  if (opts.languages && opts.languages.length > 0) {
+    const placeholders = opts.languages.map((_, i) => `$lang${i}`).join(", ");
+    opts.languages.forEach((l, i) => (params[`$lang${i}`] = l));
+    where.push(`latest.cheapest_language IN (${placeholders})`);
+  }
 
   let orderBy = "b.expansion_id DESC, b.name ASC";
   if (opts.sortBy === "price_asc") orderBy = "latest_price_cents IS NULL, latest_price_cents ASC";
@@ -135,6 +142,7 @@ export async function fetchCards(opts: {
       latest.min_price_cents AS latest_price_cents,
       latest.min_price_currency AS latest_price_currency,
       latest.listings_count AS latest_listings,
+      latest.cheapest_language AS latest_language,
       prev.min_price_cents AS prev_price_cents
     FROM blueprints b
     LEFT JOIN ranked latest ON latest.blueprint_id = b.id AND latest.rn = 1
@@ -261,6 +269,23 @@ export async function fetchRarities(): Promise<string[]> {
   );
   const rows: string[] = [];
   while (stmt.step()) rows.push((stmt.getAsObject() as any).rarity);
+  stmt.free();
+  return rows;
+}
+
+export async function fetchLanguages(): Promise<string[]> {
+  const db = await getDb();
+  const stmt = db.prepare(`
+    WITH ranked AS (
+      SELECT ps.*, ROW_NUMBER() OVER (PARTITION BY ps.blueprint_id ORDER BY ps.captured_at DESC) AS rn
+      FROM price_snapshots ps
+    )
+    SELECT DISTINCT cheapest_language AS lang FROM ranked
+    WHERE rn = 1 AND cheapest_language IS NOT NULL
+    ORDER BY lang
+  `);
+  const rows: string[] = [];
+  while (stmt.step()) rows.push((stmt.getAsObject() as any).lang);
   stmt.free();
   return rows;
 }

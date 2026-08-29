@@ -1,6 +1,7 @@
 "use client";
 
 import { ExpansionInfo, SortOption } from "@/lib/db";
+import { languageFlag, languageLabel } from "@/lib/format";
 
 export default function Toolbar({
   search,
@@ -11,6 +12,9 @@ export default function Toolbar({
   rarities,
   selectedRarities,
   onToggleRarity,
+  languages,
+  selectedLanguages,
+  onToggleLanguage,
   sortBy,
   onSortChange,
   onlyBinder,
@@ -24,6 +28,9 @@ export default function Toolbar({
   rarities: string[];
   selectedRarities: string[];
   onToggleRarity: (rarity: string) => void;
+  languages: string[];
+  selectedLanguages: string[];
+  onToggleLanguage: (lang: string) => void;
   sortBy: SortOption;
   onSortChange: (v: SortOption) => void;
   onlyBinder: boolean;
@@ -77,35 +84,67 @@ export default function Toolbar({
         </button>
       </div>
 
-      {rarities.length > 0 && (
-        <details className="group">
-          <summary className="cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary list-none flex items-center gap-1.5">
-            <span className="transition-transform group-open:rotate-90">▸</span>
-            Filtra per rarità
-            {selectedRarities.length > 0 && (
-              <span className="text-accent-bright">({selectedRarities.length})</span>
-            )}
-          </summary>
-          <div className="flex flex-wrap gap-2 mt-3">
-            {rarities.map((r) => {
-              const active = selectedRarities.includes(r);
-              return (
-                <button
-                  key={r}
-                  onClick={() => onToggleRarity(r)}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                    active
-                      ? "bg-accent/10 border-accent/60 text-accent-bright"
-                      : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"
-                  }`}
-                >
-                  {r}
-                </button>
-              );
-            })}
-          </div>
-        </details>
-      )}
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-6">
+        {rarities.length > 0 && (
+          <details className="group">
+            <summary className="cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary list-none flex items-center gap-1.5">
+              <span className="transition-transform group-open:rotate-90">▸</span>
+              Filtra per rarità
+              {selectedRarities.length > 0 && (
+                <span className="text-accent-bright">({selectedRarities.length})</span>
+              )}
+            </summary>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {rarities.map((r) => {
+                const active = selectedRarities.includes(r);
+                return (
+                  <button
+                    key={r}
+                    onClick={() => onToggleRarity(r)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                      active
+                        ? "bg-accent/10 border-accent/60 text-accent-bright"
+                        : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+        )}
+
+        {languages.length > 0 && (
+          <details className="group">
+            <summary className="cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary list-none flex items-center gap-1.5">
+              <span className="transition-transform group-open:rotate-90">▸</span>
+              Filtra per lingua
+              {selectedLanguages.length > 0 && (
+                <span className="text-accent-bright">({selectedLanguages.length})</span>
+              )}
+            </summary>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {languages.map((l) => {
+                const active = selectedLanguages.includes(l);
+                return (
+                  <button
+                    key={l}
+                    onClick={() => onToggleLanguage(l)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                      active
+                        ? "bg-accent/10 border-accent/60 text-accent-bright"
+                        : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"
+                    }`}
+                  >
+                    {languageFlag(l)} {languageLabel(l)}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
