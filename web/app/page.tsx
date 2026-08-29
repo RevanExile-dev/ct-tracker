@@ -8,6 +8,7 @@ import {
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { formatCents, priceDeltaPct } from "@/lib/format";
 import CardTile from "@/components/CardTile";
+import BinderTable from "@/components/BinderTable";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
 
@@ -27,6 +28,7 @@ export default function Home() {
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortOption>("expansion");
   const [onlyBinder, setOnlyBinder] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
@@ -146,6 +148,29 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <div className="ml-auto flex gap-1.5">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
+                viewMode === "grid"
+                  ? "bg-accent/10 border-accent/60 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              }`}
+            >
+              Griglia
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
+                viewMode === "table"
+                  ? "bg-accent/10 border-accent/60 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              }`}
+            >
+              Tabella (confronto)
+            </button>
+          </div>
         </div>
       )}
 
@@ -194,19 +219,23 @@ export default function Home() {
 
       {visible && visible.length > 0 && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5 mt-8">
-            {visible.map((card, i) => (
-              <CardTile
-                key={card.id}
-                card={card}
-                index={i}
-                inBinder={binderIds.has(card.id)}
-                onToggleBinder={() => handleToggleBinderCard(card.id)}
-              />
-            ))}
-          </div>
+          {onlyBinder && viewMode === "table" ? (
+            <BinderTable cards={filtered ?? []} />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5 mt-8">
+              {visible.map((card, i) => (
+                <CardTile
+                  key={card.id}
+                  card={card}
+                  index={i}
+                  inBinder={binderIds.has(card.id)}
+                  onToggleBinder={() => handleToggleBinderCard(card.id)}
+                />
+              ))}
+            </div>
+          )}
 
-          {filtered && visibleCount < filtered.length && (
+          {!(onlyBinder && viewMode === "table") && filtered && visibleCount < filtered.length && (
             <div className="flex justify-center mt-8">
               <button
                 onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
