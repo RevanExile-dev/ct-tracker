@@ -90,7 +90,7 @@ export type CardRow = {
   prev_price_cents: number | null;
 };
 
-export type SortOption = "expansion" | "price_asc" | "price_desc" | "name";
+export type SortOption = "expansion" | "price_asc" | "price_desc" | "name" | "drop_first";
 
 /** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
 export async function fetchCards(opts: {
@@ -128,6 +128,14 @@ export async function fetchCards(opts: {
   if (opts.sortBy === "price_asc") orderBy = "latest_price_cents IS NULL, latest_price_cents ASC";
   if (opts.sortBy === "price_desc") orderBy = "latest_price_cents IS NULL, latest_price_cents DESC";
   if (opts.sortBy === "name") orderBy = "b.name ASC";
+  if (opts.sortBy === "drop_first") {
+    // Piu' grande calo percentuale prima; le carte senza prezzo precedente
+    // (o senza variazione) restano in fondo.
+    orderBy = `
+      CASE WHEN latest_price_cents IS NULL OR prev_price_cents IS NULL OR prev_price_cents = 0 THEN 1 ELSE 0 END,
+      (CAST(latest_price_cents AS REAL) - prev_price_cents) / prev_price_cents ASC
+    `;
+  }
 
   const sql = `
     WITH ranked AS (

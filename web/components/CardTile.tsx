@@ -23,6 +23,7 @@ export default function CardTile({
 }) {
   const delta = priceDeltaPct(card.latest_price_cents, card.prev_price_cents);
   const [popping, setPopping] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
 
@@ -40,7 +41,10 @@ export default function CardTile({
               alt={card.name}
               fill
               sizes="(min-width: 1024px) 20vw, 45vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              onLoad={() => setImgLoaded(true)}
+              className={`object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
+                imgLoaded ? "opacity-100" : "opacity-0"
+              }`}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono">

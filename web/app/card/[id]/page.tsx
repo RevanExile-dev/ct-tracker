@@ -141,6 +141,21 @@ export default function CardDetailPage() {
               <h2 className="font-display font-medium text-ink-primary mb-3">
                 Migliori inserzioni
               </h2>
+              {(() => {
+                const cheapestZero = listings.find((l) => l.can_sell_via_hub === 1);
+                if (!cheapestZero || cheapestZero === listings[0]) return null;
+                return (
+                  <div className="mb-3 flex items-center justify-between gap-3 rounded-card border border-accent/40 bg-accent/5 px-4 py-2.5 text-sm">
+                    <span className="text-ink-muted">
+                      Più economica con{" "}
+                      <span className="text-accent-bright font-medium">CardTrader Zero</span>
+                    </span>
+                    <span className="font-mono text-ink-primary">
+                      {formatCents(cheapestZero.price_cents, cheapestZero.price_currency ?? currency)}
+                    </span>
+                  </div>
+                );
+              })()}
               <div className="rounded-card border border-base-border bg-base-surface divide-y divide-base-border overflow-hidden">
                 {listings.map((l, i) => (
                   <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">

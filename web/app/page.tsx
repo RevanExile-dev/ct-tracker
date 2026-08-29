@@ -6,6 +6,7 @@ import {
   fetchCards, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { formatCents, priceDeltaPct } from "@/lib/format";
 import CardTile from "@/components/CardTile";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
@@ -60,6 +61,18 @@ export default function Home() {
 
   const visible = filtered ? filtered.slice(0, visibleCount) : null;
 
+  const binderSummary = useMemo(() => {
+    if (!onlyBinder || !filtered) return null;
+    const priced = filtered.filter((c) => c.latest_price_cents !== null);
+    const totalCents = priced.reduce((sum, c) => sum + (c.latest_price_cents as number), 0);
+    const currency = priced[0]?.latest_price_currency ?? "EUR";
+    const drops = filtered.filter((c) => {
+      const d = priceDeltaPct(c.latest_price_cents, c.prev_price_cents);
+      return d !== null && d < 0;
+    }).length;
+    return { count: filtered.length, priced: priced.length, totalCents, currency, drops };
+  }, [onlyBinder, filtered]);
+
   function handleToggleRarity(r: string) {
     setSelectedRarities((prev) =>
       prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
@@ -80,23 +93,61 @@ export default function Home() {
     <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12">
       <SiteHeader lastSync={lastSync} />
 
-      <Toolbar
-        search={search}
-        onSearch={setSearch}
-        expansions={expansions}
-        expansionCode={expansionCode}
-        onExpansionChange={setExpansionCode}
-        rarities={rarities}
-        selectedRarities={selectedRarities}
-        onToggleRarity={handleToggleRarity}
-        languages={languages}
-        selectedLanguages={selectedLanguages}
-        onToggleLanguage={handleToggleLanguage}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
-        onlyBinder={onlyBinder}
-        onToggleBinder={() => setOnlyBinder((v) => !v)}
-      />
+      <div className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 py-3 bg-base-bg/85 backdrop-blur-sm">
+        <Toolbar
+          search={search}
+          onSearch={setSearch}
+          expansions={expansions}
+          expansionCode={expansionCode}
+          onExpansionChange={setExpansionCode}
+          rarities={rarities}
+          selectedRarities={selectedRarities}
+          onToggleRarity={handleToggleRarity}
+          languages={languages}
+          selectedLanguages={selectedLanguages}
+          onToggleLanguage={handleToggleLanguage}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          onlyBinder={onlyBinder}
+          onToggleBinder={() => setOnlyBinder((v) => !v)}
+        />
+      </div>
+
+      {binderSummary && (
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-card border border-base-border bg-base-surface px-5 py-4">
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
+              Carte nel binder
+            </div>
+            <div className="font-display text-xl font-bold text-ink-primary">
+              {binderSummary.count}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
+              Valore stimato
+            </div>
+            <div className="font-display text-xl font-bold text-accent-bright">
+              {formatCents(binderSummary.totalCents, binderSummary.currency)}
+              {binderSummary.priced < binderSummary.count && (
+                <span className="text-xs font-mono text-ink-faint ml-1.5">
+                  ({binderSummary.priced}/{binderSummary.count} con prezzo)
+                </span>
+              )}
+            </div>
+          </div>
+          {binderSummary.drops > 0 && (
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
+                In calo
+              </div>
+              <div className="font-display text-xl font-bold text-signal-down">
+                ▼ {binderSummary.drops}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 text-signal-down p-5 font-mono text-sm">
