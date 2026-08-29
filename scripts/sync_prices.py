@@ -13,9 +13,15 @@ Il sync completo puo' durare ore (rate limit di 1 richiesta/secondo sul
 marketplace): per non perdere il lavoro se il job viene interrotto, ogni
 CHECKPOINT_EVERY carte lo script salva e pusha il progresso via git.
 
+Salta di default le carte che hanno gia' uno snapshot di oggi (es. da un
+run precedente della stessa giornata interrotto o rilanciato): rende i
+run ripetuti nello stesso giorno molto piu' veloci invece di rifare tutto
+da capo. Usa --force per ignorare questo e aggiornare comunque tutto.
+
 Uso:
-  python scripts/sync_prices.py            # tutte le carte del catalogo locale
-  python scripts/sync_prices.py --only-daily  # solo daily_expansion_codes
+  python scripts/sync_prices.py               # tutte le carte del catalogo locale
+  python scripts/sync_prices.py --only-daily   # solo daily_expansion_codes
+  python scripts/sync_prices.py --force        # riaggiorna anche le carte gia' fatte oggi
 """
 import json
 import shutil
@@ -90,34 +96,54 @@ def checkpoint_commit(conn, label: str):
 
 def main():
     only_daily = "--only-daily" in sys.argv
+    force = "--force" in sys.argv
 
     db.init_db()
     client = CardTraderClient()
     conn = db.get_connection()
 
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    where = ["1=1"]
+    params: dict = {"today": today}
+
     if only_daily:
         config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         codes = config.get("daily_expansion_codes", [])
-        placeholders = ",".join("?" * len(codes))
-        blueprints = conn.execute(
-            f"SELECT id, name, expansion_name FROM blueprints "
-            f"WHERE expansion_code IN ({placeholders}) ORDER BY expansion_id, id",
-            codes,
-        ).fetchall()
-    else:
-        blueprints = conn.execute(
-            "SELECT id, name, expansion_name FROM blueprints ORDER BY expansion_id, id"
-        ).fetchall()
+        placeholders = ", ".join(f":code{i}" for i in range(len(codes)))
+        where.append(f"b.expansion_code IN ({placeholders})")
+        params.update({f"code{i}": c for i, c in enumerate(codes)})
+
+    if not force:
+        where.append(
+            "b.id NOT IN (SELECT blueprint_id FROM price_snapshots WHERE captured_at = :today)"
+        )
+
+    query = (
+        "SELECT b.id, b.name, b.expansion_name FROM blueprints b "
+        f"WHERE {' AND '.join(where)} ORDER BY b.expansion_id, b.id"
+    )
+    blueprints = conn.execute(query, params).fetchall()
 
     if not blueprints:
-        print("Nessuna carta nel catalogo locale. Lancia prima scripts/sync_catalog.py")
-        sys.exit(1)
+        base_where = [w for w in where if "price_snapshots" not in w]
+        base_query = (
+            "SELECT COUNT(*) FROM blueprints b "
+            f"WHERE {' AND '.join(base_where)}"
+        )
+        total_tracked = conn.execute(base_query, params).fetchone()[0]
+        if total_tracked == 0:
+            print("Nessuna carta nel catalogo locale. Lancia prima scripts/sync_catalog.py")
+            sys.exit(1)
+        print(f"Tutte le {total_tracked} carte tracciate hanno gia' un prezzo aggiornato "
+              f"oggi ({today}). Usa --force per rifare comunque il sync.")
+        return
 
     now = datetime.now(timezone.utc)
-    today = now.strftime("%Y-%m-%d")
     now_iso = now.isoformat()
 
-    print(f"Aggiorno i prezzi di {len(blueprints)} carte per il {today}...")
+    print(f"Aggiorno i prezzi di {len(blueprints)} carte per il {today}"
+          + ("" if force else " (gia' aggiornate oggi vengono saltate)") + "...")
 
     ok, errors = 0, 0
     for i, (bp_id, name, expansion_name) in enumerate(blueprints, start=1):
