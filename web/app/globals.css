@@ -131,6 +131,185 @@ body {
   }
 }
 
+/* --- Binder virtuale: simulazione di un raccoglitore con pagine che si
+   sfogliano in 3D. Prototipo non collegato dalla navigazione principale
+   (raggiungibile solo da /binder-book), vedi web/components/BinderBook.tsx
+   per la logica di flip. --- */
+.binder-stage {
+  perspective: 2400px;
+  perspective-origin: 50% 40%;
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 28px;
+}
+
+.binder-spread {
+  position: relative;
+  display: flex;
+  width: min(100%, 760px);
+  aspect-ratio: 16 / 10;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.55));
+}
+
+.binder-slot {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.binder-slot-left {
+  border-radius: 10px 2px 2px 10px;
+}
+.binder-slot-right {
+  border-radius: 2px 10px 10px 2px;
+}
+
+.binder-spine {
+  position: relative;
+  z-index: 5;
+  width: 22px;
+  flex: none;
+  background: linear-gradient(90deg, #0a0c0e, #1a1e23 45%, #0a0c0e);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
+}
+
+.binder-ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6b7076, #2a2d31 60%);
+  box-shadow: 0 0 0 2px #0a0c0e, inset 0 1px 1px rgba(255, 255, 255, 0.35);
+}
+
+.binder-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(160deg, #1c2027 0%, #14171b 55%, #1c2027 100%);
+  border: 1px solid #262b31;
+}
+
+.binder-page-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.binder-page-cover {
+  background: linear-gradient(135deg, #1fa79b 0%, #b34fc4 55%, #e8a13a 100%);
+}
+
+.binder-cover-shine {
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.22) 48%,
+    transparent 62%
+  );
+}
+
+.binder-page-sheet {
+  background-image:
+    linear-gradient(160deg, #1c2027 0%, #14171b 55%, #1c2027 100%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+}
+
+.binder-pocket {
+  position: relative;
+  display: block;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #0d0f12;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.binder-pocket-empty {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.02),
+    rgba(255, 255, 255, 0.02) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.binder-pocket-gloss {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    transparent 30%,
+    transparent 70%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  pointer-events: none;
+}
+
+.binder-flip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(50% - 11px);
+  z-index: 10;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: transform 0.72s cubic-bezier(0.45, 0.05, 0.15, 1);
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.4);
+}
+
+.binder-flip-right {
+  right: 0;
+  transform-origin: left center;
+}
+
+.binder-flip-left {
+  left: 0;
+  transform-origin: right center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .binder-flip {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .binder-stage {
+    perspective: 1200px;
+  }
+  .binder-spread {
+    aspect-ratio: 10 / 11;
+  }
+  .binder-spine {
+    width: 14px;
+  }
+  .binder-ring {
+    width: 9px;
+    height: 9px;
+  }
+  .binder-page-sheet .grid {
+    gap: 4px;
+    padding: 6px;
+  }
+}
+
 /* Scrollbar discreta, coerente con la palette scura */
 ::-webkit-scrollbar {
   width: 10px;
