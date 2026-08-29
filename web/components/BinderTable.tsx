@@ -20,8 +20,8 @@ export default function BinderTable({ cards }: { cards: CardRow[] }) {
         </thead>
         <tbody className="divide-y divide-base-border">
           {cards.map((card) => {
-            const priceCents = card.best_price_cents ?? card.latest_price_cents;
-            const priceCurrency = card.best_price_currency ?? card.latest_price_currency;
+            const priceCents = card.filtered_price_cents ?? card.best_price_cents ?? card.latest_price_cents;
+            const priceCurrency = card.filtered_price_currency ?? card.best_price_currency ?? card.latest_price_currency;
             const prevPriceCents = card.prev_best_price_cents ?? card.prev_price_cents;
             const delta = priceDeltaPct(priceCents, prevPriceCents);
             return (

@@ -86,6 +86,15 @@ export type CardRow = {
   best_language: string | null;
   best_can_sell_via_hub: number | null;
   prev_best_price_cents: number | null;
+  // Presenti SOLO quando fetchCards() ha almeno un filtro lingua/condizione/
+  // Zero attivo (vedi hasListingFilter): la piu' economica tra le inserzioni
+  // che rispettano TUTTI quei filtri insieme, cosi' il prezzo mostrato non
+  // "tradisce" il filtro scelto mostrando una lingua/condizione diversa.
+  filtered_price_cents?: number | null;
+  filtered_price_currency?: string | null;
+  filtered_condition?: string | null;
+  filtered_language?: string | null;
+  filtered_can_sell_via_hub?: number | null;
 };
 
 export type SortOption =
@@ -141,35 +150,46 @@ export async function fetchCards(opts: {
     opts.rarities.forEach((r, i) => (params[`$rarity${i}`] = r));
     where.push(`b.rarity IN (${placeholders})`);
   }
+  // Lingua/condizione/Zero filtrano tutti sulle stesse inserzioni salvate
+  // (price_listings, fino a 25 per carta): usiamo UN SOLO set di criteri
+  // condivisi cosi' che il prezzo mostrato (filteredPrice piu' sotto) sia
+  // sempre relativo a un'inserzione che li soddisfa TUTTI insieme, non a
+  // "la carta ha *una* inserzione IT e *un'altra* NM Zero, magari in
+  // giapponese" — bug reale: filtrando IT+NM+Zero uscivano carte con
+  // best_price_cents (calcolato senza filtri) in un'altra lingua.
+  const listingFilters: string[] = [];
   if (opts.languages && opts.languages.length > 0) {
-    // languages_available elenca TUTTE le lingue con almeno un'inserzione
-    // attiva (formato ",en,it,jp,"), non solo quella della piu' economica:
-    // una carta va mostrata anche se e' disponibile in quella lingua ma non
-    // e' l'offerta piu' economica.
-    const conds = opts.languages.map((_, i) => `lp.languages_available LIKE $lang${i}`);
-    opts.languages.forEach((l, i) => (params[`$lang${i}`] = `%,${l},%`));
-    where.push(`(${conds.join(" OR ")})`);
+    const placeholders = opts.languages.map((_, i) => `$lflang${i}`).join(", ");
+    opts.languages.forEach((l, i) => (params[`$lflang${i}`] = l));
+    listingFilters.push(`pl.language IN (${placeholders})`);
   }
-  if ((opts.conditions && opts.conditions.length > 0) || opts.onlyZero) {
-    // Solo le carte che hanno ALMENO UNA inserzione salvata (fino a 25, vedi
-    // replace_price_listings) che rispetta i criteri scelti — non cambia il
-    // prezzo mostrato (resta best_price_cents), decide solo quali carte
-    // compaiono nella lista.
-    const sub: string[] = ["pl.blueprint_id = b.id"];
-    if (opts.conditions && opts.conditions.length > 0) {
-      const placeholders = opts.conditions.map((_, i) => `$cond${i}`).join(", ");
-      opts.conditions.forEach((c, i) => (params[`$cond${i}`] = c));
-      sub.push(`pl.condition IN (${placeholders})`);
-    }
-    if (opts.onlyZero) sub.push("pl.can_sell_via_hub = 1");
-    where.push(`EXISTS (SELECT 1 FROM price_listings pl WHERE ${sub.join(" AND ")})`);
+  if (opts.conditions && opts.conditions.length > 0) {
+    const placeholders = opts.conditions.map((_, i) => `$lfcond${i}`).join(", ");
+    opts.conditions.forEach((c, i) => (params[`$lfcond${i}`] = c));
+    listingFilters.push(`pl.condition IN (${placeholders})`);
+  }
+  if (opts.onlyZero) listingFilters.push("pl.can_sell_via_hub = 1");
+
+  const hasListingFilter = listingFilters.length > 0;
+  if (hasListingFilter) {
+    // Solo le carte che hanno ALMENO UNA inserzione che rispetta TUTTI i
+    // criteri insieme (non una per criterio).
+    where.push(
+      `b.id IN (SELECT pl.blueprint_id FROM price_listings pl WHERE ${listingFilters.join(" AND ")})`
+    );
   }
 
   // best_price_cents (Near Mint + CardTrader Zero quando esiste) e' il
   // prezzo "vero" da mostrare/ordinare; COALESCE su latest_price_cents e'
   // solo una rete di sicurezza per le carte non ancora ripassate dal sync
-  // che popola best_price_cents.
-  const priceExpr = "COALESCE(best_price_cents, latest_price_cents)";
+  // che popola best_price_cents. Se pero' e' attivo un filtro lingua/
+  // condizione/Zero, il prezzo mostrato deve venire da un'inserzione che
+  // rispetta QUEL filtro (filtered_price_cents, dal LEFT JOIN qui sotto),
+  // altrimenti si rischia di filtrare per IT e mostrare comunque il prezzo
+  // migliore in giapponese perche' quello e' il piu' economico assoluto.
+  const priceExpr = hasListingFilter
+    ? "COALESCE(filtered_price_cents, best_price_cents, latest_price_cents)"
+    : "COALESCE(best_price_cents, latest_price_cents)";
   const prevPriceExpr = "COALESCE(prev_best_price_cents, prev_price_cents)";
 
   let orderBy = "b.expansion_id DESC, b.name ASC";
@@ -192,10 +212,29 @@ export async function fetchCards(opts: {
     `;
   }
 
+  // Inserzione piu' economica tra quelle che rispettano TUTTI i filtri
+  // lingua/condizione/Zero insieme (ROW_NUMBER + rn=1 = la piu' economica
+  // per carta), solo quando almeno uno di questi filtri e' attivo — cosi'
+  // il percorso senza filtri resta leggero come prima.
+  const filteredJoin = hasListingFilter
+    ? `LEFT JOIN (
+         SELECT blueprint_id, price_cents, price_currency, condition, language, can_sell_via_hub,
+                ROW_NUMBER() OVER (PARTITION BY blueprint_id ORDER BY price_cents ASC) AS rn
+         FROM price_listings pl
+         WHERE ${listingFilters.join(" AND ")}
+       ) fl ON fl.blueprint_id = b.id AND fl.rn = 1`
+    : "";
+  const filteredSelect = hasListingFilter
+    ? `, fl.price_cents AS filtered_price_cents, fl.price_currency AS filtered_price_currency,
+       fl.condition AS filtered_condition, fl.language AS filtered_language,
+       fl.can_sell_via_hub AS filtered_can_sell_via_hub`
+    : "";
+
   const sql = `
-    SELECT ${CARD_ROW_SELECT}
+    SELECT ${CARD_ROW_SELECT}${filteredSelect}
     FROM blueprints b
     LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
+    ${filteredJoin}
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY ${orderBy}
   `;
