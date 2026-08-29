@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
@@ -29,6 +29,22 @@ export default function CardDetailPage() {
     fetchBestListings(id).then(setListings);
     setInBinder(getBinderIds().has(id));
   }, [id]);
+
+  // Prezzo piu' basso per lingua tra le migliori inserzioni gia' scaricate
+  // (fetchBestListings): confronto "a colpo d'occhio", non un'analisi
+  // esaustiva di ogni lingua sul mercato (solo le top 5 piu' economiche in
+  // assoluto potrebbero non coprire tutte le lingue disponibili). Va prima
+  // dei return condizionali qui sotto: gli hook non possono essere
+  // condizionali.
+  const cheapestByLanguage = useMemo(() => {
+    const byLang = new Map<string, Listing>();
+    for (const l of listings) {
+      if (!l.language) continue;
+      const current = byLang.get(l.language);
+      if (!current || l.price_cents < current.price_cents) byLang.set(l.language, l);
+    }
+    return Array.from(byLang.values()).sort((a, b) => a.price_cents - b.price_cents);
+  }, [listings]);
 
   if (card === undefined) {
     return (
@@ -147,6 +163,30 @@ export default function CardDetailPage() {
             </h2>
             <PriceChart points={history} currency={currency} />
           </div>
+
+          {cheapestByLanguage.length > 1 && (
+            <div className="mt-8">
+              <h2 className="font-display font-medium text-ink-primary mb-3">
+                Confronto tra lingue
+              </h2>
+              <p className="text-xs text-ink-faint mb-3">
+                Prezzo più basso per lingua tra le migliori inserzioni.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {cheapestByLanguage.map((l) => (
+                  <div
+                    key={l.language}
+                    className="flex items-center gap-2 rounded-card border border-base-border bg-base-surface px-3 py-2"
+                  >
+                    <span className="text-lg leading-none">{languageFlag(l.language)}</span>
+                    <span className="font-mono text-sm text-ink-primary">
+                      {formatCents(l.price_cents, l.price_currency ?? currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {listings.length > 0 && (
             <div className="mt-8">
