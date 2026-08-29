@@ -12,8 +12,8 @@ export default function BinderTable({ cards }: { cards: CardRow[] }) {
         <thead>
           <tr className="border-b border-base-border text-left text-[11px] font-mono uppercase tracking-wider text-ink-faint">
             <th className="px-4 py-3 font-normal">Carta</th>
-            <th className="px-4 py-3 font-normal">Espansione</th>
-            <th className="px-4 py-3 font-normal">Rarità</th>
+            <th className="hidden sm:table-cell px-4 py-3 font-normal">Espansione</th>
+            <th className="hidden sm:table-cell px-4 py-3 font-normal">Rarità</th>
             <th className="px-4 py-3 font-normal text-right">Prezzo</th>
             <th className="px-4 py-3 font-normal text-right">Variazione</th>
           </tr>
@@ -33,11 +33,17 @@ export default function BinderTable({ cards }: { cards: CardRow[] }) {
                   {card.version && (
                     <span className="text-ink-faint text-xs ml-1.5">{card.version}</span>
                   )}
+                  {/* Su mobile le colonne espansione/rarita' sono nascoste per
+                      non forzare lo scroll orizzontale: qui sotto in piccolo. */}
+                  <div className="sm:hidden text-ink-faint text-xs mt-0.5">
+                    {card.expansion_name}
+                    {card.rarity ? ` · ${card.rarity}` : ""}
+                  </div>
                 </td>
-                <td className="px-4 py-3 text-ink-muted font-mono text-xs">
+                <td className="hidden sm:table-cell px-4 py-3 text-ink-muted font-mono text-xs">
                   {card.expansion_name}
                 </td>
-                <td className="px-4 py-3 text-ink-muted font-mono text-xs">
+                <td className="hidden sm:table-cell px-4 py-3 text-ink-muted font-mono text-xs">
                   {card.rarity ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-ink-primary">
