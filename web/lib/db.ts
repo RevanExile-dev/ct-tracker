@@ -297,6 +297,20 @@ export async function fetchExpansions(): Promise<ExpansionInfo[]> {
   return rows;
 }
 
+/** Statistiche generali del catalogo (carte tracciate, quante hanno un
+ * prezzo noto) — solo un paio di COUNT(*), niente lettura riga-per-riga. */
+export async function fetchCatalogStats(): Promise<{ totalCards: number; pricedCards: number }> {
+  const db = await getDb();
+  const totalRow = db.exec("SELECT COUNT(*) FROM blueprints")[0];
+  const pricedRow = db.exec(
+    "SELECT COUNT(*) FROM latest_prices WHERE min_price_cents IS NOT NULL"
+  )[0];
+  return {
+    totalCards: (totalRow?.values[0][0] as number) ?? 0,
+    pricedCards: (pricedRow?.values[0][0] as number) ?? 0,
+  };
+}
+
 export async function fetchRarities(): Promise<string[]> {
   const db = await getDb();
   const stmt = db.prepare(

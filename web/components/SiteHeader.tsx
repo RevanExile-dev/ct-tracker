@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatDateLong } from "@/lib/format";
+import CountUp from "./CountUp";
 
 /** compact: usato nelle pagine secondarie (carte in movimento, dettaglio
  * carta) dove il sottotitolo lungo e' solo rumore ripetuto — qui si vede
@@ -11,9 +12,11 @@ import { formatDateLong } from "@/lib/format";
 export default function SiteHeader({
   lastSync,
   compact = false,
+  totalCards,
 }: {
   lastSync?: string;
   compact?: boolean;
+  totalCards?: number;
 }) {
   const pathname = usePathname();
   const onMovers = pathname === "/movers";
@@ -39,8 +42,16 @@ export default function SiteHeader({
           {!compact && (
             <>
               <p className="text-ink-muted mt-2 max-w-xl">
-                Catalogo, prezzi e andamento storico delle carte Pokémon TCG tracciate — dati
-                aggiornati automaticamente ogni giorno da CardTrader.
+                Catalogo, prezzi e andamento storico di{" "}
+                {totalCards ? (
+                  <span className="text-ink-primary font-medium">
+                    <CountUp value={totalCards} format={(n) => Math.round(n).toLocaleString("it-IT")} />
+                    {" "}carte
+                  </span>
+                ) : (
+                  "carte"
+                )}{" "}
+                Pokémon TCG tracciate — dati aggiornati automaticamente ogni giorno da CardTrader.
               </p>
               {lastSync && (
                 <p className="text-xs font-mono text-ink-faint mt-3">

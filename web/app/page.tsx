@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, ExpansionInfo, SortOption,
-  fetchCards, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
+  fetchCards, fetchCatalogStats, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { formatCents, priceDeltaPct } from "@/lib/format";
@@ -30,6 +30,7 @@ function HomeContent() {
   const [rarities, setRarities] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<string | undefined>();
+  const [totalCards, setTotalCards] = useState<number | undefined>();
   const [error, setError] = useState<string | null>(null);
 
   // Lo stato dei filtri e' inizializzato dalla query string cosi' che
@@ -75,6 +76,9 @@ function HomeContent() {
     fetchLanguages().then(setLanguages).catch(() => {});
     fetchMeta()
       .then((m) => setLastSync(m["last_price_sync"]))
+      .catch(() => {});
+    fetchCatalogStats()
+      .then((s) => setTotalCards(s.totalCards))
       .catch(() => {});
   }, []);
 
@@ -143,7 +147,7 @@ function HomeContent() {
 
   return (
     <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12">
-      <SiteHeader lastSync={lastSync} />
+      <SiteHeader lastSync={lastSync} totalCards={totalCards} />
 
       <div className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 py-3 bg-base-bg/85 backdrop-blur-sm">
         <Toolbar
