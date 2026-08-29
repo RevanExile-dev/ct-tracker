@@ -58,44 +58,7 @@ export function getHistoryDb(): Promise<Database> {
   return historyDbPromise;
 }
 
-/**
- * CardTrader non fornisce una data di uscita per le espansioni: questo e' un
- * ordine APPROSSIMATO per era (Black & White -> Mega Evolution), dedotto dal
- * prefisso del code. All'interno della stessa era l'ordine non e' garantito
- * essere cronologico esatto.
- */
-export function eraRank(code: string): number {
-  const c = code.toLowerCase();
-  const BW = new Set([
-    "blw", "epo", "nvi", "nxd", "dex", "drx", "bcr", "pls", "plf", "plb",
-    "ltr", "dcr", "bwbsp", "bwpr",
-  ]);
-  const XY = new Set([
-    "xy-en", "flf", "ffi", "phf", "prc", "ros", "aor", "bkt", "gen", "bkp",
-    "fco", "sts", "evo", "xybsp", "pxy",
-  ]);
-  const SM = new Set([
-    "sum", "gri", "bus", "slg", "cinv", "upr", "fli", "ces", "drm", "lot",
-    "teu", "det", "unb", "hif", "unm", "cec", "smbs", "sm-p",
-  ]);
-  const SWSH = new Set([
-    "ssh", "rcl", "daa", "cpa", "viv", "shf", "bst", "cre", "evs", "c25",
-    "fst", "brs", "astr", "pkmgo", "lorg", "sit", "crz", "swshbs", "s-p",
-  ]);
-  const SV = new Set([
-    "svi", "pal", "obf", "mew", "par", "paf", "tef", "twm", "sfa", "scr",
-    "ssp", "pre", "jtg", "dri", "blk", "wht", "svpromo", "promosv",
-  ]);
-  const MEGA = new Set(["meg", "mep", "pfl", "30c", "30th-ch", "asc"]);
-
-  if (c.startsWith("bw") || BW.has(c)) return 0;
-  if (c.startsWith("xy") || XY.has(c)) return 1;
-  if (c.startsWith("sm") || SM.has(c)) return 2;
-  if (c.startsWith("sv") || SV.has(c)) return 4; // prima di "s\d" cosi' non collide con SWSH
-  if (/^s\d/.test(c) || SWSH.has(c)) return 3;
-  if (/^m\d/.test(c) || MEGA.has(c)) return 5;
-  return 6; // sconosciuto: in fondo
-}
+import { compareExpansions } from "./expansions";
 
 export type CardRow = {
   id: number;
@@ -156,6 +119,8 @@ export async function fetchCards(opts: {
   expansionCode?: string;
   rarities?: string[];
   languages?: string[];
+  conditions?: string[];
+  onlyZero?: boolean;
   sortBy?: SortOption;
 }): Promise<CardRow[]> {
   const db = await getDb();
@@ -184,6 +149,20 @@ export async function fetchCards(opts: {
     const conds = opts.languages.map((_, i) => `lp.languages_available LIKE $lang${i}`);
     opts.languages.forEach((l, i) => (params[`$lang${i}`] = `%,${l},%`));
     where.push(`(${conds.join(" OR ")})`);
+  }
+  if ((opts.conditions && opts.conditions.length > 0) || opts.onlyZero) {
+    // Solo le carte che hanno ALMENO UNA inserzione salvata (fino a 25, vedi
+    // replace_price_listings) che rispetta i criteri scelti — non cambia il
+    // prezzo mostrato (resta best_price_cents), decide solo quali carte
+    // compaiono nella lista.
+    const sub: string[] = ["pl.blueprint_id = b.id"];
+    if (opts.conditions && opts.conditions.length > 0) {
+      const placeholders = opts.conditions.map((_, i) => `$cond${i}`).join(", ");
+      opts.conditions.forEach((c, i) => (params[`$cond${i}`] = c));
+      sub.push(`pl.condition IN (${placeholders})`);
+    }
+    if (opts.onlyZero) sub.push("pl.can_sell_via_hub = 1");
+    where.push(`EXISTS (SELECT 1 FROM price_listings pl WHERE ${sub.join(" AND ")})`);
   }
 
   // best_price_cents (Near Mint + CardTrader Zero quando esiste) e' il
@@ -319,8 +298,9 @@ export async function fetchExpansions(): Promise<ExpansionInfo[]> {
   const rows: ExpansionInfo[] = [];
   while (stmt.step()) rows.push(stmt.getAsObject() as unknown as ExpansionInfo);
   stmt.free();
-  // Ordine approssimato per era (vedi eraRank): CardTrader non da' una data reale.
-  rows.sort((a, b) => eraRank(a.code) - eraRank(b.code) || a.name.localeCompare(b.name));
+  // Piu' recenti prima quando conosciamo la data reale (vedi expansions.ts);
+  // fallback sull'ordine approssimato per era per le altre.
+  rows.sort(compareExpansions);
   return rows;
 }
 
@@ -336,6 +316,23 @@ export async function fetchCatalogStats(): Promise<{ totalCards: number; pricedC
     totalCards: (totalRow?.values[0][0] as number) ?? 0,
     pricedCards: (pricedRow?.values[0][0] as number) ?? 0,
   };
+}
+
+/** Condizioni distinte tra le inserzioni salvate, ordinate dalla migliore
+ * alla peggiore (stessa scala usata da ConditionBadge). */
+export async function fetchConditions(): Promise<string[]> {
+  const db = await getDb();
+  const order = ["Near Mint", "Slightly Played", "Moderately Played", "Played", "Poor"];
+  const stmt = db.prepare(
+    "SELECT DISTINCT condition FROM price_listings WHERE condition IS NOT NULL AND condition != ''"
+  );
+  const rows: string[] = [];
+  while (stmt.step()) rows.push((stmt.getAsObject() as any).condition);
+  stmt.free();
+  return rows.sort((a, b) => {
+    const ra = order.indexOf(a), rb = order.indexOf(b);
+    return (ra === -1 ? order.length : ra) - (rb === -1 ? order.length : rb);
+  });
 }
 
 export async function fetchRarities(): Promise<string[]> {

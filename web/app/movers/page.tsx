@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CardRow, fetchCards, fetchLanguages } from "@/lib/db";
+import { CardRow, fetchCards, fetchConditions, fetchLanguages, fetchRarities } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { languageFlag, languageLabel, priceDeltaPct } from "@/lib/format";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
+import ConditionBadge from "@/components/ConditionBadge";
 
 const MOVERS_LIMIT = 24;
 
@@ -51,21 +52,32 @@ export default function MoversPage() {
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [languages, setLanguages] = useState<string[]>([]);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
+  const [rarities, setRarities] = useState<string[]>([]);
+  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
+  const [conditions, setConditions] = useState<string[]>([]);
+  const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
+  const [onlyZero, setOnlyZero] = useState(false);
 
   useEffect(() => {
     setBinderIds(getBinderIds());
     fetchLanguages().then(setLanguages).catch(() => {});
+    fetchRarities().then(setRarities).catch(() => {});
+    fetchConditions().then(setConditions).catch(() => {});
   }, []);
 
   useEffect(() => {
     setError(null);
-    fetchCards({ sortBy: "rise_first", languages: selectedLanguages })
+    const filters = {
+      languages: selectedLanguages, rarities: selectedRarities,
+      conditions: selectedConditions, onlyZero,
+    };
+    fetchCards({ sortBy: "rise_first", ...filters })
       .then((cards) => setRises(withRealDelta(cards).slice(0, MOVERS_LIMIT)))
       .catch((e) => setError(String(e.message ?? e)));
-    fetchCards({ sortBy: "drop_first", languages: selectedLanguages })
+    fetchCards({ sortBy: "drop_first", ...filters })
       .then((cards) => setDrops(withRealDelta(cards).slice(0, MOVERS_LIMIT)))
       .catch((e) => setError(String(e.message ?? e)));
-  }, [selectedLanguages]);
+  }, [selectedLanguages, selectedRarities, selectedConditions, onlyZero]);
 
   function handleToggleBinderCard(id: number) {
     setBinderIds(new Set(toggleBinder(id)));
@@ -75,6 +87,29 @@ export default function MoversPage() {
     setSelectedLanguages((prev) =>
       prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]
     );
+  }
+
+  function handleToggleRarity(r: string) {
+    setSelectedRarities((prev) =>
+      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
+  }
+
+  function handleToggleCondition(c: string) {
+    setSelectedConditions((prev) =>
+      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
+    );
+  }
+
+  const hasActiveFilters = Boolean(
+    selectedLanguages.length || selectedRarities.length || selectedConditions.length || onlyZero
+  );
+
+  function resetAllFilters() {
+    setSelectedLanguages([]);
+    setSelectedRarities([]);
+    setSelectedConditions([]);
+    setOnlyZero(false);
   }
 
   return (
@@ -94,7 +129,13 @@ export default function MoversPage() {
         precedente.
       </p>
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-row flex-wrap items-center gap-4 sm:gap-6">
+        <FilterDropdown
+          label="Filtra per rarità"
+          options={rarities}
+          selected={selectedRarities}
+          onToggle={handleToggleRarity}
+        />
         <FilterDropdown
           label="Filtra per lingua"
           options={languages}
@@ -102,6 +143,33 @@ export default function MoversPage() {
           onToggle={handleToggleLanguage}
           renderOption={(l) => `${languageFlag(l)} ${languageLabel(l)}`}
         />
+        <FilterDropdown
+          label="Filtra per condizione"
+          options={conditions}
+          selected={selectedConditions}
+          onToggle={handleToggleCondition}
+          renderOption={(c) => <ConditionBadge condition={c} />}
+        />
+        <button
+          type="button"
+          onClick={() => setOnlyZero((v) => !v)}
+          className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+            onlyZero
+              ? "bg-accent/10 border-accent/60 text-accent-bright"
+              : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+          }`}
+        >
+          ⚡ Solo CardTrader Zero
+        </button>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetAllFilters}
+            className="text-xs font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
+          >
+            ✕ Reset filtri
+          </button>
+        )}
       </div>
 
       {error && (

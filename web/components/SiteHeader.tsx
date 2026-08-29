@@ -13,20 +13,34 @@ export default function SiteHeader({
   lastSync,
   compact = false,
   totalCards,
+  onLogoClick,
 }: {
   lastSync?: string;
   compact?: boolean;
   totalCards?: number;
+  /** Se presente ed e' gia' sulla home, azzera i filtri invece di affidarsi
+   * alla navigazione: un <Link href="/"> da solo e' un no-op quando si e'
+   * gia' su "/" (nessun remount, i filtri vivono in useState locale). */
+  onLogoClick?: () => void;
 }) {
   const pathname = usePathname();
   const onMovers = pathname === "/movers";
+  const onHome = pathname === "/";
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-baseline gap-3 flex-wrap">
-            <Link href="/">
+            <Link
+              href="/"
+              onClick={(e) => {
+                if (onHome && onLogoClick) {
+                  e.preventDefault();
+                  onLogoClick();
+                }
+              }}
+            >
               <h1
                 className={`font-display font-bold text-holo ${
                   compact ? "text-2xl" : "text-3xl sm:text-4xl"

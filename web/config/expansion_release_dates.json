@@ -1,0 +1,23 @@
+{
+  "_readme": "Date di uscita reali (EN salvo dove indicato), verificate via ricerca web perche' CardTrader non fornisce questo dato nella sua API (solo id/game_id/code/name per le espansioni). Chiave = expansion_code (minuscolo) come in blueprints.expansion_code. Solo le espansioni verificate con fonte affidabile sono presenti: le altre restano fuori e usano il fallback per-era in web/lib/expansions.ts (eraRank), niente date indovinate.",
+  "svi": "2023-03-31",
+  "pal": "2023-06-09",
+  "obf": "2023-08-11",
+  "mew": "2023-09-22",
+  "par": "2023-11-03",
+  "paf": "2024-01-26",
+  "tef": "2024-03-22",
+  "twm": "2024-05-24",
+  "sfa": "2024-08-02",
+  "scr": "2024-09-13",
+  "ssp": "2024-11-08",
+  "pre": "2025-01-17",
+  "jtg": "2025-03-28",
+  "dri": "2025-05-30",
+  "blk": "2025-07-18",
+  "wht": "2025-07-18",
+  "asc": "2026-01-30",
+  "m2a": "2026-01-30",
+  "30c": "2026-09-16",
+  "m6": "2026-11-06"
+}

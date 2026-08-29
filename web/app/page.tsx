@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, ExpansionInfo, SortOption,
-  fetchCards, fetchCatalogStats, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
+  fetchCards, fetchCatalogStats, fetchConditions, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { formatCents, priceDeltaPct } from "@/lib/format";
@@ -29,6 +29,7 @@ function HomeContent() {
   const [expansions, setExpansions] = useState<ExpansionInfo[]>([]);
   const [rarities, setRarities] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
+  const [conditions, setConditions] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<string | undefined>();
   const [totalCards, setTotalCards] = useState<number | undefined>();
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +45,10 @@ function HomeContent() {
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() =>
     splitCsv(searchParams.get("lang"))
   );
+  const [selectedConditions, setSelectedConditions] = useState<string[]>(() =>
+    splitCsv(searchParams.get("cond"))
+  );
+  const [onlyZero, setOnlyZero] = useState(() => searchParams.get("zero") === "1");
   const [sortBy, setSortBy] = useState<SortOption>(
     () => (searchParams.get("sort") as SortOption) || "expansion"
   );
@@ -62,18 +67,21 @@ function HomeContent() {
     if (expansionCode) params.set("exp", expansionCode);
     if (selectedRarities.length) params.set("rarity", selectedRarities.join(","));
     if (selectedLanguages.length) params.set("lang", selectedLanguages.join(","));
+    if (selectedConditions.length) params.set("cond", selectedConditions.join(","));
+    if (onlyZero) params.set("zero", "1");
     if (sortBy !== "expansion") params.set("sort", sortBy);
     if (onlyBinder) params.set("binder", "1");
     if (viewMode === "table") params.set("view", "table");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [search, expansionCode, selectedRarities, selectedLanguages, sortBy, onlyBinder, viewMode, pathname, router]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, onlyBinder, viewMode, pathname, router]);
 
   useEffect(() => {
     setBinderIds(getBinderIds());
     fetchExpansions().then(setExpansions).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
     fetchLanguages().then(setLanguages).catch(() => {});
+    fetchConditions().then(setConditions).catch(() => {});
     fetchMeta()
       .then((m) => setLastSync(m["last_price_sync"]))
       .catch(() => {});
@@ -83,17 +91,21 @@ function HomeContent() {
   }, []);
 
   // Ricarica le carte quando cambiano i filtri lato-query (ricerca, espansione,
-  // rarità, lingua, ordinamento): sono gestiti in SQL, non serve rifiltrare in JS.
+  // rarità, lingua, condizione, ordinamento): sono gestiti in SQL, non serve
+  // rifiltrare in JS.
   useEffect(() => {
     setError(null);
-    fetchCards({ search, expansionCode, rarities: selectedRarities, languages: selectedLanguages, sortBy })
+    fetchCards({
+      search, expansionCode, rarities: selectedRarities, languages: selectedLanguages,
+      conditions: selectedConditions, onlyZero, sortBy,
+    })
       .then(setCards)
       .catch((e) => setError(String(e.message ?? e)));
-  }, [search, expansionCode, selectedRarities, selectedLanguages, sortBy]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [search, expansionCode, selectedRarities, selectedLanguages, sortBy, onlyBinder]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, onlyBinder]);
 
   const filtered = useMemo(() => {
     if (!cards) return null;
@@ -142,13 +154,39 @@ function HomeContent() {
     );
   }
 
+  function handleToggleCondition(c: string) {
+    setSelectedConditions((prev) =>
+      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
+    );
+  }
+
   function handleToggleBinderCard(id: number) {
     setBinderIds(new Set(toggleBinder(id)));
   }
 
+  const hasActiveFilters = Boolean(
+    search || expansionCode || selectedRarities.length || selectedLanguages.length ||
+      selectedConditions.length || onlyZero || sortBy !== "expansion" || onlyBinder
+  );
+
+  function resetAllFilters() {
+    setSearch("");
+    setExpansionCode("");
+    setSelectedRarities([]);
+    setSelectedLanguages([]);
+    setSelectedConditions([]);
+    setOnlyZero(false);
+    setSortBy("expansion");
+    setOnlyBinder(false);
+  }
+
   return (
     <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12">
-      <SiteHeader lastSync={lastSync} totalCards={totalCards} />
+      <SiteHeader
+        lastSync={lastSync}
+        totalCards={totalCards}
+        onLogoClick={hasActiveFilters ? resetAllFilters : undefined}
+      />
 
       <div className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 py-3 bg-base-bg/85 backdrop-blur-sm">
         <Toolbar
@@ -163,10 +201,17 @@ function HomeContent() {
           languages={languages}
           selectedLanguages={selectedLanguages}
           onToggleLanguage={handleToggleLanguage}
+          conditions={conditions}
+          selectedConditions={selectedConditions}
+          onToggleCondition={handleToggleCondition}
+          onlyZero={onlyZero}
+          onToggleOnlyZero={() => setOnlyZero((v) => !v)}
           sortBy={sortBy}
           onSortChange={setSortBy}
           onlyBinder={onlyBinder}
           onToggleBinder={() => setOnlyBinder((v) => !v)}
+          hasActiveFilters={hasActiveFilters}
+          onResetAll={resetAllFilters}
         />
       </div>
 
