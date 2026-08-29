@@ -10,7 +10,7 @@ export default function SiteHeader({ lastSync }: { lastSync?: string }) {
         <div>
           <div className="flex items-baseline gap-3 flex-wrap">
             <Link href="/">
-              <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink-primary">
+              <h1 className="font-display text-3xl sm:text-4xl font-bold text-holo">
                 Binder
               </h1>
             </Link>
@@ -31,7 +31,7 @@ export default function SiteHeader({ lastSync }: { lastSync?: string }) {
 
         <Link
           href="/movers"
-          className="whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+          className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
         >
           📈 Carte in movimento
         </Link>

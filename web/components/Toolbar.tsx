@@ -77,7 +77,7 @@ export default function Toolbar({
 
         <button
           onClick={onToggleBinder}
-          className={`whitespace-nowrap text-sm px-4 py-2.5 rounded-card border transition-colors active:scale-95 ${
+          className={`btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border transition-colors active:scale-95 ${
             onlyBinder
               ? "bg-accent/10 border-accent/60 text-accent-bright"
               : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"

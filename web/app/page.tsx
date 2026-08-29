@@ -11,6 +11,7 @@ import CardTile from "@/components/CardTile";
 import BinderTable from "@/components/BinderTable";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
+import CountUp from "@/components/CountUp";
 
 const PAGE_SIZE = 60;
 
@@ -140,7 +141,11 @@ export default function Home() {
                 expansionSummary.avgPct >= 0 ? "text-signal-up" : "text-signal-down"
               }`}
             >
-              {expansionSummary.avgPct >= 0 ? "▲" : "▼"} {Math.abs(expansionSummary.avgPct).toFixed(1)}%
+              {expansionSummary.avgPct >= 0 ? "▲" : "▼"}{" "}
+              <CountUp
+                value={Math.abs(expansionSummary.avgPct)}
+                format={(n) => `${n.toFixed(1)}%`}
+              />
               <span className="text-xs font-mono text-ink-faint ml-1.5">
                 (media su {expansionSummary.sampleSize}/{expansionSummary.totalCards} carte)
               </span>
@@ -156,7 +161,7 @@ export default function Home() {
               Carte nel binder
             </div>
             <div className="font-display text-xl font-bold text-ink-primary">
-              {binderSummary.count}
+              <CountUp value={binderSummary.count} />
             </div>
           </div>
           <div>
@@ -164,7 +169,10 @@ export default function Home() {
               Valore stimato
             </div>
             <div className="font-display text-xl font-bold text-accent-bright">
-              {formatCents(binderSummary.totalCents, binderSummary.currency)}
+              <CountUp
+                value={binderSummary.totalCents}
+                format={(n) => formatCents(Math.round(n), binderSummary.currency)}
+              />
               {binderSummary.priced < binderSummary.count && (
                 <span className="text-xs font-mono text-ink-faint ml-1.5">
                   ({binderSummary.priced}/{binderSummary.count} con prezzo)
@@ -273,7 +281,7 @@ export default function Home() {
             <div className="flex justify-center mt-8">
               <button
                 onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
-                className="text-sm px-6 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+                className="btn-lift text-sm px-6 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
               >
                 Mostra altre {Math.min(PAGE_SIZE, filtered.length - visibleCount)} carte
                 <span className="text-ink-faint"> ({visibleCount}/{filtered.length})</span>

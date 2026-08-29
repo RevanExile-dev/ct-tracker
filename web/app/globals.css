@@ -7,12 +7,68 @@
 }
 
 body {
+  position: relative;
   background-color: #0d0f12;
-  background-image:
-    radial-gradient(circle at 15% 0%, rgba(45, 216, 201, 0.06), transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(232, 95, 209, 0.05), transparent 45%);
-  background-attachment: fixed;
   color: #f5f3ee;
+  overflow-x: hidden;
+}
+
+/* --- Sfondo "aurora": due bagliori sfocati che derivano lentamente,
+   sostituiscono il vecchio radial-gradient statico con qualcosa di vivo
+   ma discreto (bassissima opacita', dietro tutto). --- */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  width: 62vmax;
+  height: 62vmax;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+body::before {
+  top: -22vmax;
+  left: -12vmax;
+  background: radial-gradient(circle, rgba(45, 216, 201, 0.16), transparent 70%);
+}
+body::after {
+  bottom: -26vmax;
+  right: -16vmax;
+  background: radial-gradient(circle, rgba(232, 95, 209, 0.13), transparent 70%);
+  animation-delay: -13s;
+  animation-duration: 32s;
+}
+
+@keyframes aurora-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(6vmax, 4vmax) scale(1.08); }
+  100% { transform: translate(-4vmax, 5vmax) scale(0.95); }
+}
+
+/* --- Testo con la lamina olografica del brand, per titoli in evidenza --- */
+.text-holo {
+  background: linear-gradient(115deg, #2dd8c9 0%, #e85fd1 45%, #f4c15c 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: holo-shimmer 7s ease-in-out infinite;
+}
+
+@keyframes holo-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* --- Leggero sollevamento al passaggio del mouse per i controlli principali --- */
+.btn-lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.btn-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.5);
 }
 
 /* --- Effetto firma: lamina olografica che segue il mouse sulla card --- */
@@ -126,8 +182,14 @@ body {
   .card-enter,
   .skeleton,
   .price-line,
-  .pop-on-toggle {
+  .pop-on-toggle,
+  .text-holo,
+  body::before,
+  body::after {
     animation: none !important;
+  }
+  .btn-lift:hover {
+    transform: none;
   }
 }
 
