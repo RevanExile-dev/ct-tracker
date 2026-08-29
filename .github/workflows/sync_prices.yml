@@ -4,7 +4,12 @@ on:
   schedule:
     # Ogni giorno alle 06:00 UTC (~08:00 in Italia in orario invernale, 07:00-08:00 estivo)
     - cron: "0 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rifai il sync anche per le carte gia' aggiornate oggi (es. per ripopolare un campo nuovo dopo una modifica di schema)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -35,7 +40,7 @@ jobs:
       - name: Aggiorna prezzi (solo espansioni recenti)
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
-        run: python scripts/sync_prices.py --only-daily
+        run: python scripts/sync_prices.py --only-daily ${{ inputs.force && '--force' || '' }}
 
       - name: Notifica Telegram (cali di prezzo e watchlist)
         env:
