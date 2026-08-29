@@ -44,6 +44,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "config" / "tracked_sets.json"
 WEB_DATA_DIR = REPO_ROOT / "web" / "public" / "data"
 CHECKPOINT_EVERY = 300  # ~5 minuti al ritmo di 1 richiesta/secondo
+# Se troppe carte di fila falliscono (es. CardTrader inizia a rispondere 429
+# su ogni richiesta perche' il giorno ha gia' visto troppo traffico da
+# questo token, tra sync catalogo/prezzi/full lanciati a ripetizione),
+# fermarsi qui invece di continuare a rifare per ore lo stesso retry perdente
+# su ogni carta rimasta (ogni carta puo' aspettare fino a ~1 minuto di
+# backoff prima di arrendersi - con migliaia di carte rimaste il job sembra
+# "in corso" su GitHub Actions per ore senza produrre nessun checkpoint
+# nuovo, indistinguibile da uno stallo vero finche' non scade il timeout).
+MAX_CONSECUTIVE_ERRORS = 15
 
 
 def _git(*args):
@@ -158,7 +167,7 @@ def main():
     print(f"Aggiorno i prezzi di {len(blueprints)} carte per il {today}"
           + ("" if force else " (gia' aggiornate oggi vengono saltate)") + "...")
 
-    ok, errors = 0, 0
+    ok, errors, consecutive_errors = 0, 0, 0
     for i, (bp_id, name, expansion_name) in enumerate(blueprints, start=1):
         try:
             products = client.get_marketplace_products(bp_id)
@@ -180,9 +189,11 @@ def main():
                     )
 
             ok += 1
+            consecutive_errors = 0
         except Exception as exc:  # non bloccare l'intero job per una carta problematica
             print(f"  [ERRORE] {name} ({expansion_name}) id={bp_id}: {exc}", file=sys.stderr)
             errors += 1
+            consecutive_errors += 1
 
         if i % 25 == 0:
             conn.commit()
@@ -191,6 +202,18 @@ def main():
 
         if i % CHECKPOINT_EVERY == 0:
             checkpoint_commit(conn, history_conn, label=f"{i}/{len(blueprints)}")
+
+        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+            print(
+                f"  [ATTENZIONE] {consecutive_errors} carte di fila fallite "
+                f"(probabile rate limit/blocco lato CardTrader dopo troppo "
+                f"traffico oggi): mi fermo qui invece di continuare a perdere "
+                f"tempo, {i}/{len(blueprints)} carte tentate. Le carte non "
+                f"raggiunte verranno riprese al prossimo run (non hanno uno "
+                f"snapshot di oggi, quindi non vengono saltate).",
+                file=sys.stderr,
+            )
+            break
 
     pruned = db.prune_old_history(history_conn)
     if pruned:
