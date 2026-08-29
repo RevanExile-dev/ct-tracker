@@ -15,6 +15,8 @@ letti direttamente nel browser tramite sql.js:
 import sqlite3
 from pathlib import Path
 
+CARDTRADER_ORIGIN = "https://cardtrader.com"
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = REPO_ROOT / "data" / "cardtrader.db"
 HISTORY_DB_PATH = REPO_ROOT / "data" / "price_history.db"
@@ -218,6 +220,18 @@ def upsert_expansion(conn, exp: dict):
     )
 
 
+def _best_image_url(bp: dict) -> str | None:
+    """CardTrader espone piu' formati per blueprint: 'image_url' e' la
+    versione 'preview' (~14KB, molto compressa/sfocata). L'oggetto 'image'
+    contiene anche 'url', la versione a piena risoluzione (~60-70KB, ancora
+    piccola ma nitida) come path relativo. Preferiamo quella; fallback sul
+    preview se per qualche motivo 'image' manca."""
+    image = bp.get("image")
+    if isinstance(image, dict) and image.get("url"):
+        return CARDTRADER_ORIGIN + image["url"]
+    return bp.get("image_url")
+
+
 def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
                        is_premium: bool, synced_at: str):
     conn.execute(
@@ -244,7 +258,7 @@ def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
             "expansion_id": bp.get("expansion_id"),
             "expansion_code": expansion_code,
             "expansion_name": expansion_name,
-            "image_url": bp.get("image_url"),
+            "image_url": _best_image_url(bp),
             "scryfall_id": bp.get("scryfall_id"),
             "tcg_player_id": bp.get("tcg_player_id"),
             "is_premium": int(is_premium),
