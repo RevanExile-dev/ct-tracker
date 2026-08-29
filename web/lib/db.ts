@@ -111,6 +111,7 @@ export type CardRow = {
   latest_listings: number | null;
   latest_language: string | null;
   prev_price_cents: number | null;
+  languages_available: string | null;
 };
 
 export type SortOption =
@@ -128,7 +129,8 @@ const CARD_ROW_SELECT = `
   lp.min_price_currency AS latest_price_currency,
   lp.listings_count AS latest_listings,
   lp.cheapest_language AS latest_language,
-  lp.prev_price_cents AS prev_price_cents
+  lp.prev_price_cents AS prev_price_cents,
+  lp.languages_available AS languages_available
 `;
 
 /** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
@@ -158,9 +160,13 @@ export async function fetchCards(opts: {
     where.push(`b.rarity IN (${placeholders})`);
   }
   if (opts.languages && opts.languages.length > 0) {
-    const placeholders = opts.languages.map((_, i) => `$lang${i}`).join(", ");
-    opts.languages.forEach((l, i) => (params[`$lang${i}`] = l));
-    where.push(`lp.cheapest_language IN (${placeholders})`);
+    // languages_available elenca TUTTE le lingue con almeno un'inserzione
+    // attiva (formato ",en,it,jp,"), non solo quella della piu' economica:
+    // una carta va mostrata anche se e' disponibile in quella lingua ma non
+    // e' l'offerta piu' economica.
+    const conds = opts.languages.map((_, i) => `lp.languages_available LIKE $lang${i}`);
+    opts.languages.forEach((l, i) => (params[`$lang${i}`] = `%,${l},%`));
+    where.push(`(${conds.join(" OR ")})`);
   }
 
   let orderBy = "b.expansion_id DESC, b.name ASC";
@@ -302,15 +308,23 @@ export async function fetchRarities(): Promise<string[]> {
   return rows;
 }
 
+/** Tutte le lingue disponibili su almeno una carta (non solo quella della
+ * piu' economica): languages_available e' un elenco delimitato per carta
+ * (",en,it,jp,"), qui lo scomponiamo per costruire l'insieme completo. */
 export async function fetchLanguages(): Promise<string[]> {
   const db = await getDb();
   const stmt = db.prepare(
-    "SELECT DISTINCT cheapest_language AS lang FROM latest_prices WHERE cheapest_language IS NOT NULL ORDER BY lang"
+    "SELECT DISTINCT languages_available AS langs FROM latest_prices WHERE languages_available IS NOT NULL"
   );
-  const rows: string[] = [];
-  while (stmt.step()) rows.push((stmt.getAsObject() as any).lang);
+  const set = new Set<string>();
+  while (stmt.step()) {
+    const langs = (stmt.getAsObject() as any).langs as string;
+    langs.split(",").forEach((l) => {
+      if (l) set.add(l);
+    });
+  }
   stmt.free();
-  return rows;
+  return Array.from(set).sort();
 }
 
 export async function fetchMeta(): Promise<Record<string, string>> {

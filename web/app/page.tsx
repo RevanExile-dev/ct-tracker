@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, ExpansionInfo, SortOption,
   fetchCards, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
@@ -15,7 +16,15 @@ import CountUp from "@/components/CountUp";
 
 const PAGE_SIZE = 60;
 
-export default function Home() {
+function splitCsv(v: string | null): string[] {
+  return v ? v.split(",").filter(Boolean) : [];
+}
+
+function HomeContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [cards, setCards] = useState<CardRow[] | null>(null);
   const [expansions, setExpansions] = useState<ExpansionInfo[]>([]);
   const [rarities, setRarities] = useState<string[]>([]);
@@ -23,15 +32,41 @@ export default function Home() {
   const [lastSync, setLastSync] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [expansionCode, setExpansionCode] = useState("");
-  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<SortOption>("expansion");
-  const [onlyBinder, setOnlyBinder] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  // Lo stato dei filtri e' inizializzato dalla query string cosi' che
+  // "indietro" dal browser dopo aver aperto una carta torni alla stessa
+  // vista filtrata, invece di una home resettata.
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [expansionCode, setExpansionCode] = useState(() => searchParams.get("exp") ?? "");
+  const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
+    splitCsv(searchParams.get("rarity"))
+  );
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() =>
+    splitCsv(searchParams.get("lang"))
+  );
+  const [sortBy, setSortBy] = useState<SortOption>(
+    () => (searchParams.get("sort") as SortOption) || "expansion"
+  );
+  const [onlyBinder, setOnlyBinder] = useState(() => searchParams.get("binder") === "1");
+  const [viewMode, setViewMode] = useState<"grid" | "table">(
+    () => (searchParams.get("view") === "table" ? "table" : "grid")
+  );
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Specchia i filtri nella URL (senza aggiungere una entry nella cronologia
+  // ad ogni singola modifica: solo la navigazione verso una carta la crea).
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    if (expansionCode) params.set("exp", expansionCode);
+    if (selectedRarities.length) params.set("rarity", selectedRarities.join(","));
+    if (selectedLanguages.length) params.set("lang", selectedLanguages.join(","));
+    if (sortBy !== "expansion") params.set("sort", sortBy);
+    if (onlyBinder) params.set("binder", "1");
+    if (viewMode === "table") params.set("view", "table");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [search, expansionCode, selectedRarities, selectedLanguages, sortBy, onlyBinder, viewMode, pathname, router]);
 
   useEffect(() => {
     setBinderIds(getBinderIds());
@@ -291,5 +326,13 @@ export default function Home() {
         </>
       )}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   );
 }
