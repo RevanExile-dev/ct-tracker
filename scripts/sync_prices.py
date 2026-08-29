@@ -27,13 +27,45 @@ from pathlib import Path
 from api_client import CardTraderClient
 import db
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "tracked_sets.json"
-WEB_DB_PATH = Path(__file__).resolve().parent.parent / "web" / "public" / "data" / "cardtrader.db"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = REPO_ROOT / "config" / "tracked_sets.json"
+WEB_DB_PATH = REPO_ROOT / "web" / "public" / "data" / "cardtrader.db"
 CHECKPOINT_EVERY = 300  # ~5 minuti al ritmo di 1 richiesta/secondo
 
 
 def _git(*args):
-    subprocess.run(["git", *args], check=True, cwd=Path(__file__).resolve().parent.parent)
+    subprocess.run(["git", *args], check=True, cwd=REPO_ROOT)
+
+
+def _current_branch() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        check=True, cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    return result.stdout.strip()
+
+
+def _push_with_retry(branch: str, attempts: int = 3):
+    """Il branch puo' avanzare nel frattempo (altri commit umani, o un altro
+    sync in corso): riprova con un rebase sul remoto invece di fallire subito."""
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(["git", "push"], cwd=REPO_ROOT)
+        if result.returncode == 0:
+            return
+        print(f"  [ATTENZIONE] push fallito (tentativo {attempt}/{attempts}), "
+              f"provo un rebase sul remoto...", file=sys.stderr)
+        subprocess.run(["git", "fetch", "origin", branch], check=True, cwd=REPO_ROOT)
+        rebase = subprocess.run(
+            ["git", "rebase", f"origin/{branch}"], cwd=REPO_ROOT
+        )
+        if rebase.returncode != 0:
+            subprocess.run(["git", "rebase", "--abort"], cwd=REPO_ROOT)
+            print("  [ATTENZIONE] rebase fallito (conflitto), salto questo "
+                  "checkpoint: il progresso resta salvato in locale e verra' "
+                  "pushato al prossimo checkpoint.", file=sys.stderr)
+            return
+    print(f"  [ATTENZIONE] push non riuscito dopo {attempts} tentativi, "
+          f"salto questo checkpoint.", file=sys.stderr)
 
 
 def checkpoint_commit(conn, label: str):
@@ -46,12 +78,12 @@ def checkpoint_commit(conn, label: str):
         _git("add", "data/cardtrader.db", "web/public/data/cardtrader.db")
         result = subprocess.run(
             ["git", "diff", "--staged", "--quiet"],
-            cwd=Path(__file__).resolve().parent.parent,
+            cwd=REPO_ROOT,
         )
         if result.returncode == 0:
             return  # niente di nuovo da salvare
         _git("commit", "-m", f"chore: checkpoint sync prezzi ({label})")
-        _git("push")
+        _push_with_retry(_current_branch())
     except subprocess.CalledProcessError as exc:
         print(f"  [ATTENZIONE] checkpoint commit/push fallito: {exc}", file=sys.stderr)
 
