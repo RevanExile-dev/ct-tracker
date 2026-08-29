@@ -70,6 +70,7 @@ export default function Toolbar({
           <option value="price_asc">Prezzo: dal più basso</option>
           <option value="price_desc">Prezzo: dal più alto</option>
           <option value="drop_first">Cali di prezzo prima</option>
+          <option value="rise_first">Rialzi di prezzo prima</option>
           <option value="name">Nome A-Z</option>
         </select>
 

@@ -113,7 +113,13 @@ export type CardRow = {
   prev_price_cents: number | null;
 };
 
-export type SortOption = "expansion" | "price_asc" | "price_desc" | "name" | "drop_first";
+export type SortOption =
+  | "expansion"
+  | "price_asc"
+  | "price_desc"
+  | "name"
+  | "drop_first"
+  | "rise_first";
 
 const CARD_ROW_SELECT = `
   b.id, b.name, b.version, b.expansion_code, b.expansion_name,
@@ -167,6 +173,13 @@ export async function fetchCards(opts: {
     orderBy = `
       CASE WHEN latest_price_cents IS NULL OR prev_price_cents IS NULL OR prev_price_cents = 0 THEN 1 ELSE 0 END,
       (CAST(latest_price_cents AS REAL) - prev_price_cents) / prev_price_cents ASC
+    `;
+  }
+  if (opts.sortBy === "rise_first") {
+    // Speculare a drop_first: piu' grande rialzo percentuale prima.
+    orderBy = `
+      CASE WHEN latest_price_cents IS NULL OR prev_price_cents IS NULL OR prev_price_cents = 0 THEN 1 ELSE 0 END,
+      (CAST(latest_price_cents AS REAL) - prev_price_cents) / prev_price_cents DESC
     `;
   }
 
