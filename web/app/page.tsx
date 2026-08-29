@@ -75,6 +75,20 @@ export default function Home() {
     return { count: filtered.length, priced: priced.length, totalCents, currency, drops };
   }, [onlyBinder, filtered]);
 
+  // Indice di mercato dell'espansione selezionata: media delle variazioni
+  // giorno-su-giorno delle carte gia' caricate (nessuna richiesta aggiuntiva,
+  // usa solo prev_price_cents gia' presente in cardtrader.db).
+  const expansionSummary = useMemo(() => {
+    if (!expansionCode || !cards) return null;
+    const deltas = cards
+      .map((c) => priceDeltaPct(c.latest_price_cents, c.prev_price_cents))
+      .filter((d): d is number => d !== null);
+    if (deltas.length === 0) return null;
+    const avgPct = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
+    const expansionName = cards[0]?.expansion_name ?? "";
+    return { avgPct, sampleSize: deltas.length, totalCards: cards.length, expansionName };
+  }, [expansionCode, cards]);
+
   function handleToggleRarity(r: string) {
     setSelectedRarities((prev) =>
       prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
@@ -114,6 +128,26 @@ export default function Home() {
           onToggleBinder={() => setOnlyBinder((v) => !v)}
         />
       </div>
+
+      {expansionSummary && (
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-card border border-base-border bg-base-surface px-5 py-4">
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
+              Andamento {expansionSummary.expansionName} (giorno su giorno)
+            </div>
+            <div
+              className={`font-display text-xl font-bold ${
+                expansionSummary.avgPct >= 0 ? "text-signal-up" : "text-signal-down"
+              }`}
+            >
+              {expansionSummary.avgPct >= 0 ? "▲" : "▼"} {Math.abs(expansionSummary.avgPct).toFixed(1)}%
+              <span className="text-xs font-mono text-ink-faint ml-1.5">
+                (media su {expansionSummary.sampleSize}/{expansionSummary.totalCards} carte)
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {binderSummary && (
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-card border border-base-border bg-base-surface px-5 py-4">
