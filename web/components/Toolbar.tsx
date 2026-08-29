@@ -48,12 +48,17 @@ export default function Toolbar({
         />
 
         {/* Su mobile espansione+ordina condividono una riga (invece di 4 righe
-            piene una sotto l'altra) cosi' si arriva prima alle carte. */}
-        <div className="grid grid-cols-2 sm:flex sm:flex-row gap-3">
+            piene una sotto l'altra) cosi' si arriva prima alle carte.
+            min-w-0 e' necessario: senza, questo contenitore (essendo lui
+            stesso flex/grid) rifiuta di restringersi sotto la sua larghezza
+            "naturale" quando e' un figlio del flex row esterno, schiacciando
+            la ricerca a pochi pixel su viewport medi tipo tablet (bug reale
+            trovato testando a 768px). */}
+        <div className="min-w-0 grid grid-cols-2 sm:flex sm:flex-row gap-3">
           <select
             value={expansionCode}
             onChange={(e) => onExpansionChange(e.target.value)}
-            className="min-w-0 bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60 sm:max-w-xs"
+            className="min-w-0 bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60 sm:max-w-[10rem] lg:max-w-xs"
           >
             <option value="">Tutte le espansioni</option>
             {expansions.map((e) => (
@@ -66,7 +71,7 @@ export default function Toolbar({
           <select
             value={sortBy}
             onChange={(e) => onSortChange(e.target.value as SortOption)}
-            className="min-w-0 bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60"
+            className="min-w-0 bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60 sm:max-w-[9rem] lg:max-w-[13rem]"
           >
             <option value="expansion">Ordina: espansione</option>
             <option value="price_asc">Prezzo: dal più basso</option>
