@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS latest_prices (
     cheapest_condition TEXT,
     cheapest_language TEXT,
     cheapest_foil INTEGER,
+    -- Tutte le lingue con almeno un'inserzione attiva (non solo quella
+    -- della piu' economica), delimitate da virgole (es. ",en,it,jp,") per
+    -- poter filtrare "carte disponibili in lingua X" con LIKE '%,X,%'.
+    languages_available TEXT,
     prev_price_cents INTEGER,
     prev_captured_at TEXT,
     FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
@@ -128,10 +132,20 @@ def get_history_connection() -> sqlite3.Connection:
     return sqlite3.connect(HISTORY_DB_PATH)
 
 
+def _ensure_column(conn, table: str, column: str, coltype: str):
+    """Aggiunge una colonna a una tabella gia' esistente se manca (SQLite
+    CREATE TABLE IF NOT EXISTS non la aggiungerebbe da solo su un database
+    creato prima che la colonna fosse introdotta)."""
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+
 def init_db():
     conn = get_connection()
     conn.executescript(SCHEMA)
     _migrate_legacy_price_snapshots(conn)
+    _ensure_column(conn, "latest_prices", "languages_available", "TEXT")
     conn.commit()
     conn.close()
 
@@ -267,6 +281,11 @@ def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
     )
 
 
+def _product_language(p: dict):
+    props = p.get("properties_hash") or {}
+    return props.get("pokemon_language") or props.get("mtg_language")
+
+
 def _summarize_products(products: list):
     """Riduce la lista di offerte marketplace ai campi aggregati che salviamo
     (prezzo minimo, medio, condizioni/lingua della piu' economica...)."""
@@ -275,15 +294,20 @@ def _summarize_products(products: list):
     prices = [p["price"]["cents"] for p in products if p.get("price")]
     cheapest = min(products, key=lambda p: p["price"]["cents"])
     avg_cents = int(sum(prices) / len(prices)) if prices else None
+    # Tutte le lingue con almeno un'inserzione, non solo quella della piu'
+    # economica: serve per poter filtrare "disponibile in lingua X" anche
+    # quando quella lingua non e' l'offerta piu' economica di questa carta.
+    langs = sorted({_product_language(p) for p in products} - {None})
+    languages_available = f",{','.join(langs)}," if langs else None
     return {
         "min_price_cents": cheapest["price"]["cents"],
         "min_price_currency": cheapest["price"]["currency"],
         "avg_price_cents": avg_cents,
         "listings_count": len(products),
         "cheapest_condition": cheapest.get("properties_hash", {}).get("condition"),
-        "cheapest_language": cheapest.get("properties_hash", {}).get("pokemon_language")
-            or cheapest.get("properties_hash", {}).get("mtg_language"),
+        "cheapest_language": _product_language(cheapest),
         "cheapest_foil": int(bool(cheapest.get("properties_hash", {}).get("pokemon_foil"))),
+        "languages_available": languages_available,
     }
 
 
@@ -340,7 +364,7 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
     summary = _summarize_products(products) or {
         "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
         "listings_count": 0, "cheapest_condition": None, "cheapest_language": None,
-        "cheapest_foil": None,
+        "cheapest_foil": None, "languages_available": None,
     }
 
     conn.execute(
@@ -349,11 +373,11 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             (blueprint_id, captured_at, captured_at_ts, min_price_cents,
              min_price_currency, avg_price_cents, listings_count,
              cheapest_condition, cheapest_language, cheapest_foil,
-             prev_price_cents, prev_captured_at)
+             languages_available, prev_price_cents, prev_captured_at)
         VALUES (:blueprint_id, :captured_at, :captured_at_ts, :min_price_cents,
                 :min_price_currency, :avg_price_cents, :listings_count,
                 :cheapest_condition, :cheapest_language, :cheapest_foil,
-                :prev_price_cents, :prev_captured_at)
+                :languages_available, :prev_price_cents, :prev_captured_at)
         ON CONFLICT(blueprint_id) DO UPDATE SET
             captured_at=excluded.captured_at, captured_at_ts=excluded.captured_at_ts,
             min_price_cents=excluded.min_price_cents,
@@ -363,6 +387,7 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             cheapest_condition=excluded.cheapest_condition,
             cheapest_language=excluded.cheapest_language,
             cheapest_foil=excluded.cheapest_foil,
+            languages_available=excluded.languages_available,
             prev_price_cents=excluded.prev_price_cents,
             prev_captured_at=excluded.prev_captured_at
         """,
