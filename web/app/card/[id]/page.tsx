@@ -11,7 +11,7 @@ import {
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import HoloFrame from "@/components/HoloFrame";
 import PriceChart from "@/components/PriceChart";
-import { formatCents, languageFlag } from "@/lib/format";
+import { formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
 
 export default function CardDetailPage() {
   const params = useParams<{ id: string }>();
@@ -50,6 +50,7 @@ export default function CardDetailPage() {
   }
 
   const currency = card.latest_price_currency ?? "EUR";
+  const trend = trendVsMovingAverage(history, card.latest_price_cents, 30);
 
   return (
     <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
@@ -120,6 +121,17 @@ export default function CardDetailPage() {
               <div className="font-display text-2xl font-bold text-ink-primary mt-1">
                 {formatCents(card.latest_price_cents, currency)}
               </div>
+              {trend && (
+                <div
+                  className={`text-xs font-mono mt-1 ${
+                    trend.deltaPct >= 0 ? "text-signal-up" : "text-signal-down"
+                  }`}
+                  title={`Media ${trend.days}gg: ${formatCents(trend.avgCents, currency)}`}
+                >
+                  {trend.deltaPct >= 0 ? "▲" : "▼"} {Math.abs(trend.deltaPct).toFixed(1)}% vs
+                  media {trend.days}gg
+                </div>
+              )}
             </div>
             <div className="rounded-card border border-base-border bg-base-surface p-4">
               <div className="text-xs font-mono text-ink-faint uppercase">Inserzioni attive</div>

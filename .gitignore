@@ -12,6 +12,7 @@ web/.next/
 web/out/
 web/.env*.local
 web/next-env.d.ts
+web/tsconfig.tsbuildinfo
 # rigenerato ad ogni "npm install" dallo script postinstall scripts/copy-wasm.js
 web/public/sqljs/
 
