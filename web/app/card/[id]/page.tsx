@@ -68,6 +68,20 @@ export default function CardDetailPage() {
   const currency = card.latest_price_currency ?? "EUR";
   const trend = trendVsMovingAverage(history, card.latest_price_cents, 30);
 
+  // Su CardTrader il prezzo "consigliato" in evidenza e' quasi sempre
+  // un'inserzione CardTrader Zero (spedizione gestita/garantita), anche
+  // quando non e' l'assoluto piu' economico: un venditore normale la batte
+  // solo se il suo prezzo e' cosi' basso da convenire comunque, spedizione
+  // esclusa. Replichiamo la stessa priorita' qui: se esiste una inserzione
+  // Zero tra le migliori 5 gia' scaricate, e' quella la carta principale.
+  const zeroListing = listings.find((l) => l.can_sell_via_hub === 1);
+  const cheapestListing = listings[0];
+  const headlineListing = zeroListing ?? cheapestListing;
+  const headlinePriceCents = headlineListing?.price_cents ?? card.latest_price_cents;
+  const headlineCurrency = headlineListing?.price_currency ?? currency;
+  const hasCheaperNonZero =
+    zeroListing && cheapestListing && cheapestListing.price_cents < zeroListing.price_cents;
+
   return (
     <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
       <Link
@@ -132,10 +146,26 @@ export default function CardDetailPage() {
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-4 max-w-sm">
-            <div className="rounded-card border border-base-border bg-base-surface p-4">
-              <div className="text-xs font-mono text-ink-faint uppercase">Prezzo minimo</div>
-              <div className="font-display text-2xl font-bold text-ink-primary mt-1">
-                {formatCents(card.latest_price_cents, currency)}
+            <div
+              className={`rounded-card border p-4 ${
+                zeroListing
+                  ? "border-accent/50 bg-accent/10"
+                  : "border-base-border bg-base-surface"
+              }`}
+            >
+              <div
+                className={`text-xs font-mono uppercase flex items-center gap-1.5 ${
+                  zeroListing ? "text-accent" : "text-ink-faint"
+                }`}
+              >
+                {zeroListing ? "CardTrader Zero" : "Prezzo minimo"}
+              </div>
+              <div
+                className={`font-display text-2xl font-bold mt-1 ${
+                  zeroListing ? "text-accent-bright" : "text-ink-primary"
+                }`}
+              >
+                {formatCents(headlinePriceCents, headlineCurrency)}
               </div>
               {trend && (
                 <div
@@ -146,6 +176,12 @@ export default function CardDetailPage() {
                 >
                   {trend.deltaPct >= 0 ? "▲" : "▼"} {Math.abs(trend.deltaPct).toFixed(1)}% vs
                   media {trend.days}gg
+                </div>
+              )}
+              {hasCheaperNonZero && (
+                <div className="text-xs font-mono text-ink-faint mt-1">
+                  senza Zero da {formatCents(cheapestListing.price_cents, cheapestListing.price_currency ?? currency)}
+                  {" "}(+ spedizione)
                 </div>
               )}
             </div>
@@ -193,21 +229,6 @@ export default function CardDetailPage() {
               <h2 className="font-display font-medium text-ink-primary mb-3">
                 Migliori inserzioni
               </h2>
-              {(() => {
-                const cheapestZero = listings.find((l) => l.can_sell_via_hub === 1);
-                if (!cheapestZero || cheapestZero === listings[0]) return null;
-                return (
-                  <div className="mb-3 flex items-center justify-between gap-3 rounded-card border border-accent/40 bg-accent/5 px-4 py-2.5 text-sm">
-                    <span className="text-ink-muted">
-                      Più economica con{" "}
-                      <span className="text-accent-bright font-medium">CardTrader Zero</span>
-                    </span>
-                    <span className="font-mono text-ink-primary">
-                      {formatCents(cheapestZero.price_cents, cheapestZero.price_currency ?? currency)}
-                    </span>
-                  </div>
-                );
-              })()}
               <div className="rounded-card border border-base-border bg-base-surface divide-y divide-base-border overflow-hidden">
                 {listings.map((l, i) => (
                   <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
