@@ -1,4 +1,4 @@
 {
-  "_readme": "Elenco carte per cui vuoi SEMPRE una notifica Telegram (indipendentemente dalla soglia generale), a prescindere dal calo percentuale. Trovi l'id di una carta nell'URL della sua pagina di dettaglio sul sito, es. /card/315075 -> id 315075. Aggiungi/rimuovi liberamente, un id per riga nell'array.",
-  "blueprint_ids": []
+  "_readme": "Elenco carte da tenere d'occhio su Telegram. Ogni voce e' un oggetto con 'id' (obbligatorio, lo trovi nell'URL della pagina di dettaglio della carta sul sito, es. /card/315075 -> id 315075) e 'alert_below' (opzionale, un numero nella valuta della carta - di solito EUR): se lo imposti, ricevi una notifica SOLO quando il prezzo scende a quel valore o sotto. Se lo ometti, la carta viene sempre riportata col prezzo attuale ad ogni sync, indipendentemente dalla soglia generale di calo percentuale. Aggiungi/rimuovi voci liberamente.",
+  "cards": []
 }

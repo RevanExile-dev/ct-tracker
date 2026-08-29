@@ -132,15 +132,23 @@ senza dover aprire il sito ogni giorno:
 5. Fatto: dal prossimo sync prezzi (giornaliero o settimanale) ricevi un
    messaggio ogni volta che c'è qualcosa da segnalare
 
-Le notifiche hanno due modalità indipendenti, entrambe attive di default:
+Le notifiche hanno tre modalità indipendenti, tutte attive di default:
 
 - **Soglia generale**: qualunque carta tracciata che scende di più del 15%
   rispetto al prezzo precedente (soglia regolabile con la variabile
   d'ambiente `DROP_THRESHOLD_PCT` nei workflow, se vuoi cambiarla)
 - **Watchlist**: le carte che aggiungi tu in `config/watchlist.json` (l'id
   si trova nell'URL della pagina di dettaglio della carta sul sito, es.
-  `/card/315075` → id `315075`) vengono sempre riportate col prezzo
-  attuale, anche senza un calo
+  `/card/315075` → id `315075`), es.:
+  ```json
+  { "cards": [ { "id": 315075 }, { "id": 245522, "alert_below": 50 } ] }
+  ```
+  - senza `alert_below`: la carta viene sempre riportata col prezzo
+    attuale ad ogni sync, anche senza un calo
+  - con `alert_below` (un numero nella valuta della carta, di solito EUR):
+    la carta viene riportata solo quando il prezzo scende a quel valore o
+    sotto — utile per un obiettivo tipo "avvisami quando scende sotto i
+    50€", senza essere notificato ogni giorno finché non ci arriva
 
 Se non aggiungi i due secret, questo passaggio viene semplicemente saltato:
 il resto del tracker continua a funzionare normalmente.

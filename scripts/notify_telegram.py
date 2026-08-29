@@ -1,11 +1,14 @@
 """
 Manda una notifica Telegram quando una carta scende di prezzo, dopo un sync
-prezzi. Due modalita' indipendenti:
+prezzi. Tre modalita' indipendenti:
 
 1. Soglia generale: qualunque carta tracciata il cui calo rispetto al
    prezzo precedente supera DROP_THRESHOLD_PCT (default 15%).
-2. Watchlist: le carte elencate in config/watchlist.json vengono sempre
-   riportate con il loro prezzo attuale, a prescindere dalla soglia.
+2. Watchlist (senza soglia): le carte elencate in config/watchlist.json
+   senza 'alert_below' vengono sempre riportate con il loro prezzo
+   attuale, a prescindere dalla soglia generale.
+3. Watchlist (con soglia per-carta): le carte con 'alert_below' impostato
+   vengono riportate solo quando il prezzo scende a quel valore o sotto.
 
 Non fa nulla (esce silenziosamente) se i secret TELEGRAM_BOT_TOKEN e
 TELEGRAM_CHAT_ID non sono configurati: la funzione resta opzionale, il
@@ -63,12 +66,25 @@ def find_drops(conn, threshold_pct: float):
     return drops
 
 
-def load_watchlist(conn):
+def load_watchlist_config():
     if not WATCHLIST_PATH.exists():
         return []
-    ids = json.loads(WATCHLIST_PATH.read_text(encoding="utf-8")).get("blueprint_ids", [])
-    if not ids:
+    data = json.loads(WATCHLIST_PATH.read_text(encoding="utf-8"))
+    cards = data.get("cards")
+    if cards is None:
+        # Schema legacy (prima delle soglie per-carta): lista piatta di id.
+        cards = [{"id": bp_id} for bp_id in data.get("blueprint_ids", [])]
+    return cards
+
+
+def load_watchlist(conn):
+    """Ritorna una riga per carta in watchlist: (id, nome, espansione,
+    prezzo, valuta, prezzo precedente, soglia 'alert_below' o None)."""
+    entries = load_watchlist_config()
+    if not entries:
         return []
+    ids = [e["id"] for e in entries]
+    thresholds = {e["id"]: e.get("alert_below") for e in entries}
     placeholders = ",".join("?" * len(ids))
     rows = conn.execute(
         f"""
@@ -80,11 +96,20 @@ def load_watchlist(conn):
         """,
         ids,
     ).fetchall()
-    return rows
+    return [row + (thresholds.get(row[0]),) for row in rows]
 
 
 def build_message(drops, watchlist_rows):
-    if not drops and not watchlist_rows:
+    # Le carte con 'alert_below' impostato si notificano solo se il prezzo
+    # attuale e' arrivato alla soglia; quelle senza soglia si riportano
+    # sempre (comportamento storico della watchlist).
+    always_report = [w for w in watchlist_rows if w[6] is None]
+    threshold_hits = [
+        w for w in watchlist_rows
+        if w[6] is not None and w[3] is not None and w[3] <= round(w[6] * 100)
+    ]
+
+    if not drops and not always_report and not threshold_hits:
         return None
 
     lines = ["*📉 Aggiornamento prezzi CardTrader*", ""]
@@ -100,9 +125,18 @@ def build_message(drops, watchlist_rows):
             lines.append(f"…e altre {len(drops) - MAX_ITEMS_PER_SECTION} carte.")
         lines.append("")
 
-    if watchlist_rows:
+    if threshold_hits:
+        lines.append("*🎯 Sotto la soglia che hai impostato:*")
+        for bp_id, name, expansion_name, price, currency, prev, alert_below in threshold_hits:
+            lines.append(
+                f"🎯 *{name}* ({expansion_name}): {format_price(price, currency)} "
+                f"(soglia: {format_price(round(alert_below * 100), currency)})"
+            )
+        lines.append("")
+
+    if always_report:
         lines.append("*Carte nella tua watchlist:*")
-        for bp_id, name, expansion_name, price, currency, prev in watchlist_rows:
+        for bp_id, name, expansion_name, price, currency, prev, _ in always_report:
             arrow = ""
             if price is not None and prev is not None and prev > 0:
                 pct = (price - prev) / prev * 100
