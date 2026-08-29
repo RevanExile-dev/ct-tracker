@@ -99,6 +99,7 @@ def main():
                 (bp_id, today),
             )
             db.insert_price_snapshot(conn, bp_id, today, now_iso, products)
+            db.replace_price_listings(conn, bp_id, today, products)
 
             # Se troviamo la rarità reale tra le proprietà del prodotto più
             # economico, aggiorniamo il blueprint (più precisa dell'euristica

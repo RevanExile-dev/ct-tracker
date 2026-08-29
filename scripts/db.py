@@ -55,6 +55,26 @@ CREATE INDEX IF NOT EXISTS idx_price_blueprint_date
 CREATE INDEX IF NOT EXISTS idx_blueprint_expansion
     ON blueprints (expansion_id);
 
+-- Le migliori inserzioni live per ogni carta (non storico: ad ogni sync
+-- sostituiamo le righe della carta con le inserzioni piu' economiche del
+-- momento, cosi' la tabella resta piccola invece di accumulare per sempre).
+CREATE TABLE IF NOT EXISTS price_listings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    blueprint_id INTEGER NOT NULL,
+    captured_at TEXT NOT NULL,
+    price_cents INTEGER NOT NULL,
+    price_currency TEXT,
+    condition TEXT,
+    language TEXT,
+    quantity INTEGER,
+    seller_username TEXT,
+    can_sell_via_hub INTEGER DEFAULT 0,
+    FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listings_blueprint
+    ON price_listings (blueprint_id, price_cents);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -159,6 +179,36 @@ def insert_price_snapshot(conn, blueprint_id: int, captured_at: str, captured_at
                 or cheapest.get("properties_hash", {}).get("mtg_language"),
             int(bool(cheapest.get("properties_hash", {}).get("pokemon_foil"))),
         ),
+    )
+
+
+def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: list, top_n: int = 5):
+    """Sostituisce le inserzioni salvate per questa carta con le top_n piu'
+    economiche del momento (non e' uno storico, solo l'ultimo sync)."""
+    conn.execute("DELETE FROM price_listings WHERE blueprint_id = ?", (blueprint_id,))
+    if not products:
+        return
+    cheapest_first = sorted(products, key=lambda p: p["price"]["cents"])[:top_n]
+    conn.executemany(
+        """INSERT INTO price_listings
+           (blueprint_id, captured_at, price_cents, price_currency, condition,
+            language, quantity, seller_username, can_sell_via_hub)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                blueprint_id,
+                captured_at,
+                p["price"]["cents"],
+                p["price"].get("currency"),
+                p.get("properties_hash", {}).get("condition"),
+                p.get("properties_hash", {}).get("pokemon_language")
+                    or p.get("properties_hash", {}).get("mtg_language"),
+                p.get("quantity"),
+                p.get("user", {}).get("username"),
+                int(bool(p.get("user", {}).get("can_sell_via_hub"))),
+            )
+            for p in cheapest_first
+        ],
     )
 
 

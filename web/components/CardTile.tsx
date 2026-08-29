@@ -4,7 +4,15 @@ import HoloFrame from "./HoloFrame";
 import { CardRow } from "@/lib/db";
 import { formatCents, priceDeltaPct } from "@/lib/format";
 
-export default function CardTile({ card }: { card: CardRow }) {
+export default function CardTile({
+  card,
+  inBinder,
+  onToggleBinder,
+}: {
+  card: CardRow;
+  inBinder?: boolean;
+  onToggleBinder?: () => void;
+}) {
   const delta = priceDeltaPct(card.latest_price_cents, card.prev_price_cents);
 
   return (
@@ -28,6 +36,22 @@ export default function CardTile({ card }: { card: CardRow }) {
             <span className="absolute top-2 left-2 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 backdrop-blur border border-white/10 text-accent-bright">
               premium
             </span>
+          )}
+          {onToggleBinder && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                onToggleBinder();
+              }}
+              aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
+              className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur border transition-colors ${
+                inBinder
+                  ? "bg-accent/20 border-accent/60 text-accent-bright"
+                  : "bg-black/60 border-white/10 text-white/70 hover:text-white"
+              }`}
+            >
+              {inBinder ? "★" : "☆"}
+            </button>
           )}
         </div>
 

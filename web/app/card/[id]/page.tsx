@@ -4,10 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
-import { CardDetail, PricePoint, fetchCardDetail, fetchPriceHistory } from "@/lib/db";
+import {
+  CardDetail, Listing, PricePoint,
+  fetchBestListings, fetchCardDetail, fetchPriceHistory,
+} from "@/lib/db";
+import { getBinderIds, toggleBinder } from "@/lib/binder";
 import HoloFrame from "@/components/HoloFrame";
 import PriceChart from "@/components/PriceChart";
-import { formatCents } from "@/lib/format";
+import { formatCents, languageFlag } from "@/lib/format";
 
 export default function CardDetailPage() {
   const params = useParams<{ id: string }>();
@@ -15,11 +19,15 @@ export default function CardDetailPage() {
 
   const [card, setCard] = useState<CardDetail | null | undefined>(undefined);
   const [history, setHistory] = useState<PricePoint[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [inBinder, setInBinder] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     fetchCardDetail(id).then(setCard);
     fetchPriceHistory(id).then(setHistory);
+    fetchBestListings(id).then(setListings);
+    setInBinder(getBinderIds().has(id));
   }, [id]);
 
   if (card === undefined) {
@@ -83,7 +91,7 @@ export default function CardDetailPage() {
             <div className="text-ink-muted text-sm mt-1">Versione: {card.version}</div>
           )}
 
-          <div className="flex flex-wrap gap-2 mt-3">
+          <div className="flex flex-wrap gap-2 mt-3 items-center">
             {card.is_premium === 1 && (
               <span className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-accent/10 border border-accent/40 text-accent-bright">
                 premium
@@ -94,6 +102,16 @@ export default function CardDetailPage() {
                 {card.rarity}
               </span>
             )}
+            <button
+              onClick={() => setInBinder(new Set(toggleBinder(id)).has(id))}
+              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors ${
+                inBinder
+                  ? "bg-accent/10 border-accent/60 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              }`}
+            >
+              {inBinder ? "★ nel binder" : "☆ aggiungi al binder"}
+            </button>
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-4 max-w-sm">
@@ -117,6 +135,40 @@ export default function CardDetailPage() {
             </h2>
             <PriceChart points={history} currency={currency} />
           </div>
+
+          {listings.length > 0 && (
+            <div className="mt-8">
+              <h2 className="font-display font-medium text-ink-primary mb-3">
+                Migliori inserzioni
+              </h2>
+              <div className="rounded-card border border-base-border bg-base-surface divide-y divide-base-border overflow-hidden">
+                {listings.map((l, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-lg leading-none">{languageFlag(l.language)}</span>
+                      <div className="min-w-0">
+                        <div className="text-sm text-ink-primary truncate">
+                          {l.seller_username ?? "venditore"}
+                          {l.can_sell_via_hub === 1 && (
+                            <span className="ml-2 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/40 text-accent-bright align-middle">
+                              CardTrader Zero
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-ink-faint font-mono">
+                          {l.condition ?? "—"}
+                          {l.quantity ? ` · x${l.quantity}` : ""}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="font-mono text-sm text-ink-primary shrink-0">
+                      {formatCents(l.price_cents, l.price_currency ?? currency)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <a
             href={`https://www.cardtrader.com/it/pokemon/blueprint/${card.id}`}
