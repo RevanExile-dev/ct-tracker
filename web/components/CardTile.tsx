@@ -33,7 +33,10 @@ export default function CardTile({
       className="group block card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
     >
-      <HoloFrame className="bg-base-surface border border-base-border overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-glow">
+      <HoloFrame
+        liftOnHover
+        className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
+      >
         <div className="relative aspect-[5/7] bg-base-surface2">
           {card.image_url ? (
             <Image

@@ -21,6 +21,7 @@ export default function CardDetailPage() {
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const [inBinder, setInBinder] = useState(false);
+  const [popping, setPopping] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -49,7 +50,24 @@ export default function CardDetailPage() {
   if (card === undefined) {
     return (
       <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
-        <div className="text-ink-muted font-mono text-sm animate-pulse">Carico…</div>
+        <div className="h-5 w-32 rounded bg-base-surface skeleton mb-8" />
+        <div className="grid md:grid-cols-[320px_1fr] gap-8">
+          <div className="skeleton rounded-card border border-base-border bg-base-surface aspect-[5/7]" />
+          <div>
+            <div className="h-3 w-24 rounded bg-base-surface skeleton" />
+            <div className="h-9 w-64 max-w-full rounded bg-base-surface skeleton mt-3" />
+            <div className="h-4 w-40 rounded bg-base-surface skeleton mt-3" />
+            <div className="flex gap-2 mt-4">
+              <div className="h-7 w-20 rounded-full bg-base-surface skeleton" />
+              <div className="h-7 w-32 rounded-full bg-base-surface skeleton" />
+            </div>
+            <div className="grid grid-cols-2 gap-4 max-w-sm mt-6">
+              <div className="h-20 rounded-card bg-base-surface skeleton" />
+              <div className="h-20 rounded-card bg-base-surface skeleton" />
+            </div>
+            <div className="h-48 rounded-card bg-base-surface skeleton mt-8" />
+          </div>
+        </div>
       </main>
     );
   }
@@ -134,8 +152,14 @@ export default function CardDetailPage() {
               </span>
             )}
             <button
-              onClick={() => setInBinder(new Set(toggleBinder(id)).has(id))}
+              onClick={() => {
+                setInBinder(new Set(toggleBinder(id)).has(id));
+                setPopping(true);
+              }}
+              onAnimationEnd={() => setPopping(false)}
               className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+                popping ? "pop-on-toggle" : ""
+              } ${
                 inBinder
                   ? "bg-accent/10 border-accent/60 text-accent-bright"
                   : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"

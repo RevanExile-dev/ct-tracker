@@ -11,6 +11,27 @@ import FilterDropdown from "@/components/FilterDropdown";
 
 const MOVERS_LIMIT = 24;
 
+function MoversSkeleton() {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="skeleton rounded-card border border-base-border bg-base-surface overflow-hidden"
+          style={{ animationDelay: `${i * 80}ms` }}
+        >
+          <div className="aspect-[5/7] bg-base-surface2" />
+          <div className="p-3 space-y-2">
+            <div className="h-2.5 w-2/3 rounded bg-base-surface2" />
+            <div className="h-3.5 w-4/5 rounded bg-base-surface2" />
+            <div className="h-4 w-1/2 rounded bg-base-surface2 mt-3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Tiene solo le carte con una variazione di prezzo reale (prezzo attuale e
  * precedente entrambi noti), nell'ordine gia' deciso dalla query SQL. */
 function withRealDelta(cards: CardRow[]): CardRow[] {
@@ -89,9 +110,7 @@ export default function MoversPage() {
             <h3 className="font-display font-medium text-signal-up flex items-center gap-2 mb-4">
               ▲ Maggiori rialzi
             </h3>
-            {rises === null && (
-              <div className="text-ink-muted font-mono text-sm animate-pulse">Carico…</div>
-            )}
+            {rises === null && <MoversSkeleton />}
             {rises !== null && rises.length === 0 && (
               <div className="text-ink-muted text-sm">Nessun rialzo di prezzo registrato.</div>
             )}
@@ -114,9 +133,7 @@ export default function MoversPage() {
             <h3 className="font-display font-medium text-signal-down flex items-center gap-2 mb-4">
               ▼ Maggiori cali
             </h3>
-            {drops === null && (
-              <div className="text-ink-muted font-mono text-sm animate-pulse">Carico…</div>
-            )}
+            {drops === null && <MoversSkeleton />}
             {drops !== null && drops.length === 0 && (
               <div className="text-ink-muted text-sm">Nessun calo di prezzo registrato.</div>
             )}

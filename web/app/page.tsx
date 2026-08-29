@@ -229,7 +229,7 @@ function HomeContent() {
           <div className="ml-auto flex gap-1.5">
             <button
               onClick={() => setViewMode("grid")}
-              className={`text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
+              className={`btn-lift text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
                 viewMode === "grid"
                   ? "bg-accent/10 border-accent/60 text-accent-bright"
                   : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -239,7 +239,7 @@ function HomeContent() {
             </button>
             <button
               onClick={() => setViewMode("table")}
-              className={`text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
+              className={`btn-lift text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
                 viewMode === "table"
                   ? "bg-accent/10 border-accent/60 text-accent-bright"
                   : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
