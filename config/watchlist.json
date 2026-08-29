@@ -1,0 +1,4 @@
+{
+  "_readme": "Elenco carte per cui vuoi SEMPRE una notifica Telegram (indipendentemente dalla soglia generale), a prescindere dal calo percentuale. Trovi l'id di una carta nell'URL della sua pagina di dettaglio sul sito, es. /card/315075 -> id 315075. Aggiungi/rimuovi liberamente, un id per riga nell'array.",
+  "blueprint_ids": []
+}

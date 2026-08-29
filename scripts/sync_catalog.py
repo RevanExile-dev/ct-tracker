@@ -60,6 +60,7 @@ def main():
     by_code = {e["code"]: e for e in all_expansions}
 
     conn = db.get_connection()
+    history_conn = db.get_history_connection()
     synced_at = datetime.now(timezone.utc).isoformat()
 
     total_cards = 0
@@ -93,14 +94,29 @@ def main():
         conn.commit()
         total_cards += len(blueprints)
 
-    # Pulizia: rimuove eventuali prodotti non-carta (e i loro snapshot di
-    # prezzo, per via del vincolo di foreign key) inseriti da sync precedenti
-    # a questo filtro (booster, box, sleeve...).
-    conn.execute(
-        "DELETE FROM price_snapshots WHERE blueprint_id IN "
-        "(SELECT id FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?)",
-        (POKEMON_SINGLES_CATEGORY_ID,),
-    )
+    # Pulizia: rimuove eventuali prodotti non-carta (e i loro dati di prezzo
+    # collegati, per via del vincolo di foreign key) inseriti da sync
+    # precedenti a questo filtro (booster, box, sleeve...).
+    non_card_ids = [
+        row[0] for row in conn.execute(
+            "SELECT id FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?",
+            (POKEMON_SINGLES_CATEGORY_ID,),
+        ).fetchall()
+    ]
+    if non_card_ids:
+        placeholders = ", ".join("?" * len(non_card_ids))
+        history_conn.execute(
+            f"DELETE FROM price_snapshots WHERE blueprint_id IN ({placeholders})",
+            non_card_ids,
+        )
+        conn.execute(
+            f"DELETE FROM latest_prices WHERE blueprint_id IN ({placeholders})",
+            non_card_ids,
+        )
+        conn.execute(
+            f"DELETE FROM price_listings WHERE blueprint_id IN ({placeholders})",
+            non_card_ids,
+        )
     removed = conn.execute(
         "DELETE FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?",
         (POKEMON_SINGLES_CATEGORY_ID,),
@@ -110,7 +126,9 @@ def main():
 
     db.set_meta(conn, "last_catalog_sync", synced_at)
     conn.commit()
+    history_conn.commit()
     conn.close()
+    history_conn.close()
 
     print(f"\nFatto. {total_cards} carte sincronizzate nel catalogo locale.")
 

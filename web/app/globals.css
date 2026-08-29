@@ -74,6 +74,63 @@ body {
   }
 }
 
+/* --- Ingresso a cascata della griglia carte --- */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.card-enter {
+  animation: fade-in-up 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+/* --- Skeleton di caricamento --- */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+
+.skeleton {
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+/* --- Disegno progressivo della linea nel grafico prezzi --- */
+@keyframes draw-line {
+  from { stroke-dashoffset: var(--line-length, 300); }
+  to { stroke-dashoffset: 0; }
+}
+
+.price-line {
+  stroke-dasharray: var(--line-length, 300);
+  animation: draw-line 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.pop-on-toggle {
+  animation: pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-enter,
+  .skeleton,
+  .price-line,
+  .pop-on-toggle {
+    animation: none !important;
+  }
+}
+
 /* Scrollbar discreta, coerente con la palette scura */
 ::-webkit-scrollbar {
   width: 10px;

@@ -4,6 +4,7 @@ import initSqlJs, { Database, SqlJsStatic } from "sql.js";
 
 let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 let dbPromise: Promise<Database> | null = null;
+let historyDbPromise: Promise<Database> | null = null;
 
 function getSqlJs(): Promise<SqlJsStatic> {
   if (!sqlJsPromise) {
@@ -16,6 +17,8 @@ function getSqlJs(): Promise<SqlJsStatic> {
   return sqlJsPromise;
 }
 
+/** Catalogo + solo l'ultimo prezzo noto di ogni carta: file piccolo,
+ * scaricato ad ogni visita del sito (serve per la griglia). */
 export function getDb(): Promise<Database> {
   if (!dbPromise) {
     dbPromise = (async () => {
@@ -33,6 +36,26 @@ export function getDb(): Promise<Database> {
     })();
   }
   return dbPromise;
+}
+
+/** Storico giorno-per-giorno dei prezzi: file separato (cresce nel tempo),
+ * scaricato solo quando serve davvero (pagina di dettaglio di una carta),
+ * non per navigare la griglia principale. */
+export function getHistoryDb(): Promise<Database> {
+  if (!historyDbPromise) {
+    historyDbPromise = (async () => {
+      const [SQL, res] = await Promise.all([
+        getSqlJs(),
+        fetch("/data/price_history.db", { cache: "no-store" }),
+      ]);
+      if (!res.ok) {
+        throw new Error("Storico prezzi non trovato in /data/price_history.db.");
+      }
+      const buf = await res.arrayBuffer();
+      return new SQL.Database(new Uint8Array(buf));
+    })();
+  }
+  return historyDbPromise;
 }
 
 /**
@@ -90,7 +113,17 @@ export type CardRow = {
   prev_price_cents: number | null;
 };
 
-export type SortOption = "expansion" | "price_asc" | "price_desc" | "name";
+export type SortOption = "expansion" | "price_asc" | "price_desc" | "name" | "drop_first";
+
+const CARD_ROW_SELECT = `
+  b.id, b.name, b.version, b.expansion_code, b.expansion_name,
+  b.image_url, b.rarity, b.is_premium,
+  lp.min_price_cents AS latest_price_cents,
+  lp.min_price_currency AS latest_price_currency,
+  lp.listings_count AS latest_listings,
+  lp.cheapest_language AS latest_language,
+  lp.prev_price_cents AS prev_price_cents
+`;
 
 /** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
 export async function fetchCards(opts: {
@@ -121,32 +154,26 @@ export async function fetchCards(opts: {
   if (opts.languages && opts.languages.length > 0) {
     const placeholders = opts.languages.map((_, i) => `$lang${i}`).join(", ");
     opts.languages.forEach((l, i) => (params[`$lang${i}`] = l));
-    where.push(`latest.cheapest_language IN (${placeholders})`);
+    where.push(`lp.cheapest_language IN (${placeholders})`);
   }
 
   let orderBy = "b.expansion_id DESC, b.name ASC";
   if (opts.sortBy === "price_asc") orderBy = "latest_price_cents IS NULL, latest_price_cents ASC";
   if (opts.sortBy === "price_desc") orderBy = "latest_price_cents IS NULL, latest_price_cents DESC";
   if (opts.sortBy === "name") orderBy = "b.name ASC";
+  if (opts.sortBy === "drop_first") {
+    // Piu' grande calo percentuale prima; le carte senza prezzo precedente
+    // (o senza variazione) restano in fondo.
+    orderBy = `
+      CASE WHEN latest_price_cents IS NULL OR prev_price_cents IS NULL OR prev_price_cents = 0 THEN 1 ELSE 0 END,
+      (CAST(latest_price_cents AS REAL) - prev_price_cents) / prev_price_cents ASC
+    `;
+  }
 
   const sql = `
-    WITH ranked AS (
-      SELECT
-        ps.*,
-        ROW_NUMBER() OVER (PARTITION BY ps.blueprint_id ORDER BY ps.captured_at DESC) AS rn
-      FROM price_snapshots ps
-    )
-    SELECT
-      b.id, b.name, b.version, b.expansion_code, b.expansion_name,
-      b.image_url, b.rarity, b.is_premium,
-      latest.min_price_cents AS latest_price_cents,
-      latest.min_price_currency AS latest_price_currency,
-      latest.listings_count AS latest_listings,
-      latest.cheapest_language AS latest_language,
-      prev.min_price_cents AS prev_price_cents
+    SELECT ${CARD_ROW_SELECT}
     FROM blueprints b
-    LEFT JOIN ranked latest ON latest.blueprint_id = b.id AND latest.rn = 1
-    LEFT JOIN ranked prev   ON prev.blueprint_id = b.id AND prev.rn = 2
+    LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY ${orderBy}
   `;
@@ -169,22 +196,9 @@ export type CardDetail = CardRow & {
 export async function fetchCardDetail(id: number): Promise<CardDetail | null> {
   const db = await getDb();
   const stmt = db.prepare(`
-    WITH ranked AS (
-      SELECT
-        ps.*,
-        ROW_NUMBER() OVER (PARTITION BY ps.blueprint_id ORDER BY ps.captured_at DESC) AS rn
-      FROM price_snapshots ps
-    )
-    SELECT
-      b.id, b.name, b.version, b.expansion_code, b.expansion_name,
-      b.image_url, b.rarity, b.is_premium, b.tcg_player_id, b.scryfall_id,
-      latest.min_price_cents AS latest_price_cents,
-      latest.min_price_currency AS latest_price_currency,
-      latest.listings_count AS latest_listings,
-      prev.min_price_cents AS prev_price_cents
+    SELECT ${CARD_ROW_SELECT}, b.tcg_player_id, b.scryfall_id
     FROM blueprints b
-    LEFT JOIN ranked latest ON latest.blueprint_id = b.id AND latest.rn = 1
-    LEFT JOIN ranked prev   ON prev.blueprint_id = b.id AND prev.rn = 2
+    LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
     WHERE b.id = $id
   `);
   stmt.bind({ $id: id });
@@ -201,8 +215,10 @@ export type PricePoint = {
   listings_count: number;
 };
 
+/** Storico completo di una carta: scarica price_history.db solo alla prima
+ * chiamata (non serve per navigare il catalogo, solo per il grafico). */
 export async function fetchPriceHistory(blueprintId: number): Promise<PricePoint[]> {
-  const db = await getDb();
+  const db = await getHistoryDb();
   const stmt = db.prepare(`
     SELECT captured_at, min_price_cents, avg_price_cents, listings_count
     FROM price_snapshots
@@ -275,15 +291,9 @@ export async function fetchRarities(): Promise<string[]> {
 
 export async function fetchLanguages(): Promise<string[]> {
   const db = await getDb();
-  const stmt = db.prepare(`
-    WITH ranked AS (
-      SELECT ps.*, ROW_NUMBER() OVER (PARTITION BY ps.blueprint_id ORDER BY ps.captured_at DESC) AS rn
-      FROM price_snapshots ps
-    )
-    SELECT DISTINCT cheapest_language AS lang FROM ranked
-    WHERE rn = 1 AND cheapest_language IS NOT NULL
-    ORDER BY lang
-  `);
+  const stmt = db.prepare(
+    "SELECT DISTINCT cheapest_language AS lang FROM latest_prices WHERE cheapest_language IS NOT NULL ORDER BY lang"
+  );
   const rows: string[] = [];
   while (stmt.step()) rows.push((stmt.getAsObject() as any).lang);
   stmt.free();

@@ -60,7 +60,7 @@ export default function CardDetailPage() {
         ← Torna al binder
       </Link>
 
-      <div className="grid md:grid-cols-[320px_1fr] gap-8">
+      <div className="grid md:grid-cols-[320px_1fr] gap-8 card-enter">
         <HoloFrame className="bg-base-surface border border-base-border overflow-hidden self-start">
           <div className="relative aspect-[5/7] bg-base-surface2">
             {card.image_url ? (
@@ -104,7 +104,7 @@ export default function CardDetailPage() {
             )}
             <button
               onClick={() => setInBinder(new Set(toggleBinder(id)).has(id))}
-              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors ${
+              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
                 inBinder
                   ? "bg-accent/10 border-accent/60 text-accent-bright"
                   : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -141,6 +141,21 @@ export default function CardDetailPage() {
               <h2 className="font-display font-medium text-ink-primary mb-3">
                 Migliori inserzioni
               </h2>
+              {(() => {
+                const cheapestZero = listings.find((l) => l.can_sell_via_hub === 1);
+                if (!cheapestZero || cheapestZero === listings[0]) return null;
+                return (
+                  <div className="mb-3 flex items-center justify-between gap-3 rounded-card border border-accent/40 bg-accent/5 px-4 py-2.5 text-sm">
+                    <span className="text-ink-muted">
+                      Più economica con{" "}
+                      <span className="text-accent-bright font-medium">CardTrader Zero</span>
+                    </span>
+                    <span className="font-mono text-ink-primary">
+                      {formatCents(cheapestZero.price_cents, cheapestZero.price_currency ?? currency)}
+                    </span>
+                  </div>
+                );
+              })()}
               <div className="rounded-card border border-base-border bg-base-surface divide-y divide-base-border overflow-hidden">
                 {listings.map((l, i) => (
                   <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -171,7 +186,7 @@ export default function CardDetailPage() {
           )}
 
           <a
-            href={`https://www.cardtrader.com/it/pokemon/blueprint/${card.id}`}
+            href={`https://www.cardtrader.com/cards/${card.id}`}
             target="_blank"
             rel="noreferrer"
             className="inline-block mt-6 text-sm text-accent hover:text-accent-bright transition-colors"

@@ -69,12 +69,13 @@ export default function Toolbar({
           <option value="expansion">Ordina: espansione</option>
           <option value="price_asc">Prezzo: dal più basso</option>
           <option value="price_desc">Prezzo: dal più alto</option>
+          <option value="drop_first">Cali di prezzo prima</option>
           <option value="name">Nome A-Z</option>
         </select>
 
         <button
           onClick={onToggleBinder}
-          className={`whitespace-nowrap text-sm px-4 py-2.5 rounded-card border transition-colors ${
+          className={`whitespace-nowrap text-sm px-4 py-2.5 rounded-card border transition-colors active:scale-95 ${
             onlyBinder
               ? "bg-accent/10 border-accent/60 text-accent-bright"
               : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"
@@ -101,7 +102,7 @@ export default function Toolbar({
                   <button
                     key={r}
                     onClick={() => onToggleRarity(r)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
                       active
                         ? "bg-accent/10 border-accent/60 text-accent-bright"
                         : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"
@@ -131,7 +132,7 @@ export default function Toolbar({
                   <button
                     key={l}
                     onClick={() => onToggleLanguage(l)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
                       active
                         ? "bg-accent/10 border-accent/60 text-accent-bright"
                         : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"

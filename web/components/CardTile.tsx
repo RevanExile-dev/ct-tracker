@@ -1,23 +1,39 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import HoloFrame from "./HoloFrame";
 import { CardRow } from "@/lib/db";
 import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
 
+const STAGGER_MS = 25;
+const STAGGER_CAP = 16; // oltre questo indice niente piu' ritardo, altrimenti l'ultima riga aspetta troppo
+
 export default function CardTile({
   card,
+  index = 0,
   inBinder,
   onToggleBinder,
 }: {
   card: CardRow;
+  index?: number;
   inBinder?: boolean;
   onToggleBinder?: () => void;
 }) {
   const delta = priceDeltaPct(card.latest_price_cents, card.prev_price_cents);
+  const [popping, setPopping] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+
+  const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
 
   return (
-    <Link href={`/card/${card.id}`} className="group block">
-      <HoloFrame className="bg-base-surface border border-base-border overflow-hidden transition-transform duration-300 group-hover:-translate-y-1">
+    <Link
+      href={`/card/${card.id}`}
+      className="group block card-enter"
+      style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
+    >
+      <HoloFrame className="bg-base-surface border border-base-border overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-glow">
         <div className="relative aspect-[5/7] bg-base-surface2">
           {card.image_url ? (
             <Image
@@ -25,7 +41,10 @@ export default function CardTile({
               alt={card.name}
               fill
               sizes="(min-width: 1024px) 20vw, 45vw"
-              className="object-cover"
+              onLoad={() => setImgLoaded(true)}
+              className={`object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
+                imgLoaded ? "opacity-100" : "opacity-0"
+              }`}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono">
@@ -41,10 +60,14 @@ export default function CardTile({
             <button
               onClick={(e) => {
                 e.preventDefault();
+                setPopping(true);
                 onToggleBinder();
               }}
+              onAnimationEnd={() => setPopping(false)}
               aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
-              className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur border transition-colors ${
+              className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
+                popping ? "pop-on-toggle" : ""
+              } ${
                 inBinder
                   ? "bg-accent/20 border-accent/60 text-accent-bright"
                   : "bg-black/60 border-white/10 text-white/70 hover:text-white"

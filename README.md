@@ -112,19 +112,66 @@ In 1-2 minuti ottieni un link tipo `https://ct-tracker.vercel.app` — apri
 quello dal telefono o dal PC, niente da installare, e si aggiorna da solo ad
 ogni push (quindi anche dopo ogni sync prezzi giornaliero).
 
+## 8. Notifiche Telegram sui cali di prezzo (facoltativo, gratis)
+
+Se vuoi ricevere un messaggio Telegram quando una carta scende di prezzo,
+senza dover aprire il sito ogni giorno:
+
+1. Su Telegram, cerca **@BotFather**, mandagli `/newbot` e segui le
+   istruzioni (nome a piacere): alla fine ti dà un **token** tipo
+   `123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+2. Scrivi un messaggio qualsiasi al bot appena creato (altrimenti non può
+   scriverti lui per primo)
+3. Apri nel browser `https://api.telegram.org/bot<TOKEN>/getUpdates`
+   (sostituisci `<TOKEN>` con il tuo) e cerca `"chat":{"id":` nel risultato:
+   quel numero è il tuo **chat_id**
+4. Nel repo → **Settings → Secrets and variables → Actions → New repository
+   secret**, aggiungi due secret:
+   - `TELEGRAM_BOT_TOKEN` — il token del punto 1
+   - `TELEGRAM_CHAT_ID` — il chat_id del punto 3
+5. Fatto: dal prossimo sync prezzi (giornaliero o settimanale) ricevi un
+   messaggio ogni volta che c'è qualcosa da segnalare
+
+Le notifiche hanno due modalità indipendenti, entrambe attive di default:
+
+- **Soglia generale**: qualunque carta tracciata che scende di più del 15%
+  rispetto al prezzo precedente (soglia regolabile con la variabile
+  d'ambiente `DROP_THRESHOLD_PCT` nei workflow, se vuoi cambiarla)
+- **Watchlist**: le carte che aggiungi tu in `config/watchlist.json` (l'id
+  si trova nell'URL della pagina di dettaglio della carta sul sito, es.
+  `/card/315075` → id `315075`) vengono sempre riportate col prezzo
+  attuale, anche senza un calo
+
+Se non aggiungi i due secret, questo passaggio viene semplicemente saltato:
+il resto del tracker continua a funzionare normalmente.
+
 ---
 
 ## Come funziona sotto il cofano
 
 ```
-scripts/sync_catalog.py   → popola data/cardtrader.db con carte + immagini
-                             (URL immagine, non le scarica in locale)
-scripts/sync_prices.py    → ogni carta tracciata, interroga il marketplace
-                             e salva uno snapshot di prezzo per la giornata
-web/                       → sito Next.js che legge data/cardtrader.db
-                             DIRETTAMENTE nel browser (sql.js/WASM),
-                             nessun backend da mantenere
+scripts/sync_catalog.py     → popola data/cardtrader.db con carte + immagini
+                               (URL immagine, non le scarica in locale)
+scripts/sync_prices.py      → ogni carta tracciata, interroga il marketplace
+                               e salva uno snapshot di prezzo per la giornata
+scripts/notify_telegram.py  → dopo il sync prezzi, manda un messaggio
+                               Telegram se ci sono cali sopra soglia o carte
+                               in watchlist (facoltativo, vedi punto 8)
+web/                         → sito Next.js che legge i database
+                               DIRETTAMENTE nel browser (sql.js/WASM),
+                               nessun backend da mantenere
 ```
+
+I dati sono divisi in **due database** per restare veloci da scaricare:
+
+- `data/cardtrader.db` — catalogo carte + **solo l'ultimo prezzo noto** di
+  ognuna: file piccolo, è quello che il sito scarica sempre (griglia
+  principale, filtri, ricerca)
+- `data/price_history.db` — lo **storico completo** giorno per giorno: il
+  sito lo scarica solo quando apri il dettaglio di una carta (serve per il
+  grafico), non per navigare il catalogo. Per restare compatto nel tempo, i
+  dati più vecchi di 120 giorni vengono automaticamente compattati da
+  giornalieri a settimanali (un punto a settimana invece di uno al giorno)
 
 Il "trend" dei prezzi è costruito da noi nel tempo: CardTrader non offre uno
 storico nativo, quindi ogni giorno aggiungiamo un punto. Più giorni passano,

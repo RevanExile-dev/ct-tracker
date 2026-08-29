@@ -9,13 +9,26 @@ settimana per intero da '.github/workflows/sync_prices_full.yml'.
 E' idempotente: se lanciato più volte nello stesso giorno, sovrascrive lo
 snapshot del giorno invece di duplicarlo.
 
+I dati sono divisi in due file (vedi scripts/db.py):
+- data/cardtrader.db: catalogo + solo l'ultimo prezzo noto (piccolo, scaricato
+  ad ogni visita del sito)
+- data/price_history.db: storico giorno-per-giorno (cresce nel tempo, scaricato
+  solo quando apri il dettaglio di una carta; i dati vecchi vengono compressi
+  automaticamente, vedi db.prune_old_history)
+
 Il sync completo puo' durare ore (rate limit di 1 richiesta/secondo sul
 marketplace): per non perdere il lavoro se il job viene interrotto, ogni
 CHECKPOINT_EVERY carte lo script salva e pusha il progresso via git.
 
+Salta di default le carte che hanno gia' uno snapshot di oggi (es. da un
+run precedente della stessa giornata interrotto o rilanciato): rende i
+run ripetuti nello stesso giorno molto piu' veloci invece di rifare tutto
+da capo. Usa --force per ignorare questo e aggiornare comunque tutto.
+
 Uso:
-  python scripts/sync_prices.py            # tutte le carte del catalogo locale
-  python scripts/sync_prices.py --only-daily  # solo daily_expansion_codes
+  python scripts/sync_prices.py               # tutte le carte del catalogo locale
+  python scripts/sync_prices.py --only-daily   # solo daily_expansion_codes
+  python scripts/sync_prices.py --force        # riaggiorna anche le carte gia' fatte oggi
 """
 import json
 import shutil
@@ -29,7 +42,7 @@ import db
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "config" / "tracked_sets.json"
-WEB_DB_PATH = REPO_ROOT / "web" / "public" / "data" / "cardtrader.db"
+WEB_DATA_DIR = REPO_ROOT / "web" / "public" / "data"
 CHECKPOINT_EVERY = 300  # ~5 minuti al ritmo di 1 richiesta/secondo
 
 
@@ -68,14 +81,19 @@ def _push_with_retry(branch: str, attempts: int = 3):
           f"salto questo checkpoint.", file=sys.stderr)
 
 
-def checkpoint_commit(conn, label: str):
-    """Salva il DB copiato per il sito web e fa commit+push del progresso corrente,
-    cosi' un job lungo interrotto a meta' non perde comunque il lavoro gia' fatto."""
+def checkpoint_commit(conn, history_conn, label: str):
+    """Salva entrambi i DB copiati per il sito web e fa commit+push del
+    progresso corrente, cosi' un job lungo interrotto a meta' non perde
+    comunque il lavoro gia' fatto."""
     conn.commit()
-    WEB_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(db.DB_PATH, WEB_DB_PATH)
+    history_conn.commit()
+    WEB_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy(db.DB_PATH, WEB_DATA_DIR / db.DB_PATH.name)
+    shutil.copy(db.HISTORY_DB_PATH, WEB_DATA_DIR / db.HISTORY_DB_PATH.name)
     try:
-        _git("add", "data/cardtrader.db", "web/public/data/cardtrader.db")
+        _git("add",
+             "data/cardtrader.db", "web/public/data/cardtrader.db",
+             "data/price_history.db", "web/public/data/price_history.db")
         result = subprocess.run(
             ["git", "diff", "--staged", "--quiet"],
             cwd=REPO_ROOT,
@@ -90,47 +108,63 @@ def checkpoint_commit(conn, label: str):
 
 def main():
     only_daily = "--only-daily" in sys.argv
+    force = "--force" in sys.argv
 
     db.init_db()
     client = CardTraderClient()
     conn = db.get_connection()
+    history_conn = db.get_history_connection()
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    where = ["1=1"]
+    params: dict = {"today": today}
 
     if only_daily:
         config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         codes = config.get("daily_expansion_codes", [])
-        placeholders = ",".join("?" * len(codes))
-        blueprints = conn.execute(
-            f"SELECT id, name, expansion_name FROM blueprints "
-            f"WHERE expansion_code IN ({placeholders}) ORDER BY expansion_id, id",
-            codes,
-        ).fetchall()
-    else:
-        blueprints = conn.execute(
-            "SELECT id, name, expansion_name FROM blueprints ORDER BY expansion_id, id"
-        ).fetchall()
+        placeholders = ", ".join(f":code{i}" for i in range(len(codes)))
+        where.append(f"b.expansion_code IN ({placeholders})")
+        params.update({f"code{i}": c for i, c in enumerate(codes)})
+
+    if not force:
+        where.append(
+            "b.id NOT IN (SELECT blueprint_id FROM latest_prices WHERE captured_at = :today)"
+        )
+
+    query = (
+        "SELECT b.id, b.name, b.expansion_name FROM blueprints b "
+        f"WHERE {' AND '.join(where)} ORDER BY b.expansion_id, b.id"
+    )
+    blueprints = conn.execute(query, params).fetchall()
 
     if not blueprints:
-        print("Nessuna carta nel catalogo locale. Lancia prima scripts/sync_catalog.py")
-        sys.exit(1)
+        base_where = [w for w in where if "latest_prices" not in w]
+        base_query = (
+            "SELECT COUNT(*) FROM blueprints b "
+            f"WHERE {' AND '.join(base_where)}"
+        )
+        total_tracked = conn.execute(base_query, params).fetchone()[0]
+        if total_tracked == 0:
+            print("Nessuna carta nel catalogo locale. Lancia prima scripts/sync_catalog.py")
+            sys.exit(1)
+        print(f"Tutte le {total_tracked} carte tracciate hanno gia' un prezzo aggiornato "
+              f"oggi ({today}). Usa --force per rifare comunque il sync.")
+        return
 
     now = datetime.now(timezone.utc)
-    today = now.strftime("%Y-%m-%d")
     now_iso = now.isoformat()
 
-    print(f"Aggiorno i prezzi di {len(blueprints)} carte per il {today}...")
+    print(f"Aggiorno i prezzi di {len(blueprints)} carte per il {today}"
+          + ("" if force else " (gia' aggiornate oggi vengono saltate)") + "...")
 
     ok, errors = 0, 0
     for i, (bp_id, name, expansion_name) in enumerate(blueprints, start=1):
         try:
             products = client.get_marketplace_products(bp_id)
 
-            # Rimuove un eventuale snapshot già preso oggi per questa carta,
-            # cosi' il job resta idempotente anche se lanciato più volte al giorno.
-            conn.execute(
-                "DELETE FROM price_snapshots WHERE blueprint_id = ? AND captured_at = ?",
-                (bp_id, today),
-            )
-            db.insert_price_snapshot(conn, bp_id, today, now_iso, products)
+            db.insert_price_snapshot(history_conn, bp_id, today, now_iso, products)
+            db.upsert_latest_price(conn, history_conn, bp_id, today, now_iso, products)
             db.replace_price_listings(conn, bp_id, today, products)
 
             # Se troviamo la rarità reale tra le proprietà del prodotto più
@@ -152,15 +186,23 @@ def main():
 
         if i % 25 == 0:
             conn.commit()
+            history_conn.commit()
             print(f"  ...{i}/{len(blueprints)} carte processate")
 
         if i % CHECKPOINT_EVERY == 0:
-            checkpoint_commit(conn, label=f"{i}/{len(blueprints)}")
+            checkpoint_commit(conn, history_conn, label=f"{i}/{len(blueprints)}")
+
+    pruned = db.prune_old_history(history_conn)
+    if pruned:
+        print(f"Storico compresso: rimossi {pruned} punti giornalieri "
+              f"oltre i {db.RETENTION_DAILY_DAYS} giorni (tenuto 1 punto/settimana).")
 
     db.set_meta(conn, "last_price_sync", now_iso)
     conn.commit()
-    checkpoint_commit(conn, label="finale")
+    history_conn.commit()
+    checkpoint_commit(conn, history_conn, label="finale")
     conn.close()
+    history_conn.close()
 
     print(f"\nCompletato: {ok} carte aggiornate, {errors} errori.")
 
