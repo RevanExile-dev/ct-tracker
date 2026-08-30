@@ -36,10 +36,14 @@ function MoversSkeleton() {
 /** Tiene solo le carte con una variazione di prezzo reale (prezzo attuale e
  * precedente entrambi noti), nell'ordine gia' deciso dalla query SQL. */
 function withRealDelta(cards: CardRow[]): CardRow[] {
+  // Deve valutare lo stesso prezzo che CardTile mostra a schermo
+  // (filtered_price_cents quando un filtro lingua/condizione/Zero e'
+  // attivo), altrimenti una carta puo' essere esclusa/inclusa qui in base
+  // a un prezzo diverso da quello che l'utente vede sulla tile.
   return cards.filter(
     (c) =>
       priceDeltaPct(
-        c.best_price_cents ?? c.latest_price_cents,
+        c.filtered_price_cents ?? c.best_price_cents ?? c.latest_price_cents,
         c.prev_best_price_cents ?? c.prev_price_cents
       ) !== null
   );

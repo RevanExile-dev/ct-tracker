@@ -318,7 +318,11 @@ def _pick_best_listing(products: list):
     Preferiamo quindi Near Mint + CardTrader Zero (spedizione gestita/
     garantita), allentando un vincolo alla volta se non esiste una simile
     inserzione, fino al puro piu' economico in assoluto (che resta comunque
-    salvato separatamente in min_price_cents, non buttato via)."""
+    salvato separatamente in min_price_cents, non buttato via). Si aspetta
+    che 'products' contenga gia' solo offerte con un prezzo valido (vedi
+    _summarize_products, che filtra prima di chiamare questa funzione) -
+    un'offerta CardTrader senza "price" (raro ma possibile su un'API
+    esterna) farebbe altrimenti fallire l'intero sync su quella carta."""
     def cheapest_matching(pred):
         matching = [p for p in products if pred(p)]
         return min(matching, key=lambda p: p["price"]["cents"]) if matching else None
@@ -339,9 +343,17 @@ def _summarize_products(products: list):
     (prezzo minimo, medio, condizioni/lingua della piu' economica...)."""
     if not products:
         return None
-    prices = [p["price"]["cents"] for p in products if p.get("price")]
-    cheapest = min(products, key=lambda p: p["price"]["cents"])
-    best = _pick_best_listing(products)
+    # CardTrader garantisce un prezzo su ogni offerta del marketplace, ma
+    # e' un'API esterna: un elemento senza "price" (o con cents mancante)
+    # farebbe fallire min()/_pick_best_listing con un errore poco chiaro,
+    # bloccando il sync su quella carta invece di ignorare solo l'offerta
+    # malformata.
+    valid_products = [p for p in products if (p.get("price") or {}).get("cents") is not None]
+    if not valid_products:
+        return None
+    prices = [p["price"]["cents"] for p in valid_products]
+    cheapest = min(valid_products, key=lambda p: p["price"]["cents"])
+    best = _pick_best_listing(valid_products)
     avg_cents = int(sum(prices) / len(prices)) if prices else None
     # Tutte le lingue con almeno un'inserzione, non solo quella della piu'
     # economica: serve per poter filtrare "disponibile in lingua X" anche
@@ -480,9 +492,10 @@ def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: 
     5 piu' economiche, che spesso non includono nessuna inserzione Near
     Mint/CardTrader Zero decente."""
     conn.execute("DELETE FROM price_listings WHERE blueprint_id = ?", (blueprint_id,))
-    if not products:
+    valid_products = [p for p in products if (p.get("price") or {}).get("cents") is not None]
+    if not valid_products:
         return
-    cheapest_first = sorted(products, key=lambda p: p["price"]["cents"])[:top_n]
+    cheapest_first = sorted(valid_products, key=lambda p: p["price"]["cents"])[:top_n]
     conn.executemany(
         """INSERT INTO price_listings
            (blueprint_id, captured_at, price_cents, price_currency, condition,

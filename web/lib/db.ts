@@ -226,7 +226,15 @@ export async function fetchCards(opts: {
   const filteredJoin = hasListingFilter
     ? `LEFT JOIN (
          SELECT blueprint_id, price_cents, price_currency, condition, language, can_sell_via_hub,
-                ROW_NUMBER() OVER (PARTITION BY blueprint_id ORDER BY price_cents ASC) AS rn
+                -- A parita' di prezzo (due inserzioni allo stesso prezzo
+                -- esatto) l'ordine di ORDER BY price_cents ASC da solo non
+                -- e' deterministico: preferisce Zero, poi la riga piu'
+                -- vecchia (id), cosi' il risultato non "sfarfalla" tra un
+                -- caricamento e l'altro.
+                ROW_NUMBER() OVER (
+                  PARTITION BY blueprint_id
+                  ORDER BY price_cents ASC, can_sell_via_hub DESC, id ASC
+                ) AS rn
          FROM price_listings pl
          WHERE ${listingFilters.join(" AND ")}
        ) fl ON fl.blueprint_id = b.id AND fl.rn = 1`
