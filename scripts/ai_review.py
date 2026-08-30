@@ -16,7 +16,7 @@ import sys
 
 import requests
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
 # Un diff enorme sforerebbe il contesto utile (e il livello gratuito ha
