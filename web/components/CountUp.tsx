@@ -16,7 +16,7 @@ export default function CountUp({
 }) {
   const [display, setDisplay] = useState(value);
   const prevValue = useRef(value);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const from = prevValue.current;
