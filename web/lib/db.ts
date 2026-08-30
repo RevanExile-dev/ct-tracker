@@ -112,6 +112,33 @@ export type SortOption =
   | "drop_first"
   | "rise_first";
 
+const RARITY_ALIASES: Record<string, string[]> = {
+  // CardTrader usa sia il nome abbreviato sia un refuso senza la seconda
+  // "t" in set diversi. Per l'utente sono tutti la stessa rarita'.
+  "Special Illustration Rare": [
+    "Special Illustration Rare",
+    "Special Illustration",
+    "Special Illustraion Rare",
+  ],
+};
+
+const RARITY_CANONICAL = new Map(
+  Object.entries(RARITY_ALIASES).flatMap(([canonical, aliases]) =>
+    aliases.map((alias) => [alias, canonical] as const)
+  )
+);
+
+export function normalizeRarity(rarity: string): string {
+  return RARITY_CANONICAL.get(rarity) ?? rarity;
+}
+
+function expandRarityFilters(rarities: string[]): string[] {
+  return Array.from(new Set(rarities.flatMap((rarity) => {
+    const canonical = normalizeRarity(rarity);
+    return RARITY_ALIASES[canonical] ?? [rarity];
+  })));
+}
+
 const CARD_ROW_SELECT = `
   b.id, b.name, b.version, b.expansion_code, b.expansion_name,
   b.image_url, b.rarity, b.is_premium,
@@ -159,8 +186,9 @@ export async function fetchCards(opts: {
     params["$expansionCode"] = opts.expansionCode;
   }
   if (opts.rarities && opts.rarities.length > 0) {
-    const placeholders = opts.rarities.map((_, i) => `$rarity${i}`).join(", ");
-    opts.rarities.forEach((r, i) => (params[`$rarity${i}`] = r));
+    const rarityFilters = expandRarityFilters(opts.rarities);
+    const placeholders = rarityFilters.map((_, i) => `$rarity${i}`).join(", ");
+    rarityFilters.forEach((r, i) => (params[`$rarity${i}`] = r));
     where.push(`b.rarity IN (${placeholders})`);
   }
   // Lingua/condizione/Zero filtrano tutti sulle stesse inserzioni salvate
@@ -288,7 +316,9 @@ export async function fetchCards(opts: {
   stmt.bind(params);
   const rows: CardRow[] = [];
   while (stmt.step()) {
-    rows.push(stmt.getAsObject() as unknown as CardRow);
+    const row = stmt.getAsObject() as unknown as CardRow;
+    if (row.rarity) row.rarity = normalizeRarity(row.rarity);
+    rows.push(row);
   }
   stmt.free();
   return rows;
@@ -309,7 +339,10 @@ export async function fetchCardDetail(id: number): Promise<CardDetail | null> {
   `);
   stmt.bind({ $id: id });
   let row: CardDetail | null = null;
-  if (stmt.step()) row = stmt.getAsObject() as unknown as CardDetail;
+  if (stmt.step()) {
+    row = stmt.getAsObject() as unknown as CardDetail;
+    if (row.rarity) row.rarity = normalizeRarity(row.rarity);
+  }
   stmt.free();
   return row;
 }
@@ -424,10 +457,12 @@ export async function fetchRarities(): Promise<string[]> {
   const stmt = db.prepare(
     "SELECT DISTINCT rarity FROM blueprints WHERE rarity IS NOT NULL ORDER BY rarity"
   );
-  const rows: string[] = [];
-  while (stmt.step()) rows.push((stmt.getAsObject() as { rarity: string }).rarity);
+  const rows = new Set<string>();
+  while (stmt.step()) {
+    rows.add(normalizeRarity((stmt.getAsObject() as { rarity: string }).rarity));
+  }
   stmt.free();
-  return rows;
+  return Array.from(rows).sort((a, b) => a.localeCompare(b, "en"));
 }
 
 /** Tutte le lingue disponibili su almeno una carta (non solo quella della

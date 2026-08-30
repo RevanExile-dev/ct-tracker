@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ExpansionInfo, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
@@ -54,6 +55,7 @@ export default function Toolbar({
   onApplyPreset: (preset: FilterPreset) => void;
 }) {
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
+  const [activeFilter, setActiveFilter] = useState<"rarity" | "language" | "condition" | null>(null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -126,6 +128,8 @@ export default function Toolbar({
           options={rarities}
           selected={selectedRarities}
           onToggle={onToggleRarity}
+          open={activeFilter === "rarity"}
+          onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
         />
         <FilterDropdown
           label="Filtra per lingua"
@@ -133,6 +137,8 @@ export default function Toolbar({
           selected={selectedLanguages}
           onToggle={onToggleLanguage}
           renderOption={(l) => `${languageFlag(l)} ${languageLabel(l)}`}
+          open={activeFilter === "language"}
+          onOpenChange={(open) => setActiveFilter(open ? "language" : null)}
         />
         <FilterDropdown
           label="Filtra per condizione"
@@ -140,6 +146,8 @@ export default function Toolbar({
           selected={selectedConditions}
           onToggle={onToggleCondition}
           renderOption={(c) => <ConditionBadge condition={c} />}
+          open={activeFilter === "condition"}
+          onOpenChange={(open) => setActiveFilter(open ? "condition" : null)}
         />
         <button
           type="button"

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, ExpansionInfo, SortOption,
   fetchCards, fetchCatalogStats, fetchConditions, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
+  normalizeRarity,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { priceDeltaPct } from "@/lib/format";
@@ -41,7 +42,7 @@ function HomeContent() {
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const [expansionCode, setExpansionCode] = useState(() => searchParams.get("exp") ?? "");
   const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
-    splitCsv(searchParams.get("rarity"))
+    splitCsv(searchParams.get("rarity")).map(normalizeRarity)
   );
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() =>
     splitCsv(searchParams.get("lang"))
@@ -177,7 +178,7 @@ function HomeContent() {
   function applyPreset(preset: FilterPreset) {
     setSearch(preset.search ?? "");
     setExpansionCode(preset.expansionCode ?? "");
-    setSelectedRarities(preset.rarities);
+    setSelectedRarities(preset.rarities.map(normalizeRarity));
     setSelectedLanguages(preset.languages);
     setSelectedConditions(preset.conditions);
     setOnlyZero(preset.onlyZero);

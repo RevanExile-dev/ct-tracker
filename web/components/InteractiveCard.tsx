@@ -17,6 +17,9 @@ export default function InteractiveCard({ children, className = "", level = "til
   const frameRef = useRef<number | null>(null);
   const pointRef = useRef<{ x: number; y: number } | null>(null);
   const pointerActiveRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
   const [revealDone, setRevealDone] = useState(!reveal);
 
   useEffect(() => () => {
@@ -52,13 +55,25 @@ export default function InteractiveCard({ children, className = "", level = "til
 
   function reset() {
     pointerActiveRef.current = false;
+    pointerIdRef.current = null;
+    dragStartRef.current = null;
     pointRef.current = null;
     const el = ref.current;
     if (!el) return;
     delete el.dataset.active;
+    delete el.dataset.pressed;
     el.style.removeProperty("--card-transform");
     el.style.removeProperty("--card-shadow-x");
     el.style.removeProperty("--card-shadow-y");
+  }
+
+  function finishPointer(event: React.PointerEvent<HTMLDivElement>, cancelled = false) {
+    if (pointerIdRef.current !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (cancelled) suppressClickRef.current = false;
+    reset();
   }
 
   return (
@@ -66,17 +81,44 @@ export default function InteractiveCard({ children, className = "", level = "til
       ref={ref}
       data-level={level}
       onPointerDown={(event) => {
-        if (event.pointerType === "touch" || event.pointerType === "pen") {
-          pointerActiveRef.current = true;
-          queuePoint(event.clientX, event.clientY);
-        }
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        pointerActiveRef.current = true;
+        pointerIdRef.current = event.pointerId;
+        dragStartRef.current = { x: event.clientX, y: event.clientY };
+        suppressClickRef.current = false;
+        event.currentTarget.dataset.pressed = "true";
+        event.currentTarget.setPointerCapture(event.pointerId);
+        queuePoint(event.clientX, event.clientY);
       }}
       onPointerMove={(event) => {
-        if (event.pointerType === "mouse" || pointerActiveRef.current) queuePoint(event.clientX, event.clientY);
+        if (pointerActiveRef.current && pointerIdRef.current === event.pointerId) {
+          const start = dragStartRef.current;
+          if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 5) {
+            suppressClickRef.current = true;
+          }
+          queuePoint(event.clientX, event.clientY);
+          return;
+        }
+        // Sul desktop resta anche il tilt leggero al semplice passaggio;
+        // la pressione usa invece pointer capture, quindi continua a seguire
+        // il mouse anche se durante il trascinamento esce dai bordi.
+        if (event.pointerType === "mouse") queuePoint(event.clientX, event.clientY);
       }}
-      onPointerUp={reset}
-      onPointerCancel={reset}
-      onPointerLeave={reset}
+      onPointerUp={(event) => finishPointer(event)}
+      onPointerCancel={(event) => finishPointer(event, true)}
+      onLostPointerCapture={() => {
+        if (pointerActiveRef.current) reset();
+      }}
+      onPointerLeave={() => {
+        if (!pointerActiveRef.current) reset();
+      }}
+      onDragStart={(event) => event.preventDefault()}
+      onClickCapture={(event) => {
+        if (!suppressClickRef.current) return;
+        suppressClickRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onBlur={reset}
       onAnimationEnd={(event) => {
         if (event.target === event.currentTarget) setRevealDone(true);

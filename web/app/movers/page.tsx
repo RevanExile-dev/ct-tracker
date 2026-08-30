@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CardRow, fetchCards, fetchConditions, fetchLanguages, fetchRarities } from "@/lib/db";
+import { CardRow, fetchCards, fetchConditions, fetchLanguages, fetchRarities, normalizeRarity } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { languageFlag, languageLabel, priceDeltaPct } from "@/lib/format";
 import CardTile from "@/components/CardTile";
@@ -68,10 +68,13 @@ function MoversContent() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() => splitCsv(searchParams.get("lang")));
   const [rarities, setRarities] = useState<string[]>([]);
-  const [selectedRarities, setSelectedRarities] = useState<string[]>(() => splitCsv(searchParams.get("rarity")));
+  const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
+    splitCsv(searchParams.get("rarity")).map(normalizeRarity)
+  );
   const [conditions, setConditions] = useState<string[]>([]);
   const [selectedConditions, setSelectedConditions] = useState<string[]>(() => splitCsv(searchParams.get("cond")));
   const [onlyZero, setOnlyZero] = useState(() => searchParams.get("zero") === "1");
+  const [activeFilter, setActiveFilter] = useState<"rarity" | "language" | "condition" | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -156,7 +159,7 @@ function MoversContent() {
   }
 
   function applyPreset(preset: FilterPreset) {
-    setSelectedRarities(preset.rarities);
+    setSelectedRarities(preset.rarities.map(normalizeRarity));
     setSelectedLanguages(preset.languages);
     setSelectedConditions(preset.conditions);
     setOnlyZero(preset.onlyZero);
@@ -185,6 +188,8 @@ function MoversContent() {
           options={rarities}
           selected={selectedRarities}
           onToggle={handleToggleRarity}
+          open={activeFilter === "rarity"}
+          onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
         />
         <FilterDropdown
           label="Filtra per lingua"
@@ -192,6 +197,8 @@ function MoversContent() {
           selected={selectedLanguages}
           onToggle={handleToggleLanguage}
           renderOption={(l) => `${languageFlag(l)} ${languageLabel(l)}`}
+          open={activeFilter === "language"}
+          onOpenChange={(open) => setActiveFilter(open ? "language" : null)}
         />
         <FilterDropdown
           label="Filtra per condizione"
@@ -199,6 +206,8 @@ function MoversContent() {
           selected={selectedConditions}
           onToggle={handleToggleCondition}
           renderOption={(c) => <ConditionBadge condition={c} />}
+          open={activeFilter === "condition"}
+          onOpenChange={(open) => setActiveFilter(open ? "condition" : null)}
         />
         <button
           type="button"

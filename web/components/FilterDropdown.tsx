@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 /** Pannello filtro inline: resta nel flusso e non puo' coprire le card. */
 export default function FilterDropdown({
   label, options, selected, onToggle, renderOption, searchable = false,
   getSearchText, layout = "pills", footerNote, closeOnSelect = false,
+  open: controlledOpen, onOpenChange,
 }: {
   label: string;
   options: string[];
@@ -17,11 +18,19 @@ export default function FilterDropdown({
   layout?: "pills" | "list";
   footerNote?: React.ReactNode;
   closeOnSelect?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
   const [query, setQuery] = useState("");
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+
+  const setOpen = useCallback((open: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(open);
+    onOpenChange?.(open);
+  }, [controlledOpen, onOpenChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -33,7 +42,7 @@ export default function FilterDropdown({
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [open]);
+  }, [open, setOpen]);
 
   const filtered = searchable && query
     ? options.filter((option) =>
@@ -46,13 +55,13 @@ export default function FilterDropdown({
   if (options.length === 0) return null;
 
   return (
-    <div ref={rootRef} className="filter-inline max-w-full">
+    <div ref={rootRef} className={`filter-inline max-w-full ${open ? "is-open" : ""}`}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => {
-          setOpen((value) => !value);
+          setOpen(!open);
           if (open) setQuery("");
         }}
         className="filter-trigger min-h-11 cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary flex items-center gap-2 rounded-lg px-2 -mx-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"

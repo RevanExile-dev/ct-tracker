@@ -81,10 +81,39 @@ body::after {
   isolation: isolate;
   transform-style: preserve-3d;
   touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
   transform: var(--card-transform, perspective(900px) rotateX(0) rotateY(0));
   transition:
     transform var(--motion-slow) var(--ease-out-premium),
     box-shadow var(--motion-medium) ease;
+}
+
+.interactive-card[data-pressed="true"] {
+  cursor: grabbing;
+}
+
+.interactive-card img {
+  -webkit-user-drag: none;
+}
+
+/* Un solo pannello filtro e' aperto alla volta. Quando lo e', scende su una
+   riga propria e usa tutta la larghezza disponibile: le pillole si
+   distribuiscono orizzontalmente invece di creare una colonna alta con un
+   grande vuoto accanto. */
+.filter-toolbar > .filter-inline.is-open {
+  flex-basis: 100%;
+  max-width: 100%;
+  order: 20;
+}
+
+.filter-toolbar > .filter-inline.is-open .filter-panel {
+  width: 100%;
+  max-width: 100%;
+}
+
+.filter-toolbar > .filter-inline.is-open .filter-panel > .flex {
+  max-width: none;
 }
 
 .interactive-card::before {
@@ -168,9 +197,13 @@ body::after {
   .interactive-card::after {
     transition: none;
   }
-  .interactive-card,
-  .interactive-card[data-active="true"] {
+  .interactive-card:not([data-pressed="true"]) {
     transform: none !important;
+  }
+  /* Il movimento automatico resta disattivato, ma una manipolazione
+     intenzionale click/touch + drag deve continuare a dare feedback. */
+  .interactive-card[data-pressed="true"] {
+    transform: var(--card-transform, none) !important;
   }
 }
 
