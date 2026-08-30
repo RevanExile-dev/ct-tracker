@@ -1,0 +1,29 @@
+name: Debug - Groq connectivity check
+
+# Diagnostico una tantum (vedi scripts/debug_groq.py): verifica che
+# GROQ_API_KEY sia valida e il modello risponda, prima di integrare Groq
+# come provider vero in ai_review.py. Da rimuovere una volta confermato.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Test Groq
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python scripts/debug_groq.py
