@@ -226,23 +226,37 @@ export async function fetchCards(opts: {
   }
 
   // Inserzione piu' economica tra quelle che rispettano TUTTI i filtri
-  // lingua/condizione/Zero insieme (ROW_NUMBER + rn=1 = la piu' economica
-  // per carta), solo quando almeno uno di questi filtri e' attivo — cosi'
-  // il percorso senza filtri resta leggero come prima.
+  // lingua/condizione/Zero insieme, solo quando almeno uno di questi
+  // filtri e' attivo — cosi' il percorso senza filtri resta leggero come
+  // prima. In due passi invece di un unico ROW_NUMBER() su tutte le righe
+  // filtrate (misurato: 25-40% piu' lento, fino a ~1.450ms su un catalogo
+  // di 31.700+ carte dopo il sync completo):
+  //   1) GROUP BY + MIN(price_cents) per trovare il prezzo minimo per
+  //      carta — SQLite puo' sfruttare l'indice (blueprint_id, price_cents)
+  //      per calcolarlo senza dover ordinare/numerare ogni singola riga.
+  //   2) ROW_NUMBER() SOLO tra le righe che hanno esattamente quel prezzo
+  //      minimo (di norma una, raramente piu' di una - un pareggio di
+  //      prezzo esatto) per il tie-break deterministico (Zero prima, poi
+  //      la riga piu' vecchia), invece che su tutte le righe filtrate.
+  // Verificato: stessi identici risultati nello stesso ordine della
+  // versione precedente su piu' combinazioni di filtri.
   const filteredJoin = hasListingFilter
     ? `LEFT JOIN (
-         SELECT blueprint_id, price_cents, price_currency, condition, language, can_sell_via_hub,
-                -- A parita' di prezzo (due inserzioni allo stesso prezzo
-                -- esatto) l'ordine di ORDER BY price_cents ASC da solo non
-                -- e' deterministico: preferisce Zero, poi la riga piu'
-                -- vecchia (id), cosi' il risultato non "sfarfalla" tra un
-                -- caricamento e l'altro.
+         WITH mins AS (
+           SELECT blueprint_id, MIN(price_cents) AS price_cents
+           FROM price_listings pl
+           WHERE ${listingFilters.join(" AND ")}
+           GROUP BY blueprint_id
+         )
+         SELECT m.blueprint_id, pl.price_cents, pl.price_currency, pl.condition, pl.language, pl.can_sell_via_hub,
                 ROW_NUMBER() OVER (
-                  PARTITION BY blueprint_id
-                  ORDER BY price_cents ASC, can_sell_via_hub DESC, id ASC
+                  PARTITION BY m.blueprint_id
+                  ORDER BY pl.can_sell_via_hub DESC, pl.id ASC
                 ) AS rn
-         FROM price_listings pl
-         WHERE ${listingFilters.join(" AND ")}
+         FROM mins m
+         JOIN price_listings pl
+           ON pl.blueprint_id = m.blueprint_id AND pl.price_cents = m.price_cents
+           AND ${listingFilters.join(" AND ")}
        ) fl ON fl.blueprint_id = b.id AND fl.rn = 1`
     : "";
   const filteredSelect = hasListingFilter
