@@ -75,11 +75,19 @@ export default function MoversPage() {
       languages: selectedLanguages, rarities: selectedRarities,
       conditions: selectedConditions, onlyZero,
     };
-    fetchCards({ sortBy: "rise_first", ...filters })
-      .then((cards) => setRises(withRealDelta(cards).slice(0, MOVERS_LIMIT)))
+    // limit direttamente in SQL: drop_first/rise_first ordinano gia' le
+    // carte con una variazione valida prima di quelle senza (vedi CASE
+    // WHEN in fetchCards), quindi prendere le prime MOVERS_LIMIT via SQL
+    // equivale a scaricare tutto il catalogo e tagliare qui - ma senza
+    // dover ordinare/unire in JS decine di migliaia di righe ad ogni
+    // cambio di filtro. withRealDelta resta come rete di sicurezza per le
+    // eventuali righe senza variazione finite dentro se le carte valide
+    // sono meno di MOVERS_LIMIT.
+    fetchCards({ sortBy: "rise_first", limit: MOVERS_LIMIT, ...filters })
+      .then((cards) => setRises(withRealDelta(cards)))
       .catch((e) => setError(String(e.message ?? e)));
-    fetchCards({ sortBy: "drop_first", ...filters })
-      .then((cards) => setDrops(withRealDelta(cards).slice(0, MOVERS_LIMIT)))
+    fetchCards({ sortBy: "drop_first", limit: MOVERS_LIMIT, ...filters })
+      .then((cards) => setDrops(withRealDelta(cards)))
       .catch((e) => setError(String(e.message ?? e)));
   }, [selectedLanguages, selectedRarities, selectedConditions, onlyZero]);
 

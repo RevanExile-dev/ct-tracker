@@ -138,11 +138,17 @@ export async function fetchCards(opts: {
   conditions?: string[];
   onlyZero?: boolean;
   sortBy?: SortOption;
+  // Applica LIMIT direttamente in SQL invece di scaricare tutte le righe
+  // e tagliare in JS: sicuro SOLO per sortBy che ordinano gia' le righe
+  // "valide" prima di quelle scartate a valle (vedi drop_first/rise_first,
+  // il CASE WHEN le mette in coda) - altrimenti un LIMIT prematuro
+  // rischierebbe di tagliare via righe che poi sarebbero risultate valide.
+  limit?: number;
 }): Promise<CardRow[]> {
   const db = await getDb();
 
   const where: string[] = [];
-  const params: Record<string, string> = {};
+  const params: Record<string, string | number> = {};
 
   if (opts.search) {
     where.push("b.name LIKE $search");
@@ -252,7 +258,9 @@ export async function fetchCards(opts: {
     ${filteredJoin}
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY ${orderBy}
+    ${opts.limit ? `LIMIT $limit` : ""}
   `;
+  if (opts.limit) params["$limit"] = opts.limit;
 
   const stmt = db.prepare(sql);
   stmt.bind(params);

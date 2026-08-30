@@ -102,17 +102,17 @@ export default function CardTile({
             {card.name}
           </div>
 
-          <div className="flex items-end justify-between mt-2">
-            <div className="font-mono text-lg text-ink-primary flex items-center gap-1.5">
+          <div className="flex items-end justify-between flex-wrap gap-x-2 gap-y-1 mt-2">
+            <div className="font-mono text-lg text-ink-primary flex items-center gap-1.5 min-w-0">
               {formatCents(priceCents, priceCurrency ?? "EUR")}
               {priceLanguage && (
-                <span className="text-xs" title={priceLanguage.toUpperCase()}>
+                <span className="text-xs shrink-0" title={priceLanguage.toUpperCase()}>
                   {languageFlag(priceLanguage)}
                 </span>
               )}
               {isNmZero && (
                 <span
-                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright"
+                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap shrink-0"
                   title="Near Mint, CardTrader Zero"
                 >
                   NM Zero
@@ -121,7 +121,7 @@ export default function CardTile({
             </div>
             {delta !== null && (
               <div
-                className={`text-xs font-mono ${
+                className={`text-xs font-mono whitespace-nowrap shrink-0 ${
                   delta >= 0 ? "text-signal-up" : "text-signal-down"
                 }`}
               >

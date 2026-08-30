@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS blueprints (
 CREATE INDEX IF NOT EXISTS idx_blueprint_expansion
     ON blueprints (expansion_id);
 
+CREATE INDEX IF NOT EXISTS idx_blueprint_rarity
+    ON blueprints (rarity);
+
 -- Solo l'ultimo prezzo noto e quello precedente (per la freccina su/giu'),
 -- una riga per carta: e' una "vista materializzata" di price_history.db,
 -- cosi' la griglia principale non deve mai scaricare lo storico completo.
@@ -108,6 +111,16 @@ CREATE TABLE IF NOT EXISTS price_listings (
 
 CREATE INDEX IF NOT EXISTS idx_listings_blueprint
     ON price_listings (blueprint_id, price_cents);
+
+-- Il filtro combinato lingua/condizione/Zero (web/lib/db.ts, fetchCards)
+-- interroga price_listings due volte per query (il sottofiltro "b.id IN
+-- (...)" e il LEFT JOIN che sceglie l'inserzione filtrata piu' economica):
+-- senza questi indici ogni chiamata scansiona tutta la tabella (oltre
+-- 200mila righe dopo il sync completo). Trovato investigando un lag reale
+-- di ~2s sulla pagina "carte in movimento" con filtri attivi.
+CREATE INDEX IF NOT EXISTS idx_listings_condition ON price_listings (condition);
+CREATE INDEX IF NOT EXISTS idx_listings_language ON price_listings (language);
+CREATE INDEX IF NOT EXISTS idx_listings_zero ON price_listings (can_sell_via_hub);
 
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
