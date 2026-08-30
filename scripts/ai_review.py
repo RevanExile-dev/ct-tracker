@@ -48,10 +48,24 @@ REQUEST_HARD_TIMEOUT_S = 90
 # comunque un limite di token): tagliato con un avviso invece di fallire.
 MAX_DIFF_CHARS = 200_000
 
+# File generati automaticamente: cambiano spesso per intero (es. un solo
+# bump di versione riscrive migliaia di righe di lockfile) senza contenere
+# nulla da revisionare, ma possono da soli superare il limite di token per
+# richiesta di un provider (osservato: un diff con package-lock.json ha
+# fatto fallire Groq, 81.000 token contro un limite di 8.000/minuto sul
+# livello gratuito) o mangiarsi MAX_DIFF_CHARS lasciando fuori il codice
+# vero. Esclusi dal diff mandato ai provider, non dal repository.
+DIFF_EXCLUDE_PATHSPECS = [
+    ":(exclude)**/package-lock.json",
+    ":(exclude)**/yarn.lock",
+    ":(exclude)**/pnpm-lock.yaml",
+    ":(exclude)**/*.db",
+]
+
 
 def _git_diff(base_ref: str, head_ref: str) -> str:
     result = subprocess.run(
-        ["git", "diff", f"{base_ref}...{head_ref}"],
+        ["git", "diff", f"{base_ref}...{head_ref}", "--", ".", *DIFF_EXCLUDE_PATHSPECS],
         check=True, capture_output=True, text=True,
     )
     diff = result.stdout
