@@ -15,6 +15,7 @@ import requests
 
 MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODELS_URL = "https://api.groq.com/openai/v1/models"
 
 
 def main():
@@ -22,6 +23,17 @@ def main():
     if not api_key:
         print("ERRORE: GROQ_API_KEY mancante.", file=sys.stderr)
         sys.exit(1)
+
+    models_resp = requests.get(
+        MODELS_URL, headers={"Authorization": f"Bearer {api_key}"}, timeout=30
+    )
+    print(f"--- Elenco modelli disponibili (status {models_resp.status_code}) ---")
+    if models_resp.ok:
+        for m in models_resp.json().get("data", []):
+            print(f"  {m.get('id')} (active={m.get('active')})")
+    else:
+        print(models_resp.text[:2000])
+    print()
 
     resp = requests.post(
         API_URL,
