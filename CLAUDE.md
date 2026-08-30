@@ -10,17 +10,41 @@ richiesta.
 
 Claude Code è il coordinatore principale del lavoro: analizza la richiesta,
 definisce e implementa il piano, integra i risultati e mantiene la
-responsabilità della decisione finale. Un secondo modello (Gemini, tramite
-`.github/workflows/ai_review.yml`) opera come reviewer indipendente, non come
-secondo implementatore concorrente.
+responsabilità della decisione finale. Uno o più modelli di riserva (Gemini e
+Groq, tramite `.github/workflows/ai_review.yml`) operano come reviewer
+indipendenti, non come secondi implementatori concorrenti — nessuno dei due
+scrive mai codice nel repository.
 
 Il reviewer gira dentro GitHub Actions (non in locale): Claude lo lancia via
 API (`workflow_dispatch` su `ai_review.yml`, input `prompt` + `base_ref` +
-`head_ref`), aspetta il completamento e legge il risultato dal log del job
-(`scripts/ai_review.py`, chiama l'API di Gemini con la chiave in
-`GEMINI_API_KEY`). Funziona cosi' da qualunque sessione Claude Code — cloud,
-locale, cellulare — perché non dipende da nulla installato su una macchina
-specifica.
+`head_ref` + `provider`), aspetta il completamento e legge il risultato dal
+log del job (`scripts/ai_review.py`, chiama l'API del provider scelto con la
+chiave del secret corrispondente). Funziona cosi' da qualunque sessione
+Claude Code — cloud, locale, cellulare — perché non dipende da nulla
+installato su una macchina specifica.
+
+Due provider disponibili, entrambi a livello gratuito, per tre scopi
+(specializzazione per tipo di verifica, fallback se uno finisce la quota,
+secondo parere sulla stessa modifica quando vale la pena):
+- **Gemini** (`provider: gemini`, default) — modello generalista, quota
+  giornaliera per chiave, supporta chiavi di riserva (`GEMINI_API_KEY_2`,
+  `_3`, ...) da account Google diversi.
+- **Groq** (`provider: groq`) — hardware LPU molto veloce, modello
+  `openai/gpt-oss-120b` confermato funzionante con una chiamata reale
+  (`GET /v1/models` + una chat di prova, non solo documentazione). Utile
+  come secondo parere rapido o come fallback quando Gemini è esaurito.
+  Attenzione: il rate limit Groq è per organizzazione, non per chiave —
+  aggiungere `GROQ_API_KEY_2` con una chiave dello stesso account non
+  aumenta la quota reale, serve un account Groq diverso.
+
+Provider scartati dopo verifica: GitHub Models (ritirato il 30/07/2026,
+confermato con una chiamata reale che ha risposto
+`github_models_retirement_brownout`). Grok e DeepSeek (nessun piano gratuito
+stabile, solo pay-as-you-go — l'utente ha scelto di restare su provider
+gratuiti). Qwen e Kimi/Moonshot (solo crediti di prova a scadenza, non un
+piano gratuito stabile). GLM/Zhipu ha un piano gratuito reale ma richiede
+registrazione con numero di telefono cinese (+86) — rimandato, non ne vale
+la pena per 5 richieste/minuto.
 
 - Uso deliberatamente ampio, non solo per modifiche rischiose: l'utente vuole
   che Gemini venga usato come alleggerimento del lavoro di verifica di
@@ -56,12 +80,14 @@ specifica.
   review finale sul diff complessivo e risolvere o motivare gli eventuali
   rilievi sostanziali.
 
-Nota: serve un secret `GEMINI_API_KEY` nel repository (API key gratuita da
-Google AI Studio, https://aistudio.google.com/apikey — non richiede carta di
-credito per il livello gratuito). Finché non è impostato il workflow fallisce
-subito con un errore chiaro; a quel punto la review va chiesta all'utente
-direttamente (es. lui stesso su ChatGPT/Gemini) invece che eseguita in
-autonomia.
+Nota: serve almeno il secret del provider che si vuole usare —
+`GEMINI_API_KEY` (da Google AI Studio, https://aistudio.google.com/apikey) o
+`GROQ_API_KEY` (da https://console.groq.com/keys) — nessuno dei due richiede
+carta di credito per il livello gratuito. Finché il secret del provider
+scelto non è impostato il workflow fallisce subito con un errore chiaro; a
+quel punto la review va chiesta all'utente direttamente (es. lui stesso su
+ChatGPT/Gemini) invece che eseguita in autonomia, oppure si prova l'altro
+provider se il suo secret esiste.
 
 ## Struttura del progetto
 

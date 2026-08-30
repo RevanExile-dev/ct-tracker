@@ -1,17 +1,20 @@
 """
-Chiede una review indipendente a Gemini (livello gratuito di Google AI
-Studio) su un diff git + un compito specifico. Sostituisce Codex nel ruolo
-di "secondo parere" descritto in CLAUDE.md: gira dentro un workflow GitHub
+Chiede una review indipendente (Gemini o Groq, entrambi livello gratuito)
+su un diff git + un compito specifico. Sostituisce Codex nel ruolo di
+"secondo parere" descritto in CLAUDE.md: gira dentro un workflow GitHub
 Actions (.github/workflows/ai_review.yml), non in locale, cosi' e'
 richiamabile da Claude indipendentemente da dove sta girando (cloud,
 locale, cellulare) - a differenza di un tool CLI installato solo su un PC.
 
-Uso: python scripts/ai_review.py "<prompt>" <base_ref> <head_ref>
-Le API key vanno passate via variabili d'ambiente GEMINI_API_KEY,
-GEMINI_API_KEY_2, GEMINI_API_KEY_3, ... (nel workflow arrivano da Secret
-del repository, mai nel codice/log). Se una chiave e' esaurita (quota
-giornaliera del livello gratuito), si passa automaticamente alla
-successiva invece di fallire subito.
+Uso: python scripts/ai_review.py "<prompt>" <base_ref> <head_ref> [provider]
+provider e' "gemini" (default) o "groq".
+Le API key vanno passate via variabili d'ambiente GEMINI_API_KEY/
+GEMINI_API_KEY_2/... oppure GROQ_API_KEY/GROQ_API_KEY_2/... (nel workflow
+arrivano da Secret del repository, mai nel codice/log). Se una chiave e'
+esaurita (quota giornaliera/di rate del livello gratuito), si passa
+automaticamente alla successiva invece di fallire subito - ma per Groq il
+rate limit e' per organizzazione, non per chiave: piu' chiavi dello STESSO
+account Groq non aumentano la quota reale, serve un account diverso.
 """
 import os
 import subprocess
@@ -20,8 +23,15 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 import requests
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+# Confermato con una chiamata reale (GET /v1/models con chiave vera): il
+# catalogo Groq oggi non ha piu' modelli Llama generalisti, solo whisper
+# (STT), orpheus (TTS), guard/safety, qwen3.x e la famiglia gpt-oss.
+# gpt-oss-120b e' il piu' grande adatto a review di codice.
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # Il timeout di 'requests' e' per-lettura (si resetta ad ogni singolo byte
 # ricevuto), non un tetto sul tempo totale: una risposta che arriva a
@@ -48,18 +58,18 @@ def _git_diff(base_ref: str, head_ref: str) -> str:
     return diff
 
 
-def _collect_api_keys() -> list[str]:
-    """GEMINI_API_KEY e' obbligatoria; GEMINI_API_KEY_2, _3, ... sono
-    chiavi di riserva opzionali (es. da un altro account Google), provate
-    in ordine solo se quella prima finisce la quota. Si ferma al primo
-    numero mancante, quindi le chiavi vanno numerate senza buchi."""
+def _collect_api_keys(env_prefix: str) -> list[str]:
+    """<PREFIX>_API_KEY e' obbligatoria; <PREFIX>_API_KEY_2, _3, ... sono
+    chiavi di riserva opzionali (es. da un altro account), provate in
+    ordine solo se quella prima finisce la quota. Si ferma al primo numero
+    mancante, quindi le chiavi vanno numerate senza buchi."""
     keys = []
-    primary = os.environ.get("GEMINI_API_KEY")
+    primary = os.environ.get(f"{env_prefix}_API_KEY")
     if primary:
         keys.append(primary)
     i = 2
     while True:
-        k = os.environ.get(f"GEMINI_API_KEY_{i}")
+        k = os.environ.get(f"{env_prefix}_API_KEY_{i}")
         if not k:
             break
         keys.append(k)
@@ -68,10 +78,11 @@ def _collect_api_keys() -> list[str]:
 
 
 def _is_quota_error(resp: requests.Response) -> bool:
-    """429 = rate limit; Google a volte usa anche 403 RESOURCE_EXHAUSTED
-    per la quota giornaliera del livello gratuito. Altri errori (400 richiesta
-    malformata, 404 modello sbagliato, ...) fallirebbero identici su
-    qualunque chiave: non ha senso ritentare con la prossima."""
+    """429 = rate limit su entrambi i provider; Google a volte usa anche
+    403 RESOURCE_EXHAUSTED per la quota giornaliera del livello gratuito.
+    Altri errori (400 richiesta malformata, 404 modello sbagliato, ...)
+    fallirebbero identici su qualunque chiave: non ha senso ritentare con
+    la prossima."""
     if resp.status_code == 429:
         return True
     if resp.status_code == 403 and "RESOURCE_EXHAUSTED" in resp.text:
@@ -79,22 +90,14 @@ def _is_quota_error(resp: requests.Response) -> bool:
     return False
 
 
-def _call_gemini(api_key: str, full_prompt: str) -> requests.Response:
-    def _call():
-        return requests.post(
-            API_URL,
-            params={"key": api_key},
-            json={"contents": [{"parts": [{"text": full_prompt}]}]},
-            timeout=REQUEST_HARD_TIMEOUT_S,
-        )
-
+def _run_with_hard_timeout(label: str, call):
     with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(_call)
+        future = pool.submit(call)
         try:
             return future.result(timeout=REQUEST_HARD_TIMEOUT_S)
         except FutureTimeoutError:
             print(
-                f"ERRORE: nessuna risposta da Gemini entro {REQUEST_HARD_TIMEOUT_S}s "
+                f"ERRORE: nessuna risposta da {label} entro {REQUEST_HARD_TIMEOUT_S}s "
                 "(tetto sul tempo totale, non solo per-lettura). Interrotto invece di "
                 "restare appeso.",
                 file=sys.stderr,
@@ -102,15 +105,80 @@ def _call_gemini(api_key: str, full_prompt: str) -> requests.Response:
             sys.exit(1)
 
 
+def _call_gemini(api_key: str, full_prompt: str) -> requests.Response:
+    return _run_with_hard_timeout(
+        "Gemini",
+        lambda: requests.post(
+            GEMINI_API_URL,
+            params={"key": api_key},
+            json={"contents": [{"parts": [{"text": full_prompt}]}]},
+            timeout=REQUEST_HARD_TIMEOUT_S,
+        ),
+    )
+
+
+def _call_groq(api_key: str, full_prompt: str) -> requests.Response:
+    return _run_with_hard_timeout(
+        "Groq",
+        lambda: requests.post(
+            GROQ_API_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": full_prompt}],
+            },
+            timeout=REQUEST_HARD_TIMEOUT_S,
+        ),
+    )
+
+
+def _extract_gemini_text(data: dict) -> str | None:
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return None
+    parts = candidates[0].get("content", {}).get("parts", [])
+    return "".join(p.get("text", "") for p in parts).strip()
+
+
+def _extract_groq_text(data: dict) -> str | None:
+    choices = data.get("choices") or []
+    if not choices:
+        return None
+    return (choices[0].get("message", {}).get("content") or "").strip()
+
+
+PROVIDERS = {
+    "gemini": {
+        "env_prefix": "GEMINI",
+        "call": _call_gemini,
+        "extract_text": _extract_gemini_text,
+    },
+    "groq": {
+        "env_prefix": "GROQ",
+        "call": _call_groq,
+        "extract_text": _extract_groq_text,
+    },
+}
+
+
 def main():
     if len(sys.argv) < 4:
-        print("Uso: python scripts/ai_review.py \"<prompt>\" <base_ref> <head_ref>", file=sys.stderr)
+        print(
+            "Uso: python scripts/ai_review.py \"<prompt>\" <base_ref> <head_ref> [gemini|groq]",
+            file=sys.stderr,
+        )
         sys.exit(1)
     prompt, base_ref, head_ref = sys.argv[1], sys.argv[2], sys.argv[3]
+    provider_name = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else "gemini"
 
-    api_keys = _collect_api_keys()
+    provider = PROVIDERS.get(provider_name)
+    if provider is None:
+        print(f"ERRORE: provider sconosciuto '{provider_name}' (usa 'gemini' o 'groq').", file=sys.stderr)
+        sys.exit(1)
+
+    api_keys = _collect_api_keys(provider["env_prefix"])
     if not api_keys:
-        print("ERRORE: variabile d'ambiente GEMINI_API_KEY mancante.", file=sys.stderr)
+        print(f"ERRORE: variabile d'ambiente {provider['env_prefix']}_API_KEY mancante.", file=sys.stderr)
         sys.exit(1)
 
     diff = _git_diff(base_ref, head_ref)
@@ -132,7 +200,7 @@ def main():
 
     resp = None
     for i, api_key in enumerate(api_keys, start=1):
-        resp = _call_gemini(api_key, full_prompt)
+        resp = provider["call"](api_key, full_prompt)
         if resp.ok:
             break
         if _is_quota_error(resp) and i < len(api_keys):
@@ -144,19 +212,16 @@ def main():
         break  # errore non di quota, o ultima chiave rimasta: non ha senso ritentare ancora
 
     if not resp.ok:
-        print(f"ERRORE chiamata Gemini ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)
+        print(f"ERRORE chiamata {provider_name} ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)
         sys.exit(1)
 
     data = resp.json()
-    candidates = data.get("candidates") or []
-    if not candidates:
-        reason = data.get("promptFeedback", {}).get("blockReason", "sconosciuto")
-        print(f"Nessuna risposta da Gemini (motivo: {reason}). Risposta grezza: {data}", file=sys.stderr)
+    text = provider["extract_text"](data)
+    if text is None:
+        print(f"Nessuna risposta da {provider_name}. Risposta grezza: {data}", file=sys.stderr)
         sys.exit(1)
 
-    parts = candidates[0].get("content", {}).get("parts", [])
-    text = "".join(p.get("text", "") for p in parts).strip()
-    print("=== REVIEW GEMINI ===")
+    print(f"=== REVIEW {provider_name.upper()} ===")
     print(text or "(risposta vuota)")
 
 

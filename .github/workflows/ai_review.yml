@@ -20,6 +20,11 @@ on:
         description: "Estremo finale del diff da rivedere"
         type: string
         default: "HEAD"
+      provider:
+        description: "Quale AI usare per la review"
+        type: choice
+        options: ["gemini", "groq"]
+        default: "gemini"
 
 permissions:
   contents: read
@@ -48,11 +53,12 @@ jobs:
       - name: Review
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Chiavi di riserva opzionali (es. da un altro account Google):
-          # usate solo se quella sopra finisce la quota giornaliera. Un
-          # secret non impostato risulta in una stringa vuota, non un
-          # errore, quindi e' sicuro lasciarle referenziate anche se non
-          # esistono ancora.
+          # Chiavi di riserva opzionali (es. da un altro account): usate
+          # solo se quella sopra finisce la quota. Un secret non impostato
+          # risulta in una stringa vuota, non un errore, quindi e' sicuro
+          # lasciarle referenziate anche se non esistono ancora.
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
-        run: python scripts/ai_review.py "${{ inputs.prompt }}" "${{ inputs.base_ref }}" "${{ inputs.head_ref }}"
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+        run: python scripts/ai_review.py "${{ inputs.prompt }}" "${{ inputs.base_ref }}" "${{ inputs.head_ref }}" "${{ inputs.provider }}"
