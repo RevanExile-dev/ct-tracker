@@ -79,7 +79,7 @@ export default function CardDetailPage() {
     return (
       <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
         <div className="h-5 w-32 rounded bg-base-surface skeleton mb-8" />
-        <div className="grid md:grid-cols-[320px_1fr] gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-8">
           <div className="skeleton rounded-card border border-base-border bg-base-surface aspect-[5/7]" />
           <div>
             <div className="h-3 w-24 rounded bg-base-surface skeleton" />
