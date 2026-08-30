@@ -139,7 +139,10 @@ export default function CardDetailPage() {
       </Link>
 
       <div className="grid md:grid-cols-[320px_1fr] gap-8 card-enter">
-        <HoloFrame className="card-reveal bg-base-surface border border-base-border overflow-hidden self-start">
+        <HoloFrame
+          touchTilt
+          className="card-reveal bg-base-surface border border-base-border overflow-hidden self-start"
+        >
           <div className="relative aspect-[5/7] bg-base-surface2">
             {card.image_url ? (
               <Image

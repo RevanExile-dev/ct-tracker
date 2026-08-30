@@ -15,15 +15,26 @@ const MAX_TILT_DEG = 8;
  * insieme all'inclinazione — usato nella griglia (CardTile) al posto della
  * classe Tailwind group-hover:-translate-y-1, che verrebbe sovrascritta
  * dal transform inline calcolato qui durante l'hover.
+ *
+ * touchTilt: estende lo stesso effetto al trascinamento col dito (come su
+ * Pokémon Pocket) invece del solo passaggio del mouse - il mouse infatti
+ * non esiste su mobile, dove questo sito si usa per lo piu'. Disattivato
+ * di default e usato solo sulla carta grande della pagina di dettaglio,
+ * non nella griglia: qui serve anche `touch-action: none` per evitare che
+ * il trascinamento faccia scorrere la pagina invece di inclinare la carta,
+ * comportamento che nella griglia (tante tile piccole, si scrolla in
+ * continuazione) sarebbe piu' fastidioso che utile.
  */
 export default function HoloFrame({
   children,
   className = "",
   liftOnHover = false,
+  touchTilt = false,
 }: {
   children: React.ReactNode;
   className?: string;
   liftOnHover?: boolean;
+  touchTilt?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const reducedMotion = useRef<boolean | null>(null);
@@ -37,12 +48,12 @@ export default function HoloFrame({
     return reducedMotion.current;
   }
 
-  function handleMove(e: React.MouseEvent<HTMLDivElement>) {
+  function updateFromPoint(clientX: number, clientY: number) {
     const el = ref.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const px = (e.clientX - rect.left) / rect.width;
-    const py = (e.clientY - rect.top) / rect.height;
+    const px = (clientX - rect.left) / rect.width;
+    const py = (clientY - rect.top) / rect.height;
     const x = px * 100;
     const y = py * 100;
     el.style.setProperty("--mx", `${x}%`);
@@ -57,18 +68,33 @@ export default function HoloFrame({
     el.style.transform = `perspective(800px) translateY(${lift}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) scale(1.015)`;
   }
 
-  function handleLeave() {
+  function resetTilt() {
     const el = ref.current;
     if (!el) return;
     el.style.transition = "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)";
     el.style.transform = "";
   }
 
+  function handleMove(e: React.MouseEvent<HTMLDivElement>) {
+    updateFromPoint(e.clientX, e.clientY);
+  }
+
+  function handleTouchMove(e: React.TouchEvent<HTMLDivElement>) {
+    if (!touchTilt) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    updateFromPoint(touch.clientX, touch.clientY);
+  }
+
   return (
     <div
       ref={ref}
       onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
+      onMouseLeave={resetTilt}
+      onTouchMove={touchTilt ? handleTouchMove : undefined}
+      onTouchEnd={touchTilt ? resetTilt : undefined}
+      onTouchCancel={touchTilt ? resetTilt : undefined}
+      style={touchTilt ? { touchAction: "none" } : undefined}
       className={`holo-frame rounded-card ${className}`}
     >
       {children}
