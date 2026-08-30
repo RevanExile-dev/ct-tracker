@@ -26,6 +26,7 @@ export default function SiteHeader({
   const pathname = usePathname();
   const onMovers = pathname === "/movers";
   const onHome = pathname === "/";
+  const onBinderBook = pathname === "/binder-book";
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
@@ -76,14 +77,24 @@ export default function SiteHeader({
           )}
         </div>
 
-        {!onMovers && (
-          <Link
-            href="/movers"
-            className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
-          >
-            📈 Carte in movimento
-          </Link>
-        )}
+        <div className="flex gap-2 flex-wrap">
+          {!onMovers && (
+            <Link
+              href="/movers"
+              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+            >
+              📈 Carte in movimento
+            </Link>
+          )}
+          {!onBinderBook && (
+            <Link
+              href="/binder-book"
+              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+            >
+              📖 Il mio binder
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );
