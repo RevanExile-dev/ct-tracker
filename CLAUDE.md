@@ -10,33 +10,40 @@ richiesta.
 
 Claude Code è il coordinatore principale del lavoro: analizza la richiesta,
 definisce e implementa il piano, integra i risultati e mantiene la
-responsabilità della decisione finale. Codex opera come reviewer indipendente,
-non come secondo implementatore concorrente.
+responsabilità della decisione finale. Un secondo modello (Gemini, tramite
+`.github/workflows/ai_review.yml`) opera come reviewer indipendente, non come
+secondo implementatore concorrente.
 
-- Per modifiche significative, rischiose o trasversali, Claude deve richiedere
-  una review indipendente con `codex exec --sandbox read-only`.
-- La richiesta a Codex deve essere circoscritta e concreta: indicare il task da
-  verificare, i vincoli rilevanti e le aree su cui concentrare la review.
-  Quando aiuta a valutare l'implementazione, passare anche il `git diff` o
-  chiedere esplicitamente a Codex di esaminarlo.
-- Durante una review Codex deve restare in modalità read-only e non deve
-  modificare file, creare fix o assumere il controllo dell'implementazione.
-- I suggerimenti di Codex sono input di review, non decisioni automatiche:
-  Claude deve verificarli criticamente nel contesto del repository, accettando
-  e applicando solo quelli corretti e pertinenti.
-- Claude e Codex non devono mai effettuare modifiche concorrenti sugli stessi
-  file. Se Codex viene usato per un'attività diversa dalla review, assegnargli
-  file o ambiti chiaramente separati e coordinare l'integrazione.
-- Prima di concludere un lavoro importante, Claude deve eseguire una review
-  finale con Codex sul diff complessivo e risolvere o motivare gli eventuali
+Il reviewer gira dentro GitHub Actions (non in locale): Claude lo lancia via
+API (`workflow_dispatch` su `ai_review.yml`, input `prompt` + `base_ref` +
+`head_ref`), aspetta il completamento e legge il risultato dal log del job
+(`scripts/ai_review.py`, chiama l'API di Gemini con la chiave in
+`GEMINI_API_KEY`). Funziona cosi' da qualunque sessione Claude Code — cloud,
+locale, cellulare — perché non dipende da nulla installato su una macchina
+specifica.
+
+- Per modifiche significative, rischiose o trasversali, Claude deve chiedere
+  questa review indipendente prima di concludere il lavoro.
+- La richiesta deve essere circoscritta e concreta: indicare il task da
+  verificare e i vincoli rilevanti nel `prompt`, e i `base_ref`/`head_ref`
+  giusti per far vedere il diff che conta (di norma l'ultimo commit o l'intero
+  lavoro della sessione rispetto a `origin/main`).
+- Il reviewer è sempre sola lettura: non modifica mai file del repository, il
+  workflow stesso non applica nulla in automatico.
+- I suggerimenti del reviewer sono input di review, non decisioni automatiche:
+  Claude deve verificarli criticamente nel contesto del repository (leggere il
+  codice vero, non fidarsi ciecamente), accettando e applicando solo quelli
+  corretti e pertinenti, e ignorando motivatamente gli altri.
+- Prima di concludere un lavoro importante, Claude dovrebbe lanciare una
+  review finale sul diff complessivo e risolvere o motivare gli eventuali
   rilievi sostanziali.
 
-Nota: `codex exec` richiede un login locale (account ChatGPT) o una API key,
-quindi è invocabile solo da una sessione Claude Code che gira sul PC locale
-dove Codex è autenticato, non da una sessione cloud/remota come questa. Finché
-non viene collegato un self-hosted runner (o una API key dedicata), da qui la
-review Codex va chiesta esplicitamente dall'utente in una sessione locale,
-non eseguita in autonomia.
+Nota: serve un secret `GEMINI_API_KEY` nel repository (API key gratuita da
+Google AI Studio, https://aistudio.google.com/apikey — non richiede carta di
+credito per il livello gratuito). Finché non è impostato il workflow fallisce
+subito con un errore chiaro; a quel punto la review va chiesta all'utente
+direttamente (es. lui stesso su ChatGPT/Gemini) invece che eseguita in
+autonomia.
 
 ## Struttura del progetto
 

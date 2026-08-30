@@ -1,0 +1,45 @@
+name: AI review (Gemini, secondo parere)
+
+# Review indipendente e sola lettura: non modifica mai file, non commenta
+# nulla in automatico, non blocca nessun push. Claude la lancia a mano
+# (workflow_dispatch, chiamato via API) quando ritiene utile un secondo
+# parere su una modifica rischiosa/significativa, poi legge il risultato
+# dal log di questo job e decide come procedere. Vedi CLAUDE.md.
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Cosa deve verificare la review (compito specifico, non generico)"
+        type: string
+        required: true
+      base_ref:
+        description: "Estremo iniziale del diff da rivedere (branch, tag o SHA)"
+        type: string
+        default: "HEAD~1"
+      head_ref:
+        description: "Estremo finale del diff da rivedere"
+        type: string
+        default: "HEAD"
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # serve la storia intera per poter fare diff tra ref arbitrari
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python scripts/ai_review.py "${{ inputs.prompt }}" "${{ inputs.base_ref }}" "${{ inputs.head_ref }}"
