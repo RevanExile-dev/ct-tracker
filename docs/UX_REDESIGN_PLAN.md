@@ -107,75 +107,75 @@ aperte.
 ### Analisi e filtri
 
 - [x] analisi UI attuale
-- [ ] redesign filtri Carte in movimento
-- [ ] filtri inline / soluzione equivalente elegante
-- [ ] animazioni filtri
-- [ ] accessibilita' filtri (ARIA, focus, tastiera)
-- [ ] persistenza filtri dopo back
-- [ ] persistenza espansione/set
-- [ ] persistenza ordinamento
-- [ ] persistenza ricerca
-- [ ] persistenza paginazione/quantita' visibile
-- [ ] preservazione stato utile pagina
-- [ ] ripristino scroll utile
-- [ ] preset personale filtri
-- [ ] salva preset
-- [ ] modifica/sovrascrivi preset
-- [ ] reset/elimina preset
-- [ ] pulsante Applica il mio filtro
+- [x] redesign filtri Carte in movimento
+- [x] filtri inline / soluzione equivalente elegante
+- [x] animazioni filtri
+- [x] accessibilita' filtri (ARIA, focus, tastiera)
+- [x] persistenza filtri dopo back
+- [x] persistenza espansione/set
+- [x] persistenza ordinamento
+- [x] persistenza ricerca
+- [x] persistenza paginazione/quantita' visibile
+- [x] preservazione stato utile pagina
+- [x] ripristino scroll utile
+- [x] preset personale filtri
+- [x] salva preset
+- [x] modifica/sovrascrivi preset
+- [x] reset/elimina preset
+- [x] pulsante Applica il mio filtro
 
 ### Binder
 
 - [x] analisi dei due Binder attuali
-- [ ] unificazione UX Binder
-- [ ] nomenclatura Binder chiara
-- [ ] vista collezione
-- [ ] vista sfoglia Binder
-- [ ] Binder piu' grande
-- [ ] modalita' libro desktop
-- [ ] modalita' libro tablet
-- [ ] modalita' libro smartphone
-- [ ] doppia pagina
-- [ ] pagina singola responsive
-- [ ] page turn animation
-- [ ] swipe touch
-- [ ] navigazione pagine PC
-- [ ] navigazione tastiera
-- [ ] indicatore pagina comprensibile
-- [ ] apertura dettaglio dal Binder
-- [ ] ritorno dal dettaglio alla facciata corretta
-- [ ] gesture carta/pagina non ambigue
+- [x] unificazione UX Binder
+- [x] nomenclatura Binder chiara
+- [x] vista collezione
+- [x] vista sfoglia Binder
+- [x] Binder piu' grande
+- [x] modalita' libro desktop
+- [x] modalita' libro tablet
+- [x] modalita' libro smartphone
+- [x] doppia pagina
+- [x] pagina singola responsive
+- [x] page turn animation
+- [x] swipe touch
+- [x] navigazione pagine PC
+- [x] navigazione tastiera
+- [x] indicatore pagina comprensibile
+- [x] apertura dettaglio dal Binder
+- [x] ritorno dal dettaglio alla facciata corretta
+- [x] gesture carta/pagina non ambigue
 
 ### Carte e motion
 
-- [ ] InteractiveCard component
-- [ ] tilt mouse
-- [ ] touch/drag
-- [ ] perspective/parallax
-- [ ] holo/light effect
-- [ ] shadow/depth effect
-- [ ] neutral reset animation
-- [ ] Binder card micro-animation
-- [ ] griglie con micro-feedback leggero
-- [ ] requestAnimationFrame / listener review
-- [ ] animazioni sospese quando non rilevanti
-- [ ] prefers-reduced-motion
-- [ ] motion design generale
-- [ ] motion consistency
-- [ ] focus-visible coerente
+- [x] InteractiveCard component
+- [x] tilt mouse
+- [x] touch/drag
+- [x] perspective/parallax
+- [x] holo/light effect
+- [x] shadow/depth effect
+- [x] neutral reset animation
+- [x] Binder card micro-animation
+- [x] griglie con micro-feedback leggero
+- [x] requestAnimationFrame / listener review
+- [x] animazioni sospese quando non rilevanti
+- [x] prefers-reduced-motion
+- [x] motion design generale
+- [x] motion consistency
+- [x] focus-visible coerente
 
 ### Branding e browser
 
-- [ ] Carta Viva branding
-- [ ] logo principale
-- [ ] logo compatto
-- [ ] logo animation
-- [ ] favicon
-- [ ] app icon
-- [ ] metadata
-- [ ] browser title
-- [ ] theme-color
-- [ ] OpenGraph/social preview
+- [x] Carta Viva branding
+- [x] logo principale
+- [x] logo compatto
+- [x] logo animation
+- [x] favicon
+- [x] app icon
+- [x] metadata
+- [x] browser title
+- [x] theme-color
+- [x] OpenGraph/social preview
 
 ### Navigazione e responsive QA
 
@@ -205,10 +205,10 @@ aperte.
 
 ### Verifica finale
 
-- [ ] performance review
+- [x] performance review statica
 - [ ] console error review
-- [ ] build
-- [ ] lint/type-check
+- [x] build
+- [x] lint/type-check
 - [ ] multi-AI review di routine (Groq)
 - [ ] multi-AI review finale (auto/Gemini)
 - [ ] correzioni post-review
@@ -221,3 +221,25 @@ aperte.
 Da aggiornare durante ogni macrofase con comando/viewport, esito e problemi
 riscontrati. Le caselle QA restano aperte finche' non esiste una verifica
 effettiva riproducibile.
+
+### Registro 2026-08-30 — implementazione Codex
+
+- Commit locale principale: `aeeed56` (`Overhaul Carta Viva UX, Binder e
+  motion`). Il presente aggiornamento del piano viene registrato in un commit
+  di handoff separato.
+- `npm run lint`: superato senza errori o warning.
+- `npm run build`: superato; include compilazione, type-check e prerender delle
+  9 route (`/`, `/movers`, `/binder`, redirect legacy, dettaglio, icona,
+  manifest e OpenGraph).
+- `git diff --check`: superato.
+- Il browser cloud non puo' raggiungere il server `localhost` della sessione
+  (`ERR_BLOCKED_BY_CLIENT`), quindi le caselle di QA visivo/input restano aperte
+  finche' la build non e' pubblicata su Vercel.
+- Push HTTPS locale bloccato per assenza di credenziali; connessione GitHub API
+  disponibile solo in lettura (`403 Resource not accessible by integration` su
+  Git Trees). Di conseguenza non e' ancora possibile pubblicare il commit.
+- Il workflow AI esistente non puo' vedere un commit non pubblicato e non e'
+  disponibile un'azione `workflow_dispatch` nella connessione corrente:
+  review Groq/Gemini correttamente lasciate aperte.
+- Prima del tentativo di push, GitHub riportava `0` workflow in corso. Ripetere
+  obbligatoriamente il controllo immediatamente prima del prossimo push.
