@@ -31,9 +31,16 @@ non come secondo implementatore concorrente.
   finale con Codex sul diff complessivo e risolvere o motivare gli eventuali
   rilievi sostanziali.
 
+Nota: `codex exec` richiede un login locale (account ChatGPT) o una API key,
+quindi è invocabile solo da una sessione Claude Code che gira sul PC locale
+dove Codex è autenticato, non da una sessione cloud/remota come questa. Finché
+non viene collegato un self-hosted runner (o una API key dedicata), da qui la
+review Codex va chiesta esplicitamente dall'utente in una sessione locale,
+non eseguita in autonomia.
+
 ## Struttura del progetto
 
-Binder è un tracker di carte Pokémon TCG basato sui dati di CardTrader.
+CartaViva è un tracker di carte Pokémon TCG basato sui dati di CardTrader.
 
 - `scripts/`: script Python per sincronizzare catalogo e prezzi e inviare le
   notifiche Telegram facoltative.

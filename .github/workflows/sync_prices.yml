@@ -14,6 +14,12 @@ on:
 permissions:
   contents: write
 
+# Condiviso con sync_catalog.yml e sync_prices_full.yml (vedi li' per il
+# motivo): mai due sync in scrittura sugli stessi DB in parallelo.
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
 jobs:
   sync-prices:
     runs-on: ubuntu-latest

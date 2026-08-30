@@ -24,7 +24,14 @@ export function getDb(): Promise<Database> {
     dbPromise = (async () => {
       const [SQL, res] = await Promise.all([
         getSqlJs(),
-        fetch("/data/cardtrader.db", { cache: "no-store" }),
+        // "no-cache" (non "no-store"): il browser puo' comunque tenere il
+        // file in cache, ma deve rivalidarlo con una richiesta condizionale
+        // (ETag/Last-Modified) prima di riusarlo. Se il DB non e' cambiato
+        // da allora arriva un 304 senza riscaricare i ~10-11MB, se e'
+        // cambiato (nuovo sync) arriva il file fresco: il meglio di
+        // entrambi, invece di scaricare sempre tutto anche a distanza di
+        // pochi minuti nella stessa sessione di navigazione.
+        fetch("/data/cardtrader.db", { cache: "no-cache" }),
       ]);
       if (!res.ok) {
         throw new Error(
@@ -46,7 +53,7 @@ export function getHistoryDb(): Promise<Database> {
     historyDbPromise = (async () => {
       const [SQL, res] = await Promise.all([
         getSqlJs(),
-        fetch("/data/price_history.db", { cache: "no-store" }),
+        fetch("/data/price_history.db", { cache: "no-cache" }),
       ]);
       if (!res.ok) {
         throw new Error("Storico prezzi non trovato in /data/price_history.db.");

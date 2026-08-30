@@ -16,6 +16,15 @@ on:
 permissions:
   contents: write
 
+# Condiviso con sync_catalog.yml e sync_prices.yml (vedi li' per il motivo):
+# mai due sync in scrittura sugli stessi DB in parallelo. Con cron alle 02:00
+# UTC di domenica e il giornaliero alle 06:00, un full lungo poteva ancora
+# essere in corso quando parte il giornaliero: ora il secondo si accoda
+# invece di scrivere in contemporanea.
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
 jobs:
   sync-prices-full:
     runs-on: ubuntu-latest

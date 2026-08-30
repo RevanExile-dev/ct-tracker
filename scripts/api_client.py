@@ -55,7 +55,17 @@ class CardTraderClient:
         url = f"{BASE_URL}{path}"
         for attempt in range(1, max_retries + 1):
             limiter.wait()
-            resp = self.session.get(url, params=params, timeout=30)
+            try:
+                resp = self.session.get(url, params=params, timeout=30)
+            except requests.exceptions.RequestException as exc:
+                # Timeout, connessione caduta, DNS: come i 429/5xx qui sotto,
+                # ritenta con backoff invece di far fallire subito la carta
+                # (altrimenti un blip di rete transitorio conta come errore
+                # "duro" verso il circuit breaker di sync_prices.py).
+                wait_s = 2 ** attempt
+                print(f"  [errore rete] {path} -> {exc} -> riprovo tra {wait_s}s (tentativo {attempt})", file=sys.stderr)
+                time.sleep(wait_s)
+                continue
             if resp.status_code == 429:
                 # Rate limit superato: aspetta e riprova con backoff.
                 wait_s = 2 ** attempt

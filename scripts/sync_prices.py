@@ -176,6 +176,7 @@ def main():
           + ("" if force else " (gia' aggiornate oggi vengono saltate)") + "...")
 
     ok, errors, consecutive_errors = 0, 0, 0
+    circuit_breaker_triggered = False
     for i, (bp_id, name, expansion_name) in enumerate(blueprints, start=1):
         try:
             products = client.get_marketplace_products(bp_id)
@@ -212,13 +213,15 @@ def main():
             checkpoint_commit(conn, history_conn, label=f"{i}/{len(blueprints)}")
 
         if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+            circuit_breaker_triggered = True
             print(
                 f"  [ATTENZIONE] {consecutive_errors} carte di fila fallite "
-                f"(probabile rate limit/blocco lato CardTrader dopo troppo "
-                f"traffico oggi): mi fermo qui invece di continuare a perdere "
-                f"tempo, {i}/{len(blueprints)} carte tentate. Le carte non "
-                f"raggiunte verranno riprese al prossimo run (non hanno uno "
-                f"snapshot di oggi, quindi non vengono saltate).",
+                f"(qualunque sia il motivo: rate limit, un errore locale come "
+                f"'readonly database', o altro): mi fermo qui invece di "
+                f"continuare a perdere tempo, {i}/{len(blueprints)} carte "
+                f"tentate. Le carte non raggiunte verranno riprese al prossimo "
+                f"run (non hanno uno snapshot di oggi, quindi non vengono "
+                f"saltate).",
                 file=sys.stderr,
             )
             break
@@ -236,6 +239,18 @@ def main():
     history_conn.close()
 
     print(f"\nCompletato: {ok} carte aggiornate, {errors} errori.")
+
+    if circuit_breaker_triggered:
+        # Il progresso parziale e' comunque salvato (checkpoint sopra) e
+        # last_price_sync riflette le carte davvero aggiornate: ma il job va
+        # segnato come fallito, non "verde", altrimenti su GitHub Actions
+        # sembra un sync completo quando in realta' si e' fermato a meta'.
+        print(
+            "Interrotto dal circuit breaker prima di finire tutte le carte: "
+            "il job termina con errore anche se il progresso fatto e' salvo.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
