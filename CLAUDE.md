@@ -22,12 +22,25 @@ API (`workflow_dispatch` su `ai_review.yml`, input `prompt` + `base_ref` +
 locale, cellulare — perché non dipende da nulla installato su una macchina
 specifica.
 
-- Per modifiche significative, rischiose o trasversali, Claude deve chiedere
-  questa review indipendente prima di concludere il lavoro.
+- Uso deliberatamente ampio, non solo per modifiche rischiose: l'utente vuole
+  che Gemini venga usato come alleggerimento del lavoro di verifica di
+  Claude, per conservare piu' a lungo il proprio utilizzo di Claude stesso.
+  Quindi, oltre alle modifiche significative/rischiose/trasversali, vale la
+  pena chiedere questa review anche per verifiche di routine su un diff
+  appena scritto, controlli di coerenza/edge case, o un secondo parere
+  veloce — ogni volta che rileggere tutto a mano costerebbe a Claude piu'
+  ragionamento di quanto costi delegare e leggere un riassunto. Non sostituisce
+  pero' l'implementazione (resta di Claude) ne' i controlli che girano gia'
+  gratis senza AI (build/typecheck in CI, vedi ci.yml) - a quelli non serve
+  chiedere un parere a un modello.
 - La richiesta deve essere circoscritta e concreta: indicare il task da
   verificare e i vincoli rilevanti nel `prompt`, e i `base_ref`/`head_ref`
   giusti per far vedere il diff che conta (di norma l'ultimo commit o l'intero
   lavoro della sessione rispetto a `origin/main`).
+- Se il livello gratuito di Gemini dovesse risultare limitante (quota
+  esaurita), l'utente ha detto di avere altre chiavi API disponibili da
+  aggiungere: vale la pena segnalarglielo invece di rinunciare a usare il
+  reviewer.
 - Il reviewer è sempre sola lettura: non modifica mai file del repository, il
   workflow stesso non applica nulla in automatico.
 - I suggerimenti del reviewer sono input di review, non decisioni automatiche:
