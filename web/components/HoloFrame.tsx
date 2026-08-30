@@ -110,7 +110,13 @@ export default function HoloFrame({
       onTouchMove={touchTilt ? handleTouchMove : undefined}
       onTouchEnd={touchTilt ? resetTilt : undefined}
       onTouchCancel={touchTilt ? resetTilt : undefined}
-      onAnimationEnd={() => setRevealDone(true)}
+      onAnimationEnd={(e) => {
+        // animationend fa bubbling: senza questo controllo, un'animazione
+        // CSS su un figlio qualunque (uno scheletro, un badge con pulse,
+        // ecc.) risalirebbe fino a qui e segnerebbe "reveal finito" prima
+        // del tempo, interrompendo l'animazione card-reveal a meta'.
+        if (e.target === e.currentTarget) setRevealDone(true);
+      }}
       style={touchTilt ? { touchAction: "none" } : undefined}
       className={`holo-frame rounded-card ${effectiveClassName}`}
     >

@@ -103,7 +103,7 @@ export default function CardTile({
           </div>
 
           <div className="flex items-end justify-between flex-wrap gap-x-2 gap-y-1 mt-2">
-            <div className="font-mono text-lg text-ink-primary flex items-center gap-1.5 min-w-0">
+            <div className="font-mono text-lg text-ink-primary flex flex-wrap items-center gap-1.5 min-w-0">
               {formatCents(priceCents, priceCurrency ?? "EUR")}
               {priceLanguage && (
                 <span className="text-xs shrink-0" title={priceLanguage.toUpperCase()}>

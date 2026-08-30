@@ -116,6 +116,63 @@ quel punto la review va chiesta all'utente direttamente (es. lui stesso su
 ChatGPT/Gemini) invece che eseguita in autonomia, oppure si prova l'altro
 provider se il suo secret esiste.
 
+## Disciplina di verifica (non ripetere gli stessi errori)
+
+Regole nate da errori reali commessi in sessione, non teoria astratta —
+l'utente ha notato un pattern ("continui a dimenticarti di cose") e ha
+chiesto una strategia vera, non solo la promessa di stare più attento.
+
+**1. Un bug segnalato è un campione, non il problema intero.** Quando l'utente
+mostra UN caso di un bug (uno screenshot, una pagina), quel caso quasi
+sempre non è l'unica istanza — è la prova che esiste una classe di bug.
+Prima di considerare il fix completo, cercare lo stesso pattern ovunque nel
+codice, non solo dove l'utente ha guardato. Esempio reale (2026-08-30): un
+bug di layout mobile (griglia senza colonna esplicita sotto un breakpoint,
+dentro un contenitore con `aspect-ratio`) è stato corretto solo nella
+versione "carta caricata" della pagina dettaglio — la versione "scheletro di
+caricamento" della STESSA pagina, poche righe sotto, aveva lo stesso identico
+pattern ed è rimasta rotta finché l'utente non ha richiesto esplicitamente
+un secondo giro. Il grep per il pattern (`grid md:grid-cols`,
+`aspect-\[`, ecc.) va fatto SUBITO dopo il primo fix trovato, non su
+richiesta esplicita di un giro successivo. Vale anche per bug non-CSS:
+un campo NULL non gestito, un filtro che assume un solo formato dati, una
+query lenta — se la causa è strutturale, cercare altri punti del codice
+che condividono la stessa struttura.
+
+**2. Controllare tutti gli "stati" di una UI, non solo quello felice.** Ogni
+pagina/componente con dati asincroni ha tipicamente 3+ varianti: caricamento
+(skeleton), errore, vuoto, dati normali. Un fix testato solo sullo stato con
+dati reali lascia gli altri stati non verificati per definizione — vanno
+controllati esplicitamente (anche solo aprendo la pagina e guardando il primo
+istante prima che i dati arrivino, come fatto nel giro di verifica del
+2026-08-30 con Playwright su `domcontentloaded` invece di aspettare
+`networkidle`).
+
+**3. Chiedere ai reviewer AI non solo "è corretto questo diff" ma anche "cosa
+potrei aver perso altrove".** Quando il fix è la correzione di un pattern
+(non un bug isolato), includere esplicitamente nel prompt della review:
+"Questo e' il fix di un\'istanza di [pattern]. Nel resto del diff/codice
+c'e' un'altra istanza dello stesso pattern che potrei aver perso?" — i
+reviewer vedono solo il diff passato, quindi la domanda va posta con
+il contesto giusto (es. passare un base_ref più indietro per includere
+i file rilevanti anche se non modificati in quel commit specifico,
+se serve mostrare il pattern non ancora corretto altrove).
+
+**4. Prima di ogni `git push`, verificare che nessun sync sia in corso** —
+non solo una volta a inizio sessione. `list_workflow_runs` con
+`workflow_runs_filter: {"status": "in_progress"}` prima di ogni push, senza
+eccezioni, anche per un fix piccolo. Errore reale commesso due volte in
+questa sessione (2026-08-30): push diretto su `main` mentre `sync_prices.yml`
+era in corso, causando un fallimento del sync a metà — nonostante la regola
+fosse scritta esplicitamente in questo stesso file/nella issue #1 e fosse
+stata riletta poco prima.
+
+**5. Prima di dire "fatto"/"tutto a posto" all'utente, un ultimo passaggio
+esplicito**: rileggere l'elenco delle cose toccate in questo giro e chiedersi
+"esiste un'altra istanza di ciascun pattern corretto, altrove nel codice o in
+un altro stato della stessa UI?" — non è retorico, va effettivamente cercato
+(grep/Read), non solo considerato a memoria.
+
 ## Struttura del progetto
 
 CartaViva è un tracker di carte Pokémon TCG basato sui dati di CardTrader.

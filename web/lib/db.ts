@@ -211,16 +211,24 @@ export async function fetchCards(opts: {
   if (opts.sortBy === "name") orderBy = "b.name ASC";
   if (opts.sortBy === "drop_first") {
     // Piu' grande calo percentuale prima; le carte senza prezzo precedente
-    // (o senza variazione) restano in fondo.
+    // (o senza variazione) restano in fondo. La condizione qui DEVE restare
+    // identica a priceDeltaPct() in format.ts (usata da withRealDelta() e
+    // da ogni componente che mostra la percentuale): quella tratta anche
+    // un prezzo/prezzo-precedente a 0 come "nessuna variazione valida"
+    // (controllo JS "!latest || !prev", falsy anche per 0) - senza il
+    // pareggio qui, un LIMIT applicato a questo ORDER BY (vedi movers)
+    // potrebbe considerare "valida" via SQL una riga con prezzo 0 che poi
+    // withRealDelta() scarta comunque in JS, restituendo meno carte del
+    // limite richiesto anche se ce ne sarebbero altre valide piu' in fondo.
     orderBy = `
-      CASE WHEN ${priceExpr} IS NULL OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
       (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} ASC
     `;
   }
   if (opts.sortBy === "rise_first") {
-    // Speculare a drop_first: piu' grande rialzo percentuale prima.
+    // Speculare a drop_first (stessa nota sopra su priceExpr = 0).
     orderBy = `
-      CASE WHEN ${priceExpr} IS NULL OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
       (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} DESC
     `;
   }
