@@ -7,8 +7,11 @@ richiamabile da Claude indipendentemente da dove sta girando (cloud,
 locale, cellulare) - a differenza di un tool CLI installato solo su un PC.
 
 Uso: python scripts/ai_review.py "<prompt>" <base_ref> <head_ref>
-La API key va passata via variabile d'ambiente GEMINI_API_KEY (nel
-workflow arriva da un Secret del repository, mai nel codice/log).
+Le API key vanno passate via variabili d'ambiente GEMINI_API_KEY,
+GEMINI_API_KEY_2, GEMINI_API_KEY_3, ... (nel workflow arrivano da Secret
+del repository, mai nel codice/log). Se una chiave e' esaurita (quota
+giornaliera del livello gratuito), si passa automaticamente alla
+successiva invece di fallire subito.
 """
 import os
 import subprocess
@@ -45,14 +48,68 @@ def _git_diff(base_ref: str, head_ref: str) -> str:
     return diff
 
 
+def _collect_api_keys() -> list[str]:
+    """GEMINI_API_KEY e' obbligatoria; GEMINI_API_KEY_2, _3, ... sono
+    chiavi di riserva opzionali (es. da un altro account Google), provate
+    in ordine solo se quella prima finisce la quota. Si ferma al primo
+    numero mancante, quindi le chiavi vanno numerate senza buchi."""
+    keys = []
+    primary = os.environ.get("GEMINI_API_KEY")
+    if primary:
+        keys.append(primary)
+    i = 2
+    while True:
+        k = os.environ.get(f"GEMINI_API_KEY_{i}")
+        if not k:
+            break
+        keys.append(k)
+        i += 1
+    return keys
+
+
+def _is_quota_error(resp: requests.Response) -> bool:
+    """429 = rate limit; Google a volte usa anche 403 RESOURCE_EXHAUSTED
+    per la quota giornaliera del livello gratuito. Altri errori (400 richiesta
+    malformata, 404 modello sbagliato, ...) fallirebbero identici su
+    qualunque chiave: non ha senso ritentare con la prossima."""
+    if resp.status_code == 429:
+        return True
+    if resp.status_code == 403 and "RESOURCE_EXHAUSTED" in resp.text:
+        return True
+    return False
+
+
+def _call_gemini(api_key: str, full_prompt: str) -> requests.Response:
+    def _call():
+        return requests.post(
+            API_URL,
+            params={"key": api_key},
+            json={"contents": [{"parts": [{"text": full_prompt}]}]},
+            timeout=REQUEST_HARD_TIMEOUT_S,
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_call)
+        try:
+            return future.result(timeout=REQUEST_HARD_TIMEOUT_S)
+        except FutureTimeoutError:
+            print(
+                f"ERRORE: nessuna risposta da Gemini entro {REQUEST_HARD_TIMEOUT_S}s "
+                "(tetto sul tempo totale, non solo per-lettura). Interrotto invece di "
+                "restare appeso.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+
 def main():
     if len(sys.argv) < 4:
         print("Uso: python scripts/ai_review.py \"<prompt>\" <base_ref> <head_ref>", file=sys.stderr)
         sys.exit(1)
     prompt, base_ref, head_ref = sys.argv[1], sys.argv[2], sys.argv[3]
 
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
+    api_keys = _collect_api_keys()
+    if not api_keys:
         print("ERRORE: variabile d'ambiente GEMINI_API_KEY mancante.", file=sys.stderr)
         sys.exit(1)
 
@@ -73,26 +130,18 @@ def main():
         f"italiano.\n\n--- DIFF ({base_ref}...{head_ref}) ---\n{diff}"
     )
 
-    def _call():
-        return requests.post(
-            API_URL,
-            params={"key": api_key},
-            json={"contents": [{"parts": [{"text": full_prompt}]}]},
-            timeout=REQUEST_HARD_TIMEOUT_S,
-        )
-
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(_call)
-        try:
-            resp = future.result(timeout=REQUEST_HARD_TIMEOUT_S)
-        except FutureTimeoutError:
+    resp = None
+    for i, api_key in enumerate(api_keys, start=1):
+        resp = _call_gemini(api_key, full_prompt)
+        if resp.ok:
+            break
+        if _is_quota_error(resp) and i < len(api_keys):
             print(
-                f"ERRORE: nessuna risposta da Gemini entro {REQUEST_HARD_TIMEOUT_S}s "
-                "(tetto sul tempo totale, non solo per-lettura). Interrotto invece di "
-                "restare appeso.",
+                f"  [quota esaurita] chiave {i}/{len(api_keys)} -> provo la successiva",
                 file=sys.stderr,
             )
-            sys.exit(1)
+            continue
+        break  # errore non di quota, o ultima chiave rimasta: non ha senso ritentare ancora
 
     if not resp.ok:
         print(f"ERRORE chiamata Gemini ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)

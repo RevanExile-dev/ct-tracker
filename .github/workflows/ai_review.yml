@@ -48,4 +48,11 @@ jobs:
       - name: Review
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Chiavi di riserva opzionali (es. da un altro account Google):
+          # usate solo se quella sopra finisce la quota giornaliera. Un
+          # secret non impostato risulta in una stringa vuota, non un
+          # errore, quindi e' sicuro lasciarle referenziate anche se non
+          # esistono ancora.
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
         run: python scripts/ai_review.py "${{ inputs.prompt }}" "${{ inputs.base_ref }}" "${{ inputs.head_ref }}"

@@ -40,7 +40,12 @@ specifica.
 - Se il livello gratuito di Gemini dovesse risultare limitante (quota
   esaurita), l'utente ha detto di avere altre chiavi API disponibili da
   aggiungere: vale la pena segnalarglielo invece di rinunciare a usare il
-  reviewer.
+  reviewer. `scripts/ai_review.py` gia' supporta chiavi di riserva: bastano
+  nuovi secret `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, ... (numerati senza
+  buchi, es. da un altro account Google) referenziati in
+  `ai_review.yml` — usate automaticamente in ordine solo quando quella
+  prima esaurisce la quota giornaliera (429 o 403 RESOURCE_EXHAUSTED),
+  non su altri tipi di errore.
 - Il reviewer è sempre sola lettura: non modifica mai file del repository, il
   workflow stesso non applica nulla in automatico.
 - I suggerimenti del reviewer sono input di review, non decisioni automatiche:
