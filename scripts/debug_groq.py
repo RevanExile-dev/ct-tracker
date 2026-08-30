@@ -13,7 +13,7 @@ import sys
 
 import requests
 
-MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODELS_URL = "https://api.groq.com/openai/v1/models"
 
