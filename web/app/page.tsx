@@ -1,15 +1,16 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, ExpansionInfo, SortOption,
   fetchCards, fetchCatalogStats, fetchConditions, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import { formatCents, priceDeltaPct } from "@/lib/format";
+import { priceDeltaPct } from "@/lib/format";
+import { FilterPreset } from "@/lib/filterPreset";
+import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import CardTile from "@/components/CardTile";
-import BinderTable from "@/components/BinderTable";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
@@ -52,12 +53,13 @@ function HomeContent() {
   const [sortBy, setSortBy] = useState<SortOption>(
     () => (searchParams.get("sort") as SortOption) || "expansion"
   );
-  const [onlyBinder, setOnlyBinder] = useState(() => searchParams.get("binder") === "1");
-  const [viewMode, setViewMode] = useState<"grid" | "table">(
-    () => (searchParams.get("view") === "table" ? "table" : "grid")
-  );
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [visibleCount, setVisibleCount] = useState(() => {
+    const shown = Number(searchParams.get("shown"));
+    return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
+  });
+  const filterKey = [search, expansionCode, selectedRarities.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
+  const previousFilterKey = useRef(filterKey);
 
   // Specchia i filtri nella URL (senza aggiungere una entry nella cronologia
   // ad ogni singola modifica: solo la navigazione verso una carta la crea).
@@ -70,14 +72,13 @@ function HomeContent() {
     if (selectedConditions.length) params.set("cond", selectedConditions.join(","));
     if (onlyZero) params.set("zero", "1");
     if (sortBy !== "expansion") params.set("sort", sortBy);
-    if (onlyBinder) params.set("binder", "1");
-    if (viewMode === "table") params.set("view", "table");
+    if (visibleCount > PAGE_SIZE) params.set("shown", String(visibleCount));
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, onlyBinder, viewMode, pathname, router]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router]);
 
   useEffect(() => {
-    setBinderIds(getBinderIds());
+    const frame = requestAnimationFrame(() => setBinderIds(getBinderIds()));
     fetchExpansions().then(setExpansions).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
     fetchLanguages().then(setLanguages).catch(() => {});
@@ -88,45 +89,39 @@ function HomeContent() {
     fetchCatalogStats()
       .then((s) => setTotalCards(s.totalCards))
       .catch(() => {});
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   // Ricarica le carte quando cambiano i filtri lato-query (ricerca, espansione,
   // rarità, lingua, condizione, ordinamento): sono gestiti in SQL, non serve
   // rifiltrare in JS.
   useEffect(() => {
-    setError(null);
+    let cancelled = false;
     fetchCards({
       search, expansionCode, rarities: selectedRarities, languages: selectedLanguages,
       conditions: selectedConditions, onlyZero, sortBy,
     })
-      .then(setCards)
-      .catch((e) => setError(String(e.message ?? e)));
+      .then((nextCards) => {
+        if (!cancelled) { setError(null); setCards(nextCards); }
+      })
+      .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); });
+    return () => { cancelled = true; };
   }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy]);
 
   useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, onlyBinder]);
+    if (previousFilterKey.current !== filterKey) {
+      previousFilterKey.current = filterKey;
+      setVisibleCount(PAGE_SIZE);
+    }
+  }, [filterKey]);
 
-  const filtered = useMemo(() => {
-    if (!cards) return null;
-    if (!onlyBinder) return cards;
-    return cards.filter((c) => binderIds.has(c.id));
-  }, [cards, onlyBinder, binderIds]);
+  const filtered = cards;
 
   const visible = filtered ? filtered.slice(0, visibleCount) : null;
+  const currentQuery = searchParams.toString();
+  const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
 
-  const binderSummary = useMemo(() => {
-    if (!onlyBinder || !filtered) return null;
-    const priceOf = (c: CardRow) => c.best_price_cents ?? c.latest_price_cents;
-    const priced = filtered.filter((c) => priceOf(c) !== null);
-    const totalCents = priced.reduce((sum, c) => sum + (priceOf(c) as number), 0);
-    const currency = (priced[0] && (priced[0].best_price_currency ?? priced[0].latest_price_currency)) ?? "EUR";
-    const drops = filtered.filter((c) => {
-      const d = priceDeltaPct(priceOf(c), c.prev_best_price_cents ?? c.prev_price_cents);
-      return d !== null && d < 0;
-    }).length;
-    return { count: filtered.length, priced: priced.length, totalCents, currency, drops };
-  }, [onlyBinder, filtered]);
+  useScrollRestoration("catalog", cards !== null || error !== null, returnTo);
 
   // Indice di mercato dell'espansione selezionata: media delle variazioni
   // giorno-su-giorno delle carte gia' caricate (nessuna richiesta aggiuntiva,
@@ -166,7 +161,7 @@ function HomeContent() {
 
   const hasActiveFilters = Boolean(
     search || expansionCode || selectedRarities.length || selectedLanguages.length ||
-      selectedConditions.length || onlyZero || sortBy !== "expansion" || onlyBinder
+      selectedConditions.length || onlyZero || sortBy !== "expansion"
   );
 
   function resetAllFilters() {
@@ -177,7 +172,16 @@ function HomeContent() {
     setSelectedConditions([]);
     setOnlyZero(false);
     setSortBy("expansion");
-    setOnlyBinder(false);
+  }
+
+  function applyPreset(preset: FilterPreset) {
+    setSearch(preset.search ?? "");
+    setExpansionCode(preset.expansionCode ?? "");
+    setSelectedRarities(preset.rarities);
+    setSelectedLanguages(preset.languages);
+    setSelectedConditions(preset.conditions);
+    setOnlyZero(preset.onlyZero);
+    setSortBy(preset.sortBy ?? "expansion");
   }
 
   return (
@@ -208,10 +212,9 @@ function HomeContent() {
           onToggleOnlyZero={() => setOnlyZero((v) => !v)}
           sortBy={sortBy}
           onSortChange={setSortBy}
-          onlyBinder={onlyBinder}
-          onToggleBinder={() => setOnlyBinder((v) => !v)}
           hasActiveFilters={hasActiveFilters}
           onResetAll={resetAllFilters}
+          onApplyPreset={applyPreset}
         />
       </div>
 
@@ -235,68 +238,6 @@ function HomeContent() {
                 (media su {expansionSummary.sampleSize}/{expansionSummary.totalCards} carte)
               </span>
             </div>
-          </div>
-        </div>
-      )}
-
-      {binderSummary && (
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-card border border-base-border bg-base-surface px-5 py-4">
-          <div>
-            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
-              Carte nel binder
-            </div>
-            <div className="font-display text-xl font-bold text-ink-primary">
-              <CountUp value={binderSummary.count} />
-            </div>
-          </div>
-          <div>
-            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
-              Valore stimato
-            </div>
-            <div className="font-display text-xl font-bold text-accent-bright">
-              <CountUp
-                value={binderSummary.totalCents}
-                format={(n) => formatCents(Math.round(n), binderSummary.currency)}
-              />
-              {binderSummary.priced < binderSummary.count && (
-                <span className="text-xs font-mono text-ink-faint ml-1.5">
-                  ({binderSummary.priced}/{binderSummary.count} con prezzo)
-                </span>
-              )}
-            </div>
-          </div>
-          {binderSummary.drops > 0 && (
-            <div>
-              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
-                In calo
-              </div>
-              <div className="font-display text-xl font-bold text-signal-down">
-                ▼ {binderSummary.drops}
-              </div>
-            </div>
-          )}
-
-          <div className="ml-auto flex gap-1.5">
-            <button
-              onClick={() => setViewMode("grid")}
-              className={`btn-lift text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
-                viewMode === "grid"
-                  ? "bg-accent/10 border-accent/60 text-accent-bright"
-                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
-              }`}
-            >
-              Griglia
-            </button>
-            <button
-              onClick={() => setViewMode("table")}
-              className={`btn-lift text-xs px-3 py-1.5 rounded-card border transition-colors active:scale-95 ${
-                viewMode === "table"
-                  ? "bg-accent/10 border-accent/60 text-accent-bright"
-                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
-              }`}
-            >
-              Tabella (confronto)
-            </button>
           </div>
         </div>
       )}
@@ -338,18 +279,13 @@ function HomeContent() {
 
       {filtered && filtered.length === 0 && (
         <div className="mt-16 text-center text-ink-muted">
-          {onlyBinder
-            ? "Il tuo binder è vuoto. Apri una carta e tocca \"Aggiungi al binder\"."
-            : "Nessuna carta trovata. Prova a modificare la ricerca o i filtri."}
+          Nessuna carta trovata. Prova a modificare la ricerca o i filtri.
         </div>
       )}
 
       {visible && visible.length > 0 && (
         <>
-          {onlyBinder && viewMode === "table" ? (
-            <BinderTable cards={filtered ?? []} />
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5 mt-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5 mt-8">
               {visible.map((card, i) => (
                 <CardTile
                   key={card.id}
@@ -357,12 +293,12 @@ function HomeContent() {
                   index={i}
                   inBinder={binderIds.has(card.id)}
                   onToggleBinder={() => handleToggleBinderCard(card.id)}
+                  returnTo={returnTo}
                 />
               ))}
-            </div>
-          )}
+          </div>
 
-          {!(onlyBinder && viewMode === "table") && filtered && visibleCount < filtered.length && (
+          {filtered && visibleCount < filtered.length && (
             <div className="flex justify-center mt-8">
               <button
                 onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}

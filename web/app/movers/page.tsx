@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CardRow, fetchCards, fetchConditions, fetchLanguages, fetchRarities } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { languageFlag, languageLabel, priceDeltaPct } from "@/lib/format";
@@ -9,6 +10,9 @@ import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
 import ConditionBadge from "@/components/ConditionBadge";
+import FilterPresetControls from "@/components/FilterPresetControls";
+import { FilterPreset } from "@/lib/filterPreset";
+import { useScrollRestoration } from "@/lib/useScrollRestoration";
 
 const MOVERS_LIMIT = 24;
 
@@ -49,28 +53,46 @@ function withRealDelta(cards: CardRow[]): CardRow[] {
   );
 }
 
-export default function MoversPage() {
+function splitCsv(value: string | null): string[] {
+  return value ? value.split(",").filter(Boolean) : [];
+}
+
+function MoversContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [rises, setRises] = useState<CardRow[] | null>(null);
   const [drops, setDrops] = useState<CardRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [languages, setLanguages] = useState<string[]>([]);
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() => splitCsv(searchParams.get("lang")));
   const [rarities, setRarities] = useState<string[]>([]);
-  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
+  const [selectedRarities, setSelectedRarities] = useState<string[]>(() => splitCsv(searchParams.get("rarity")));
   const [conditions, setConditions] = useState<string[]>([]);
-  const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
-  const [onlyZero, setOnlyZero] = useState(false);
+  const [selectedConditions, setSelectedConditions] = useState<string[]>(() => splitCsv(searchParams.get("cond")));
+  const [onlyZero, setOnlyZero] = useState(() => searchParams.get("zero") === "1");
 
   useEffect(() => {
-    setBinderIds(getBinderIds());
+    const params = new URLSearchParams();
+    if (selectedRarities.length) params.set("rarity", selectedRarities.join(","));
+    if (selectedLanguages.length) params.set("lang", selectedLanguages.join(","));
+    if (selectedConditions.length) params.set("cond", selectedConditions.join(","));
+    if (onlyZero) params.set("zero", "1");
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [selectedLanguages, selectedRarities, selectedConditions, onlyZero, pathname, router]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setBinderIds(getBinderIds()));
     fetchLanguages().then(setLanguages).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
     fetchConditions().then(setConditions).catch(() => {});
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
-    setError(null);
+    let cancelled = false;
     const filters = {
       languages: selectedLanguages, rarities: selectedRarities,
       conditions: selectedConditions, onlyZero,
@@ -83,12 +105,18 @@ export default function MoversPage() {
     // cambio di filtro. withRealDelta resta come rete di sicurezza per le
     // eventuali righe senza variazione finite dentro se le carte valide
     // sono meno di MOVERS_LIMIT.
-    fetchCards({ sortBy: "rise_first", limit: MOVERS_LIMIT, ...filters })
-      .then((cards) => setRises(withRealDelta(cards)))
-      .catch((e) => setError(String(e.message ?? e)));
-    fetchCards({ sortBy: "drop_first", limit: MOVERS_LIMIT, ...filters })
-      .then((cards) => setDrops(withRealDelta(cards)))
-      .catch((e) => setError(String(e.message ?? e)));
+    Promise.all([
+      fetchCards({ sortBy: "rise_first", limit: MOVERS_LIMIT, ...filters }),
+      fetchCards({ sortBy: "drop_first", limit: MOVERS_LIMIT, ...filters }),
+    ])
+      .then(([nextRises, nextDrops]) => {
+        if (cancelled) return;
+        setError(null);
+        setRises(withRealDelta(nextRises));
+        setDrops(withRealDelta(nextDrops));
+      })
+      .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); });
+    return () => { cancelled = true; };
   }, [selectedLanguages, selectedRarities, selectedConditions, onlyZero]);
 
   function handleToggleBinderCard(id: number) {
@@ -116,12 +144,22 @@ export default function MoversPage() {
   const hasActiveFilters = Boolean(
     selectedLanguages.length || selectedRarities.length || selectedConditions.length || onlyZero
   );
+  const currentQuery = searchParams.toString();
+  const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
+  useScrollRestoration("movers", (rises !== null && drops !== null) || error !== null, returnTo);
 
   function resetAllFilters() {
     setSelectedLanguages([]);
     setSelectedRarities([]);
     setSelectedConditions([]);
     setOnlyZero(false);
+  }
+
+  function applyPreset(preset: FilterPreset) {
+    setSelectedRarities(preset.rarities);
+    setSelectedLanguages(preset.languages);
+    setSelectedConditions(preset.conditions);
+    setOnlyZero(preset.onlyZero);
   }
 
   return (
@@ -132,7 +170,7 @@ export default function MoversPage() {
         href="/"
         className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-8"
       >
-        ← Torna al binder
+        ← Torna al catalogo
       </Link>
 
       <h2 className="font-display text-2xl font-bold text-ink-primary">Carte in movimento</h2>
@@ -141,7 +179,7 @@ export default function MoversPage() {
         precedente.
       </p>
 
-      <div className="mt-4 flex flex-row flex-wrap items-center gap-4 sm:gap-6">
+      <div className="filter-toolbar mt-5 flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/55 px-4 py-3">
         <FilterDropdown
           label="Filtra per rarità"
           options={rarities}
@@ -165,7 +203,7 @@ export default function MoversPage() {
         <button
           type="button"
           onClick={() => setOnlyZero((v) => !v)}
-          className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+          className={`min-h-11 text-xs px-3 py-2 rounded-full border transition-colors active:scale-95 ${
             onlyZero
               ? "bg-accent/10 border-accent/60 text-accent-bright"
               : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -177,11 +215,21 @@ export default function MoversPage() {
           <button
             type="button"
             onClick={resetAllFilters}
-            className="text-xs font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
+            className="min-h-11 text-xs px-2 font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
           >
             ✕ Reset filtri
           </button>
         )}
+        <FilterPresetControls
+          scope="movers"
+          current={{
+            rarities: selectedRarities,
+            languages: selectedLanguages,
+            conditions: selectedConditions,
+            onlyZero,
+          }}
+          onApply={applyPreset}
+        />
       </div>
 
       {error && (
@@ -209,6 +257,7 @@ export default function MoversPage() {
                     index={i}
                     inBinder={binderIds.has(card.id)}
                     onToggleBinder={() => handleToggleBinderCard(card.id)}
+                    returnTo={returnTo}
                   />
                 ))}
               </div>
@@ -232,6 +281,7 @@ export default function MoversPage() {
                     index={i}
                     inBinder={binderIds.has(card.id)}
                     onToggleBinder={() => handleToggleBinderCard(card.id)}
+                    returnTo={returnTo}
                   />
                 ))}
               </div>
@@ -240,5 +290,13 @@ export default function MoversPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function MoversPage() {
+  return (
+    <Suspense fallback={null}>
+      <MoversContent />
+    </Suspense>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import HoloFrame from "./HoloFrame";
+import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
 import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
 
@@ -15,11 +15,13 @@ export default function CardTile({
   index = 0,
   inBinder,
   onToggleBinder,
+  returnTo,
 }: {
   card: CardRow;
   index?: number;
   inBinder?: boolean;
   onToggleBinder?: () => void;
+  returnTo?: string;
 }) {
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
   // condizione/Zero: e' la piu' economica tra le inserzioni che rispettano
@@ -44,12 +46,12 @@ export default function CardTile({
 
   return (
     <Link
-      href={`/card/${card.id}`}
+      href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
       className="group block card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
     >
-      <HoloFrame
-        liftOnHover
+      <InteractiveCard
+        level="tile"
         className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
       >
         <div className="relative aspect-[5/7] bg-base-surface2">
@@ -130,7 +132,7 @@ export default function CardTile({
             )}
           </div>
         </div>
-      </HoloFrame>
+      </InteractiveCard>
     </Link>
   );
 }

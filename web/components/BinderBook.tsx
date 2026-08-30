@@ -1,216 +1,215 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CardRow } from "@/lib/db";
 import { formatCents } from "@/lib/format";
-
-const CARDS_PER_SHEET = 9;
+import InteractiveCard from "./InteractiveCard";
 
 type Screen =
   | { kind: "cover"; count: number; totalCents: number; currency: string }
-  | { kind: "sheet"; cards: CardRow[]; sheetNumber: number; totalSheets: number };
+  | { kind: "sheet"; cards: CardRow[]; sheetNumber: number; totalSheets: number; cells: number };
 
-function buildScreens(cards: CardRow[]): Screen[] {
-  const priced = cards.filter((c) => c.latest_price_cents !== null);
-  const totalCents = priced.reduce((sum, c) => sum + (c.latest_price_cents as number), 0);
-  const currency = priced[0]?.latest_price_currency ?? "EUR";
-
+function buildScreens(cards: CardRow[], cells: number): Screen[] {
+  const priced = cards.filter((card) => (card.best_price_cents ?? card.latest_price_cents) !== null);
+  const totalCents = priced.reduce((sum, card) => sum + (card.best_price_cents ?? card.latest_price_cents ?? 0), 0);
+  const currency = priced[0]?.best_price_currency ?? priced[0]?.latest_price_currency ?? "EUR";
   const sheets: CardRow[][] = [];
-  for (let i = 0; i < cards.length; i += CARDS_PER_SHEET) {
-    sheets.push(cards.slice(i, i + CARDS_PER_SHEET));
-  }
+  for (let index = 0; index < cards.length; index += cells) sheets.push(cards.slice(index, index + cells));
   if (sheets.length === 0) sheets.push([]);
-
   return [
     { kind: "cover", count: cards.length, totalCents, currency },
-    ...sheets.map((s, i) => ({
+    ...sheets.map((sheet, index) => ({
       kind: "sheet" as const,
-      cards: s,
-      sheetNumber: i + 1,
+      cards: sheet,
+      sheetNumber: index + 1,
       totalSheets: sheets.length,
+      cells,
     })),
   ];
 }
 
-function Pocket({ card }: { card: CardRow | undefined }) {
-  if (!card) {
-    return <div className="binder-pocket binder-pocket-empty" />;
-  }
+function Pocket({ card, returnTo }: { card: CardRow | undefined; returnTo: string }) {
+  if (!card) return <div className="binder-pocket binder-pocket-empty" aria-hidden />;
+  const href = `/card/${card.id}?from=${encodeURIComponent(returnTo)}`;
   return (
-    <Link href={`/card/${card.id}`} className="binder-pocket group">
-      <div className="relative w-full h-full">
-        {card.image_url ? (
-          <Image
-            src={card.image_url}
-            alt={card.name}
-            fill
-            sizes="180px"
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-ink-faint text-[9px] font-mono text-center px-1">
-            {card.name}
-          </div>
-        )}
-        <div className="binder-pocket-gloss" />
-        <div className="absolute bottom-0 inset-x-0 bg-black/70 backdrop-blur-sm px-1.5 py-1">
-          <div className="text-[9px] text-ink-primary truncate leading-tight">{card.name}</div>
-          <div className="text-[9px] font-mono text-accent-bright leading-tight">
-            {formatCents(card.latest_price_cents, card.latest_price_currency ?? "EUR")}
+    <Link href={href} className="binder-pocket group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/80" aria-label={`Apri ${card.name}`}>
+      <InteractiveCard level="binder" className="h-full w-full overflow-hidden rounded-[4px]">
+        <div className="relative w-full h-full">
+          {card.image_url ? (
+            <Image
+              src={card.image_url}
+              alt={card.name}
+              fill
+              sizes="(max-width: 767px) 45vw, 15vw"
+              className="object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-ink-faint text-[9px] font-mono text-center px-1">{card.name}</div>
+          )}
+          <div className="binder-pocket-gloss" />
+          <div className="binder-pocket-caption absolute bottom-0 inset-x-0 bg-black/75 backdrop-blur-sm px-1.5 py-1">
+            <div className="text-[9px] text-ink-primary truncate leading-tight">{card.name}</div>
+            <div className="text-[9px] font-mono text-accent-bright leading-tight">
+              {formatCents(card.best_price_cents ?? card.latest_price_cents, card.best_price_currency ?? card.latest_price_currency ?? "EUR")}
+            </div>
           </div>
         </div>
-      </div>
+      </InteractiveCard>
     </Link>
   );
 }
 
-function ScreenView({ screen }: { screen: Screen | undefined }) {
+function ScreenView({ screen, returnTo }: { screen: Screen | undefined; returnTo: string }) {
   if (!screen) {
-    return (
-      <div className="binder-page binder-page-blank">
-        <span className="text-ink-faint/40 text-xs font-mono">— fine binder —</span>
-      </div>
-    );
+    return <div className="binder-page binder-page-blank"><span className="text-ink-faint/50 text-xs font-mono">— fine binder —</span></div>;
   }
-
   if (screen.kind === "cover") {
     return (
       <div className="binder-page binder-page-cover">
         <div className="binder-cover-shine" />
-        <div className="relative z-10 flex flex-col h-full justify-between p-6">
+        <div className="relative z-10 flex flex-col h-full justify-between p-[clamp(1.25rem,4vw,3rem)]">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-white/70">
-              CardTrader Tracker
-            </div>
-            <h1 className="font-display text-3xl font-bold text-white mt-2 leading-tight">
-              Il mio
-              <br />
-              Binder
-            </h1>
+            <div className="font-mono text-[clamp(9px,1vw,12px)] uppercase tracking-[0.3em] text-white/75">Carta Viva</div>
+            <h2 className="font-display text-[clamp(2rem,4vw,4.5rem)] font-bold text-white mt-2 leading-[0.92]">La mia<br />collezione</h2>
           </div>
           <div>
-            <div className="text-[10px] font-mono uppercase tracking-wider text-white/60">
-              {screen.count} carte · valore stimato
-            </div>
-            <div className="font-display text-xl font-bold text-white">
-              {formatCents(screen.totalCents, screen.currency)}
-            </div>
+            <div className="text-[clamp(9px,1vw,12px)] font-mono uppercase tracking-wider text-white/65">{screen.count} carte · valore stimato</div>
+            <div className="font-display text-[clamp(1.25rem,2.3vw,2.5rem)] font-bold text-white">{formatCents(screen.totalCents, screen.currency)}</div>
           </div>
         </div>
       </div>
     );
   }
-
-  const cells: (CardRow | undefined)[] = Array.from(
-    { length: CARDS_PER_SHEET },
-    (_, i) => screen.cards[i]
-  );
-
+  const cells = Array.from({ length: screen.cells }, (_, index) => screen.cards[index]);
   return (
     <div className="binder-page binder-page-sheet">
-      <div className="grid grid-cols-3 gap-2 p-3 h-full">
-        {cells.map((c, i) => (
-          <Pocket key={c?.id ?? `empty-${i}`} card={c} />
-        ))}
+      <div className={`binder-sheet-grid ${screen.cells === 4 ? "binder-sheet-grid-4" : "binder-sheet-grid-9"}`}>
+        {cells.map((card, index) => <Pocket key={card?.id ?? `empty-${index}`} card={card} returnTo={returnTo} />)}
       </div>
-      <div className="absolute bottom-1.5 right-3 text-[9px] font-mono text-ink-faint">
-        {screen.sheetNumber}/{screen.totalSheets}
-      </div>
+      <div className="absolute bottom-1.5 right-3 text-[9px] font-mono text-ink-faint">{screen.sheetNumber}/{screen.totalSheets}</div>
     </div>
   );
 }
 
-export default function BinderBook({ cards }: { cards: CardRow[] }) {
-  const screens = buildScreens(cards);
-  const [spreadIndex, setSpreadIndex] = useState(0);
-  const [anim, setAnim] = useState<null | { dir: "next" | "prev"; rotating: boolean }>(null);
+type Flip = { direction: "next" | "prev"; started: boolean };
 
-  const leftScreen = screens[spreadIndex];
-  const rightScreen = screens[spreadIndex + 1];
-  const nextRightScreen = screens[spreadIndex + 2];
-  const prevLeftScreen = screens[spreadIndex - 1];
+export default function BinderBook({ cards, initialPage = 0, onPageChange, returnTo }: {
+  cards: CardRow[];
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
+  returnTo: string;
+}) {
+  const [singlePage, setSinglePage] = useState(false);
+  const [page, setPage] = useState(Math.max(0, initialPage));
+  const [flip, setFlip] = useState<Flip | null>(null);
+  const gestureStart = useRef<{ x: number; y: number } | null>(null);
+  const didSwipe = useRef(false);
+  const screens = useMemo(() => buildScreens(cards, singlePage ? 4 : 9), [cards, singlePage]);
+  const step = singlePage ? 1 : 2;
+  const viewPage = singlePage ? Math.min(page, screens.length - 1) : Math.min(Math.floor(page / 2) * 2, Math.max(0, screens.length - 1));
+  const canPrev = !flip && viewPage > 0;
+  const canNext = !flip && viewPage + step < screens.length;
 
-  const canNext = !anim && spreadIndex + 1 < screens.length;
-  const canPrev = !anim && spreadIndex > 0;
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px), (max-width: 1023px) and (orientation: portrait)");
+    const update = () => setSinglePage(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
-  function goNext() {
-    if (!canNext) return;
-    setAnim({ dir: "next", rotating: false });
-    requestAnimationFrame(() => requestAnimationFrame(() => setAnim({ dir: "next", rotating: true })));
+  useEffect(() => onPageChange?.(viewPage), [viewPage, onPageChange]);
+
+  function turn(direction: "next" | "prev") {
+    if ((direction === "next" && !canNext) || (direction === "prev" && !canPrev)) return;
+    setFlip({ direction, started: false });
+    requestAnimationFrame(() => requestAnimationFrame(() => setFlip({ direction, started: true })));
   }
 
-  function goPrev() {
-    if (!canPrev) return;
-    setAnim({ dir: "prev", rotating: false });
-    requestAnimationFrame(() => requestAnimationFrame(() => setAnim({ dir: "prev", rotating: true })));
+  function finishFlip() {
+    if (!flip) return;
+    setPage((current) => Math.max(0, Math.min(screens.length - 1, current + (flip.direction === "next" ? step : -step))));
+    setFlip(null);
   }
 
-  function handleTransitionEnd() {
-    if (!anim) return;
-    setSpreadIndex((i) => (anim.dir === "next" ? i + 1 : i - 1));
-    setAnim(null);
-  }
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "ArrowRight" || event.key === "PageDown") turn("next");
+      if (event.key === "ArrowLeft" || event.key === "PageUp") turn("prev");
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  });
+
+  const nextStart = viewPage + step;
+  const prevStart = Math.max(0, viewPage - step);
+  const left = screens[viewPage];
+  const right = singlePage ? undefined : screens[viewPage + 1];
+  const underlyingLeft = flip?.direction === "prev" ? screens[prevStart] : left;
+  const underlyingRight = singlePage
+    ? undefined
+    : flip?.direction === "next" ? screens[nextStart + 1] : right;
 
   return (
     <div className="w-full">
-      <div className="binder-stage">
-        <div className="binder-spread">
-          <div className="binder-slot binder-slot-left">
-            <ScreenView screen={anim?.dir === "prev" ? prevLeftScreen : leftScreen} />
-          </div>
-
-          <div className="binder-spine">
-            <span className="binder-ring" />
-            <span className="binder-ring" />
-            <span className="binder-ring" />
-          </div>
-
-          <div className="binder-slot binder-slot-right">
-            <ScreenView screen={anim?.dir === "next" ? nextRightScreen : rightScreen} />
-          </div>
-
-          {anim?.dir === "next" && (
-            <div
-              className="binder-flip binder-flip-right"
-              style={{ transform: anim.rotating ? "rotateY(-180deg)" : "rotateY(0deg)" }}
-              onTransitionEnd={handleTransitionEnd}
-            >
-              <ScreenView screen={rightScreen} />
-            </div>
+      <div
+        className={`binder-stage ${singlePage ? "binder-stage-single" : "binder-stage-spread"}`}
+        aria-label="Binder sfogliabile"
+        onPointerDown={(event) => {
+          if (event.pointerType !== "mouse") gestureStart.current = { x: event.clientX, y: event.clientY };
+        }}
+        onPointerUp={(event) => {
+          const start = gestureStart.current;
+          gestureStart.current = null;
+          if (!start) return;
+          const dx = event.clientX - start.x;
+          const dy = event.clientY - start.y;
+          if (Math.abs(dx) >= 52 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+            didSwipe.current = true;
+            turn(dx < 0 ? "next" : "prev");
+            window.setTimeout(() => { didSwipe.current = false; }, 0);
+          }
+        }}
+        onClickCapture={(event) => {
+          if (didSwipe.current) { event.preventDefault(); event.stopPropagation(); }
+        }}
+      >
+        <div className={`binder-spread ${singlePage ? "is-single" : "is-double"}`}>
+          <div className="binder-slot binder-slot-left"><ScreenView screen={underlyingLeft} returnTo={returnTo} /></div>
+          {!singlePage && (
+            <>
+              <div className="binder-spine" aria-hidden><span className="binder-ring" /><span className="binder-ring" /><span className="binder-ring" /></div>
+              <div className="binder-slot binder-slot-right"><ScreenView screen={underlyingRight} returnTo={returnTo} /></div>
+            </>
           )}
-          {anim?.dir === "prev" && (
+
+          {flip && (
             <div
-              className="binder-flip binder-flip-left"
-              style={{ transform: anim.rotating ? "rotateY(180deg)" : "rotateY(0deg)" }}
-              onTransitionEnd={handleTransitionEnd}
+              className={`binder-flip ${singlePage ? "binder-flip-single" : flip.direction === "next" ? "binder-flip-right" : "binder-flip-left"} ${flip.started ? "is-turning" : ""}`}
+              data-direction={flip.direction}
+              onTransitionEnd={(event) => { if (event.target === event.currentTarget) finishFlip(); }}
             >
-              <ScreenView screen={leftScreen} />
+              <div className="binder-flip-face binder-flip-front">
+                <ScreenView screen={singlePage ? left : flip.direction === "next" ? right : left} returnTo={returnTo} />
+              </div>
+              <div className="binder-flip-face binder-flip-back">
+                <ScreenView screen={flip.direction === "next" ? screens[nextStart] : screens[prevStart + (singlePage ? 0 : 1)]} returnTo={returnTo} />
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4 mt-6">
-        <button
-          onClick={goPrev}
-          disabled={!canPrev}
-          className="text-sm px-5 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
-        >
-          ← Pagina prec.
-        </button>
-        <span className="font-mono text-xs text-ink-faint">
-          {spreadIndex + 1}/{screens.length}
+      <div className="binder-controls flex items-center justify-center gap-3 sm:gap-4 mt-5">
+        <button onClick={() => turn("prev")} disabled={!canPrev} className="btn-lift min-h-11 text-sm px-4 sm:px-5 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 active:scale-95 disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">← <span className="hidden sm:inline">Pagina prec.</span><span className="sm:hidden">Indietro</span></button>
+        <span className="min-w-16 text-center font-mono text-xs text-ink-faint" aria-live="polite">
+          {singlePage ? `${viewPage + 1}/${screens.length}` : `${viewPage + 1}–${Math.min(viewPage + 2, screens.length)}/${screens.length}`}
         </span>
-        <button
-          onClick={goNext}
-          disabled={!canNext}
-          className="text-sm px-5 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
-        >
-          Pagina succ. →
-        </button>
+        <button onClick={() => turn("next")} disabled={!canNext} className="btn-lift min-h-11 text-sm px-4 sm:px-5 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 active:scale-95 disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"><span className="hidden sm:inline">Pagina succ.</span><span className="sm:hidden">Avanti</span> →</button>
       </div>
+      <p className="mt-3 text-center text-[11px] font-mono text-ink-faint">Swipe su touch · frecce ← → su tastiera</p>
     </div>
   );
 }

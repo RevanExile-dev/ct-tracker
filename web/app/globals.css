@@ -4,6 +4,10 @@
 
 :root {
   color-scheme: dark;
+  --motion-fast: 160ms;
+  --motion-medium: 280ms;
+  --motion-slow: 520ms;
+  --ease-out-premium: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 body {
@@ -71,20 +75,26 @@ body::after {
   box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.5);
 }
 
-/* --- Effetto firma: lamina olografica che segue il mouse sulla card --- */
-.holo-frame {
+/* --- Effetto firma: carta fisica, luce e profondita' coordinate. --- */
+.interactive-card {
   position: relative;
   isolation: isolate;
+  transform-style: preserve-3d;
+  touch-action: pan-y;
+  transform: var(--card-transform, perspective(900px) rotateX(0) rotateY(0));
+  transition:
+    transform var(--motion-slow) var(--ease-out-premium),
+    box-shadow var(--motion-medium) ease;
 }
 
-.holo-frame::before {
+.interactive-card::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 1px;
   background: linear-gradient(
-    var(--holo-angle, 115deg),
+    var(--card-angle, 115deg),
     rgba(45, 216, 201, 0.9) 0%,
     rgba(232, 95, 209, 0.9) 45%,
     rgba(244, 193, 92, 0.9) 100%
@@ -98,15 +108,16 @@ body::after {
   pointer-events: none;
 }
 
-.holo-frame::after {
+.interactive-card::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: radial-gradient(
-    380px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(255, 255, 255, 0.14),
-    transparent 60%
+    420px circle at var(--card-mx, 50%) var(--card-my, 50%),
+    rgba(255, 255, 255, 0.2),
+    rgba(120, 235, 255, 0.06) 28%,
+    transparent 62%
   );
   opacity: 0;
   transition: opacity 0.35s ease;
@@ -114,19 +125,52 @@ body::after {
   pointer-events: none;
 }
 
-.holo-frame:hover::before,
-.holo-frame:focus-within::before {
+.interactive-card[data-active="true"] {
+  will-change: transform;
+  transition: transform 70ms linear, box-shadow 100ms linear;
+  box-shadow:
+    var(--card-shadow-x, 0) var(--card-shadow-y, 12px) 34px rgba(0, 0, 0, 0.46),
+    0 0 20px rgba(45, 216, 201, 0.08);
+}
+
+.interactive-card[data-active="true"]::before,
+.interactive-card:hover::before,
+.interactive-card:focus-within::before {
   opacity: 1;
 }
-.holo-frame:hover::after,
-.holo-frame:focus-within::after {
+.interactive-card[data-active="true"]::after,
+.interactive-card:hover::after,
+.interactive-card:focus-within::after {
   opacity: 1;
 }
 
+.interactive-card[data-level="binder"]::after {
+  background: linear-gradient(
+    var(--card-angle, 115deg),
+    transparent 24%,
+    rgba(255, 255, 255, 0.12) 44%,
+    transparent 62%
+  );
+}
+
+.interactive-card[data-level="tile"]::after {
+  opacity: 0;
+  background: radial-gradient(
+    260px circle at var(--card-mx, 50%) var(--card-my, 50%),
+    rgba(255, 255, 255, 0.12),
+    transparent 60%
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .holo-frame::before,
-  .holo-frame::after {
+  .interactive-card,
+  .interactive-card::before,
+  .interactive-card::after {
     transition: none;
+  }
+  .interactive-card,
+  .interactive-card[data-active="true"] {
+    transform: none !important;
   }
 }
 
@@ -152,7 +196,7 @@ body::after {
    Pokemon TCG Pocket, invece del semplice fade-in-up generico usato altrove
    (troppo discreto per il momento in cui apri una carta specifica). Un solo
    passaggio all'apertura pagina, non si ripete con hover/hover-out (quello
-   e' gestito da HoloFrame separatamente). --- */
+   e' gestito da InteractiveCard separatamente). --- */
 @keyframes card-reveal {
   0% {
     opacity: 0;
@@ -222,10 +266,9 @@ body::after {
   }
 }
 
-/* --- Binder virtuale: simulazione di un raccoglitore con pagine che si
-   sfogliano in 3D. Prototipo non collegato dalla navigazione principale
-   (raggiungibile solo da /binder-book), vedi web/components/BinderBook.tsx
-   per la logica di flip. --- */
+/* --- Binder virtuale: simulazione di un raccoglitore con pagine 3D.
+   Le regole base qui sotto sono completate dagli override responsive nella
+   sezione "Binder immersivo". --- */
 .binder-stage {
   perspective: 2400px;
   perspective-origin: 50% 40%;
@@ -398,6 +441,203 @@ body::after {
   .binder-page-sheet .grid {
     gap: 4px;
     padding: 6px;
+  }
+}
+
+/* --- Identita' Carta Viva --- */
+.brand-wordmark {
+  letter-spacing: -0.045em;
+}
+.brand-wordmark span:first-child {
+  color: #70e0d7;
+}
+.brand-wordmark span:last-child {
+  color: #ed78d8;
+}
+.brand-mark {
+  flex: none;
+  overflow: visible;
+  filter: drop-shadow(0 0 10px rgba(45, 216, 201, 0.14));
+}
+.brand-logo:hover .brand-card,
+.brand-logo:focus-visible .brand-card {
+  transform: rotate(-3deg) translateY(-1px);
+}
+.brand-logo:hover .brand-wave,
+.brand-logo:focus-visible .brand-wave {
+  stroke-dashoffset: -12;
+}
+.brand-card {
+  transform-origin: center;
+  transition: transform var(--motion-medium) var(--ease-out-premium);
+}
+.brand-wave {
+  stroke-dasharray: 7 5;
+  transition: stroke-dashoffset var(--motion-slow) ease;
+}
+.brand-spark {
+  transform-origin: 30.8px 17.7px;
+  animation: brand-spark 3.8s ease-in-out infinite;
+}
+@keyframes brand-spark {
+  0%, 75%, 100% { transform: scale(1); opacity: 0.85; }
+  84% { transform: scale(1.28) rotate(12deg); opacity: 1; }
+}
+
+/* --- Binder immersivo: override del prototipo con layout responsive reale. --- */
+.binder-stage {
+  perspective: 2600px;
+  perspective-origin: 50% 42%;
+  padding: 8px 0 20px;
+  touch-action: pan-y;
+  user-select: none;
+}
+.binder-stage-spread .binder-spread {
+  width: min(100%, calc((100dvh - 250px) * 10 / 7), 1320px);
+  aspect-ratio: 10 / 7;
+}
+.binder-stage-single .binder-spread {
+  width: min(100%, calc((100dvh - 245px) * 5 / 7), 560px);
+  aspect-ratio: 5 / 7;
+}
+.binder-spread {
+  min-width: 0;
+  filter: drop-shadow(0 30px 50px rgba(0, 0, 0, 0.58));
+}
+.binder-spread.is-single .binder-slot-left {
+  width: 100%;
+  flex: 1 1 100%;
+  border-radius: 14px;
+}
+.binder-slot {
+  overflow: visible;
+}
+.binder-page {
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.22);
+}
+.binder-slot-left .binder-page {
+  border-radius: 14px 3px 3px 14px;
+}
+.binder-slot-right .binder-page {
+  border-radius: 3px 14px 14px 3px;
+}
+.is-single .binder-page {
+  border-radius: 14px;
+}
+.binder-sheet-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(7px, 1.2vw, 16px);
+  gap: clamp(5px, 0.9vw, 12px);
+}
+.binder-sheet-grid-9 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+.binder-sheet-grid-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+.binder-pocket {
+  min-width: 0;
+  min-height: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+.binder-pocket-empty {
+  overflow: hidden;
+  border: 1px dashed rgba(255, 255, 255, 0.09);
+  background: repeating-linear-gradient(45deg, rgba(255,255,255,.022), rgba(255,255,255,.022) 7px, transparent 7px, transparent 14px);
+}
+.binder-pocket-caption {
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+.binder-pocket:hover .binder-pocket-caption,
+.binder-pocket:focus-visible .binder-pocket-caption {
+  transform: translateY(0);
+  opacity: 1;
+}
+.binder-cover-shine {
+  animation: cover-light 8s ease-in-out infinite;
+}
+@keyframes cover-light {
+  0%, 65%, 100% { transform: translateX(-36%) rotate(2deg); }
+  82% { transform: translateX(42%) rotate(2deg); }
+}
+.binder-spine {
+  width: clamp(14px, 1.6vw, 24px);
+}
+.binder-flip {
+  top: 0;
+  bottom: 0;
+  width: calc(50% - clamp(7px, .8vw, 12px));
+  transition: transform 680ms cubic-bezier(.45,.05,.18,1);
+  box-shadow: none;
+}
+.binder-flip-single {
+  left: 0;
+  width: 100%;
+}
+.binder-flip[data-direction="next"] {
+  right: 0;
+  transform-origin: left center;
+}
+.binder-flip[data-direction="prev"] {
+  left: 0;
+  transform-origin: right center;
+}
+.binder-flip.is-turning[data-direction="next"] {
+  transform: rotateY(-180deg);
+}
+.binder-flip.is-turning[data-direction="prev"] {
+  transform: rotateY(180deg);
+}
+.binder-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+.binder-flip-back {
+  transform: rotateY(180deg);
+}
+
+@media (hover: none) {
+  .binder-pocket-caption { display: none; }
+  .btn-lift:hover { transform: none; }
+}
+
+@media (max-width: 767px), (max-width: 1023px) and (orientation: portrait) {
+  .binder-shell { padding-left: 12px; padding-right: 12px; }
+  .binder-stage { perspective: 1500px; }
+  .binder-stage-single .binder-spread { width: min(100%, 540px); }
+  .binder-view-switch { width: 100%; }
+  .binder-view-switch > a { flex: 1; justify-content: center; padding-inline: .75rem; }
+}
+
+@media (max-width: 420px) {
+  .binder-sheet-grid { padding: 7px; gap: 6px; }
+  .binder-controls { gap: .5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-spark,
+  .binder-cover-shine {
+    animation: none !important;
+  }
+  .brand-card,
+  .brand-wave,
+  .binder-pocket-caption,
+  .binder-flip,
+  .filter-panel-grid {
+    transition: none !important;
   }
 }
 

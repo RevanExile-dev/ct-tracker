@@ -24,7 +24,6 @@ export default function CountUp({
     prevValue.current = value;
 
     if (from === to) {
-      setDisplay(to);
       return;
     }
 
@@ -32,8 +31,10 @@ export default function CountUp({
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) {
-      setDisplay(to);
-      return;
+      rafRef.current = requestAnimationFrame(() => setDisplay(to));
+      return () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
     }
 
     const start = performance.now();

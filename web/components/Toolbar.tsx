@@ -1,10 +1,12 @@
 "use client";
 
 import { ExpansionInfo, SortOption } from "@/lib/db";
+import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
 import ConditionBadge from "./ConditionBadge";
 import FilterDropdown from "./FilterDropdown";
+import FilterPresetControls from "./FilterPresetControls";
 
 export default function Toolbar({
   search,
@@ -25,10 +27,9 @@ export default function Toolbar({
   onToggleOnlyZero,
   sortBy,
   onSortChange,
-  onlyBinder,
-  onToggleBinder,
   hasActiveFilters,
   onResetAll,
+  onApplyPreset,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -48,16 +49,15 @@ export default function Toolbar({
   onToggleOnlyZero: () => void;
   sortBy: SortOption;
   onSortChange: (v: SortOption) => void;
-  onlyBinder: boolean;
-  onToggleBinder: () => void;
   hasActiveFilters: boolean;
   onResetAll: () => void;
+  onApplyPreset: (preset: FilterPreset) => void;
 }) {
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3">
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
@@ -118,19 +118,9 @@ export default function Toolbar({
           </select>
         </div>
 
-        <button
-          onClick={onToggleBinder}
-          className={`btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border transition-colors active:scale-95 ${
-            onlyBinder
-              ? "bg-accent/10 border-accent/60 text-accent-bright"
-              : "bg-base-surface border-base-border text-ink-muted hover:text-ink-primary"
-          }`}
-        >
-          Il mio binder
-        </button>
       </div>
 
-      <div className="flex flex-row flex-wrap items-center gap-4 sm:gap-6">
+      <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
         <FilterDropdown
           label="Filtra per rarità"
           options={rarities}
@@ -154,7 +144,7 @@ export default function Toolbar({
         <button
           type="button"
           onClick={onToggleOnlyZero}
-          className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+          className={`min-h-11 text-xs px-3 py-2 rounded-full border transition-colors active:scale-95 ${
             onlyZero
               ? "bg-accent/10 border-accent/60 text-accent-bright"
               : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -166,11 +156,24 @@ export default function Toolbar({
           <button
             type="button"
             onClick={onResetAll}
-            className="text-xs font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
+            className="min-h-11 text-xs px-2 font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
           >
             ✕ Reset filtri
           </button>
         )}
+        <FilterPresetControls
+          scope="catalog"
+          current={{
+            search,
+            expansionCode,
+            rarities: selectedRarities,
+            languages: selectedLanguages,
+            conditions: selectedConditions,
+            onlyZero,
+            sortBy,
+          }}
+          onApply={onApplyPreset}
+        />
       </div>
     </div>
   );

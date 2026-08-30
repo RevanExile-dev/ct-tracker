@@ -1,23 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   CardDetail, Listing, PricePoint,
   fetchBestListings, fetchCardDetail, fetchPriceHistory,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import HoloFrame from "@/components/HoloFrame";
+import InteractiveCard from "@/components/InteractiveCard";
+import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
 import ConditionBadge from "@/components/ConditionBadge";
 import FilterDropdown from "@/components/FilterDropdown";
 import { countryFlag, formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
 
-export default function CardDetailPage() {
+function CardDetailContent() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const id = Number(params.id);
+  const requestedReturn = searchParams.get("from");
+  const returnTo = requestedReturn?.startsWith("/") && !requestedReturn.startsWith("//")
+    ? requestedReturn
+    : "/";
 
   const [card, setCard] = useState<CardDetail | null | undefined>(undefined);
   const [history, setHistory] = useState<PricePoint[]>([]);
@@ -29,10 +35,12 @@ export default function CardDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    fetchCardDetail(id).then(setCard);
-    fetchPriceHistory(id).then(setHistory);
-    fetchBestListings(id).then(setListings);
-    setInBinder(getBinderIds().has(id));
+    let cancelled = false;
+    fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch(() => { if (!cancelled) setCard(null); });
+    fetchPriceHistory(id).then((value) => { if (!cancelled) setHistory(value); }).catch(() => {});
+    fetchBestListings(id).then((value) => { if (!cancelled) setListings(value); }).catch(() => {});
+    const frame = requestAnimationFrame(() => setInBinder(getBinderIds().has(id)));
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
   }, [id]);
 
   // Prezzo piu' basso per lingua tra le migliori inserzioni gia' scaricate
@@ -77,9 +85,10 @@ export default function CardDetailPage() {
 
   if (card === undefined) {
     return (
-      <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
+      <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
+        <SiteHeader compact />
         <div className="h-5 w-32 rounded bg-base-surface skeleton mb-8" />
-        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(300px,400px)_1fr] gap-8 lg:gap-12">
           <div className="skeleton rounded-card border border-base-border bg-base-surface aspect-[5/7]" />
           <div>
             <div className="h-3 w-24 rounded bg-base-surface skeleton" />
@@ -102,10 +111,11 @@ export default function CardDetailPage() {
 
   if (card === null) {
     return (
-      <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
+      <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
+        <SiteHeader compact />
         <p className="text-ink-muted">Carta non trovata nel catalogo locale.</p>
         <Link href="/" className="text-accent hover:text-accent-bright mt-4 inline-block">
-          ← Torna al binder
+          ← Torna al catalogo
         </Link>
       </main>
     );
@@ -130,18 +140,20 @@ export default function CardDetailPage() {
     card.latest_price_cents < card.best_price_cents;
 
   return (
-    <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
+    <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
+      <SiteHeader compact />
       <Link
-        href="/"
+        href={returnTo}
         className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-8"
       >
-        ← Torna al binder
+        ← Torna indietro
       </Link>
 
-      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-8 card-enter">
-        <HoloFrame
-          touchTilt
-          className="card-reveal bg-base-surface border border-base-border overflow-hidden self-start"
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(300px,400px)_1fr] gap-8 lg:gap-12 card-enter">
+        <InteractiveCard
+          level="detail"
+          reveal
+          className="w-full max-w-[400px] mx-auto md:mx-0 bg-base-surface border border-base-border overflow-hidden self-start shadow-card"
         >
           <div className="relative aspect-[5/7] bg-base-surface2">
             {card.image_url ? (
@@ -149,7 +161,7 @@ export default function CardDetailPage() {
                 src={card.image_url}
                 alt={card.name}
                 fill
-                sizes="320px"
+              sizes="(max-width: 767px) 90vw, 400px"
                 className="object-cover"
                 priority
               />
@@ -159,7 +171,7 @@ export default function CardDetailPage() {
               </div>
             )}
           </div>
-        </HoloFrame>
+        </InteractiveCard>
 
         <div>
           <div className="font-mono text-xs uppercase tracking-wider text-accent">
@@ -237,7 +249,7 @@ export default function CardDetailPage() {
               )}
               {hasCheaperAbsolute && (
                 <div className="text-xs font-mono text-ink-faint mt-1">
-                  prezzo piu' basso in assoluto: {formatCents(card.latest_price_cents, card.latest_price_currency ?? currency)}
+                  prezzo più basso in assoluto: {formatCents(card.latest_price_cents, card.latest_price_currency ?? currency)}
                   {listings[0]?.condition ? ` (${listings[0].condition})` : ""}
                 </div>
               )}
@@ -361,5 +373,13 @@ export default function CardDetailPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function CardDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <CardDetailContent />
+    </Suspense>
   );
 }

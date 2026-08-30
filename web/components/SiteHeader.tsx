@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatDateLong } from "@/lib/format";
 import CountUp from "./CountUp";
+import BrandLogo from "./BrandLogo";
 
 /** compact: usato nelle pagine secondarie (carte in movimento, dettaglio
  * carta) dove il sottotitolo lungo e' solo rumore ripetuto — qui si vede
@@ -26,15 +27,16 @@ export default function SiteHeader({
   const pathname = usePathname();
   const onMovers = pathname === "/movers";
   const onHome = pathname === "/";
-  const onBinderBook = pathname === "/binder-book";
+  const onBinder = pathname.startsWith("/binder");
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-baseline gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
             <Link
               href="/"
+              className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               onClick={(e) => {
                 if (onHome && onLogoClick) {
                   e.preventDefault();
@@ -42,13 +44,7 @@ export default function SiteHeader({
                 }
               }}
             >
-              <h1
-                className={`font-display font-bold text-holo ${
-                  compact ? "text-2xl" : "text-3xl sm:text-4xl"
-                }`}
-              >
-                CartaViva
-              </h1>
+              <BrandLogo compact={compact} />
             </Link>
             <span className="font-mono text-xs uppercase tracking-widest text-accent">
               CardTrader Tracker
@@ -86,12 +82,12 @@ export default function SiteHeader({
               📈 Carte in movimento
             </Link>
           )}
-          {!onBinderBook && (
+          {!onBinder && (
             <Link
-              href="/binder-book"
+              href="/binder?view=collection"
               className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
-              📖 Il mio binder
+              📚 Binder
             </Link>
           )}
         </div>

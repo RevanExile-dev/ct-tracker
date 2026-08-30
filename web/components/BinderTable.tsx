@@ -5,7 +5,7 @@ import { formatCents, priceDeltaPct } from "@/lib/format";
 /** Vista compatta a tabella per confrontare a colpo d'occhio le carte del
  * binder: nome, espansione, rarità, prezzo e variazione tutte allineate,
  * piu' pratico di scorrere la griglia per fare un confronto veloce. */
-export default function BinderTable({ cards }: { cards: CardRow[] }) {
+export default function BinderTable({ cards, returnTo }: { cards: CardRow[]; returnTo?: string }) {
   return (
     <div className="mt-8 rounded-card border border-base-border bg-base-surface overflow-x-auto">
       <table className="w-full text-sm">
@@ -28,7 +28,7 @@ export default function BinderTable({ cards }: { cards: CardRow[] }) {
               <tr key={card.id} className="hover:bg-base-surface2 transition-colors">
                 <td className="px-4 py-3">
                   <Link
-                    href={`/card/${card.id}`}
+                    href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
                     className="text-ink-primary hover:text-accent-bright transition-colors font-medium"
                   >
                     {card.name}

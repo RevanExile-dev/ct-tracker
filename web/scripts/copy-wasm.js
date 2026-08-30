@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Copia sql-wasm.wasm da node_modules dentro public/sqljs/, cosi'
 // il browser puo' scaricarlo come asset statico (vedi lib/db.ts -> locateFile).
 const fs = require("fs");

@@ -411,7 +411,7 @@ export async function fetchConditions(): Promise<string[]> {
     "SELECT DISTINCT condition FROM price_listings WHERE condition IS NOT NULL AND condition != ''"
   );
   const rows: string[] = [];
-  while (stmt.step()) rows.push((stmt.getAsObject() as any).condition);
+  while (stmt.step()) rows.push((stmt.getAsObject() as { condition: string }).condition);
   stmt.free();
   return rows.sort((a, b) => {
     const ra = order.indexOf(a), rb = order.indexOf(b);
@@ -425,7 +425,7 @@ export async function fetchRarities(): Promise<string[]> {
     "SELECT DISTINCT rarity FROM blueprints WHERE rarity IS NOT NULL ORDER BY rarity"
   );
   const rows: string[] = [];
-  while (stmt.step()) rows.push((stmt.getAsObject() as any).rarity);
+  while (stmt.step()) rows.push((stmt.getAsObject() as { rarity: string }).rarity);
   stmt.free();
   return rows;
 }
@@ -440,7 +440,7 @@ export async function fetchLanguages(): Promise<string[]> {
   );
   const set = new Set<string>();
   while (stmt.step()) {
-    const langs = (stmt.getAsObject() as any).langs as string;
+    const langs = (stmt.getAsObject() as { langs: string }).langs;
     langs.split(",").forEach((l) => {
       if (l) set.add(l);
     });
@@ -454,7 +454,7 @@ export async function fetchMeta(): Promise<Record<string, string>> {
   const stmt = db.prepare("SELECT key, value FROM meta");
   const out: Record<string, string> = {};
   while (stmt.step()) {
-    const row = stmt.getAsObject() as any;
+    const row = stmt.getAsObject() as { key: string; value: string };
     out[row.key] = row.value;
   }
   stmt.free();
