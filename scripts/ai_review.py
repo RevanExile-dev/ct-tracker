@@ -7,7 +7,9 @@ richiamabile da Claude indipendentemente da dove sta girando (cloud,
 locale, cellulare) - a differenza di un tool CLI installato solo su un PC.
 
 Uso: python scripts/ai_review.py "<prompt>" <base_ref> <head_ref> [provider]
-provider e' "gemini" (default) o "groq".
+provider e' "gemini" (default), "groq", oppure "auto" (prova tutte le
+chiavi Gemini, solo se sono TUTTE esaurite passa a Groq - fallback vero
+tra provider, non solo tra chiavi dello stesso).
 Le API key vanno passate via variabili d'ambiente GEMINI_API_KEY/
 GEMINI_API_KEY_2/... oppure GROQ_API_KEY/GROQ_API_KEY_2/... (nel workflow
 arrivano da Secret del repository, mai nel codice/log). Se una chiave e'
@@ -164,22 +166,34 @@ PROVIDERS = {
 def main():
     if len(sys.argv) < 4:
         print(
-            "Uso: python scripts/ai_review.py \"<prompt>\" <base_ref> <head_ref> [gemini|groq]",
+            "Uso: python scripts/ai_review.py \"<prompt>\" <base_ref> <head_ref> [gemini|groq|auto]",
             file=sys.stderr,
         )
         sys.exit(1)
     prompt, base_ref, head_ref = sys.argv[1], sys.argv[2], sys.argv[3]
     provider_name = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else "gemini"
 
-    provider = PROVIDERS.get(provider_name)
-    if provider is None:
-        print(f"ERRORE: provider sconosciuto '{provider_name}' (usa 'gemini' o 'groq').", file=sys.stderr)
-        sys.exit(1)
-
-    api_keys = _collect_api_keys(provider["env_prefix"])
-    if not api_keys:
-        print(f"ERRORE: variabile d'ambiente {provider['env_prefix']}_API_KEY mancante.", file=sys.stderr)
-        sys.exit(1)
+    if provider_name == "auto":
+        # Fallback vero tra provider, non solo tra chiavi dello stesso: prova
+        # prima tutte le chiavi Gemini (il piu' "capace" dei due, da riservare
+        # ai controlli che contano), solo se sono tutte esaurite passa a
+        # Groq. Cosi' un controllo importante non resta mai bloccato per una
+        # sola quota finita.
+        attempts = [("gemini", PROVIDERS["gemini"], k) for k in _collect_api_keys("GEMINI")]
+        attempts += [("groq", PROVIDERS["groq"], k) for k in _collect_api_keys("GROQ")]
+        if not attempts:
+            print("ERRORE: nessuna chiave disponibile (ne' GEMINI_API_KEY ne' GROQ_API_KEY).", file=sys.stderr)
+            sys.exit(1)
+    else:
+        provider = PROVIDERS.get(provider_name)
+        if provider is None:
+            print(f"ERRORE: provider sconosciuto '{provider_name}' (usa 'gemini', 'groq' o 'auto').", file=sys.stderr)
+            sys.exit(1)
+        api_keys = _collect_api_keys(provider["env_prefix"])
+        if not api_keys:
+            print(f"ERRORE: variabile d'ambiente {provider['env_prefix']}_API_KEY mancante.", file=sys.stderr)
+            sys.exit(1)
+        attempts = [(provider_name, provider, k) for k in api_keys]
 
     diff = _git_diff(base_ref, head_ref)
     if not diff.strip():
@@ -199,29 +213,31 @@ def main():
     )
 
     resp = None
-    for i, api_key in enumerate(api_keys, start=1):
-        resp = provider["call"](api_key, full_prompt)
+    used_provider_name = None
+    for i, (attempt_provider_name, attempt_provider, api_key) in enumerate(attempts, start=1):
+        resp = attempt_provider["call"](api_key, full_prompt)
+        used_provider_name = attempt_provider_name
         if resp.ok:
             break
-        if _is_quota_error(resp) and i < len(api_keys):
+        if _is_quota_error(resp) and i < len(attempts):
             print(
-                f"  [quota esaurita] chiave {i}/{len(api_keys)} -> provo la successiva",
+                f"  [quota esaurita] tentativo {i}/{len(attempts)} ({attempt_provider_name}) -> provo il successivo",
                 file=sys.stderr,
             )
             continue
-        break  # errore non di quota, o ultima chiave rimasta: non ha senso ritentare ancora
+        break  # errore non di quota, o ultimo tentativo rimasto: non ha senso ritentare ancora
 
     if not resp.ok:
-        print(f"ERRORE chiamata {provider_name} ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)
+        print(f"ERRORE chiamata {used_provider_name} ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)
         sys.exit(1)
 
     data = resp.json()
-    text = provider["extract_text"](data)
+    text = PROVIDERS[used_provider_name]["extract_text"](data)
     if text is None:
-        print(f"Nessuna risposta da {provider_name}. Risposta grezza: {data}", file=sys.stderr)
+        print(f"Nessuna risposta da {used_provider_name}. Risposta grezza: {data}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"=== REVIEW {provider_name.upper()} ===")
+    print(f"=== REVIEW {used_provider_name.upper()} ===")
     print(text or "(risposta vuota)")
 
 

@@ -21,10 +21,10 @@ on:
         type: string
         default: "HEAD"
       provider:
-        description: "Quale AI usare per la review"
+        description: "Quale AI usare per la review (auto = Gemini con fallback automatico a Groq se la quota e' esaurita)"
         type: choice
-        options: ["gemini", "groq"]
-        default: "gemini"
+        options: ["auto", "gemini", "groq"]
+        default: "auto"
 
 permissions:
   contents: read

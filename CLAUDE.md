@@ -23,19 +23,44 @@ chiave del secret corrispondente). Funziona cosi' da qualunque sessione
 Claude Code — cloud, locale, cellulare — perché non dipende da nulla
 installato su una macchina specifica.
 
-Due provider disponibili, entrambi a livello gratuito, per tre scopi
-(specializzazione per tipo di verifica, fallback se uno finisce la quota,
-secondo parere sulla stessa modifica quando vale la pena):
-- **Gemini** (`provider: gemini`, default) — modello generalista, quota
-  giornaliera per chiave, supporta chiavi di riserva (`GEMINI_API_KEY_2`,
-  `_3`, ...) da account Google diversi.
-- **Groq** (`provider: groq`) — hardware LPU molto veloce, modello
+Due provider disponibili, entrambi a livello gratuito:
+- **Gemini** — modello generalista, quota giornaliera per chiave, supporta
+  chiavi di riserva (`GEMINI_API_KEY_2`, `_3`, ...) da account Google
+  diversi. Trattato come il piu' "capace" dei due: riservato ai controlli
+  che contano di piu', per non sprecarne la quota su banalita'.
+- **Groq** — hardware LPU molto veloce (risposta in pochi secondi), modello
   `openai/gpt-oss-120b` confermato funzionante con una chiamata reale
-  (`GET /v1/models` + una chat di prova, non solo documentazione). Utile
-  come secondo parere rapido o come fallback quando Gemini è esaurito.
-  Attenzione: il rate limit Groq è per organizzazione, non per chiave —
-  aggiungere `GROQ_API_KEY_2` con una chiave dello stesso account non
-  aumenta la quota reale, serve un account Groq diverso.
+  (`GET /v1/models` + una chat di prova, non solo documentazione). Quota
+  giornaliera generosa ma per organizzazione, non per chiave — aggiungere
+  `GROQ_API_KEY_2` con una chiave dello STESSO account non aumenta la quota
+  reale, serve un account Groq diverso.
+
+### Strategia di utilizzo (metodo di lavoro standard, non solo per casi eccezionali)
+
+`scripts/ai_review.py` accetta un parametro `provider`: `gemini`, `groq`, o
+`auto` (prova tutte le chiavi Gemini, solo se sono TUTTE esaurite passa
+automaticamente a Groq — fallback vero tra provider, non solo tra chiavi
+dello stesso). Uso previsto, per non esaurire nessuno dei due troppo in
+fretta pur alleggerendo sul serio il lavoro di Claude:
+
+- **Controlli di routine, frequenti, durante il lavoro** (un diff appena
+  scritto prima di andare avanti, un controllo di coerenza/edge-case
+  veloce, una verifica che non vale la pena rileggere a mano) →
+  `provider: groq`, esplicitamente. È il più veloce e ha la quota
+  giornaliera più ampia dei due: è il posto giusto per i controlli che si
+  ripetono spesso in una sessione.
+- **Controllo finale prima di concludere un lavoro significativo**, o su
+  modifiche complesse/trasversali dove conta di più la qualità della
+  revisione → `provider: auto` (quindi Gemini di default, con fallback
+  automatico a Groq se la quota di Gemini è esaurita quel giorno). Non
+  bisogna mai scegliere `groq` esplicitamente qui solo per "risparmiare"
+  Gemini: se Gemini è disponibile va usato per i controlli che contano.
+- **Secondo parere vero (entrambi i modelli sulla stessa modifica)** →
+  riservato a modifiche davvero ad alto rischio (schema dati, logica di
+  prezzo, sicurezza, qualcosa che l'utente ha segnalato come importante):
+  due chiamate esplicite, una `provider: gemini` e una `provider: groq`,
+  confrontando le due risposte. Non è il caso comune — raddoppia il
+  consumo di entrambe le quote, va usato con giudizio.
 
 Provider scartati dopo verifica: GitHub Models (ritirato il 30/07/2026,
 confermato con una chiamata reale che ha risposto
@@ -46,17 +71,19 @@ piano gratuito stabile). GLM/Zhipu ha un piano gratuito reale ma richiede
 registrazione con numero di telefono cinese (+86) — rimandato, non ne vale
 la pena per 5 richieste/minuto.
 
-- Uso deliberatamente ampio, non solo per modifiche rischiose: l'utente vuole
-  che Gemini venga usato come alleggerimento del lavoro di verifica di
-  Claude, per conservare piu' a lungo il proprio utilizzo di Claude stesso.
-  Quindi, oltre alle modifiche significative/rischiose/trasversali, vale la
-  pena chiedere questa review anche per verifiche di routine su un diff
-  appena scritto, controlli di coerenza/edge case, o un secondo parere
-  veloce — ogni volta che rileggere tutto a mano costerebbe a Claude piu'
-  ragionamento di quanto costi delegare e leggere un riassunto. Non sostituisce
-  pero' l'implementazione (resta di Claude) ne' i controlli che girano gia'
-  gratis senza AI (build/typecheck in CI, vedi ci.yml) - a quelli non serve
-  chiedere un parere a un modello.
+- Uso deliberatamente ampio e costante, non solo per modifiche rischiose:
+  questo è il metodo di lavoro standard, non un'eccezione da attivare ogni
+  volta di proposito. L'utente vuole che Gemini/Groq vengano usati come
+  alleggerimento del lavoro di verifica di Claude, per conservare piu' a
+  lungo il proprio utilizzo di Claude stesso. Quindi, oltre alle modifiche
+  significative/rischiose/trasversali, vale la pena chiedere questa review
+  anche per verifiche di routine su un diff appena scritto, controlli di
+  coerenza/edge case, o un secondo parere veloce — ogni volta che rileggere
+  tutto a mano costerebbe a Claude piu' ragionamento di quanto costi
+  delegare e leggere un riassunto (vedi sopra quale provider scegliere caso
+  per caso). Non sostituisce pero' l'implementazione (resta di Claude) ne'
+  i controlli che girano gia' gratis senza AI (build/typecheck in CI, vedi
+  ci.yml) - a quelli non serve chiedere un parere a un modello.
 - La richiesta deve essere circoscritta e concreta: indicare il task da
   verificare e i vincoli rilevanti nel `prompt`, e i `base_ref`/`head_ref`
   giusti per far vedere il diff che conta (di norma l'ultimo commit o l'intero
