@@ -27,6 +27,12 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Backstop reale: scripts/ai_review.py ha gia' un timeout sulla chiamata
+    # Gemini, ma un thread bloccato su una risposta di rete a scaglioni lenti
+    # puo' tenere il processo Python vivo oltre quel timeout "morbido"
+    # (visto in pratica: una chiamata rimasta appesa oltre 6 minuti). Questo
+    # e' il tetto che garantisce davvero che il job non resti appeso.
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:

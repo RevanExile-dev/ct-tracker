@@ -13,11 +13,21 @@ workflow arriva da un Secret del repository, mai nel codice/log).
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 import requests
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+
+# Il timeout di 'requests' e' per-lettura (si resetta ad ogni singolo byte
+# ricevuto), non un tetto sul tempo totale: una risposta che arriva a
+# scaglioni lenti puo' tenere la richiesta aperta molto piu' a lungo senza
+# mai far scattare quel timeout (osservato: una chiamata rimasta appesa >6
+# minuti in CI, cancellata a mano). REQUEST_HARD_TIMEOUT_S e' un tetto
+# reale sul tempo totale, applicato eseguendo la richiesta in un thread e
+# abbandonandola se non risponde in tempo.
+REQUEST_HARD_TIMEOUT_S = 90
 
 # Un diff enorme sforerebbe il contesto utile (e il livello gratuito ha
 # comunque un limite di token): tagliato con un avviso invece di fallire.
@@ -63,12 +73,27 @@ def main():
         f"italiano.\n\n--- DIFF ({base_ref}...{head_ref}) ---\n{diff}"
     )
 
-    resp = requests.post(
-        API_URL,
-        params={"key": api_key},
-        json={"contents": [{"parts": [{"text": full_prompt}]}]},
-        timeout=120,
-    )
+    def _call():
+        return requests.post(
+            API_URL,
+            params={"key": api_key},
+            json={"contents": [{"parts": [{"text": full_prompt}]}]},
+            timeout=REQUEST_HARD_TIMEOUT_S,
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_call)
+        try:
+            resp = future.result(timeout=REQUEST_HARD_TIMEOUT_S)
+        except FutureTimeoutError:
+            print(
+                f"ERRORE: nessuna risposta da Gemini entro {REQUEST_HARD_TIMEOUT_S}s "
+                "(tetto sul tempo totale, non solo per-lettura). Interrotto invece di "
+                "restare appeso.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     if not resp.ok:
         print(f"ERRORE chiamata Gemini ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)
         sys.exit(1)
