@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 const MAX_TILT_DEG = 8;
 
@@ -24,6 +24,18 @@ const MAX_TILT_DEG = 8;
  * il trascinamento faccia scorrere la pagina invece di inclinare la carta,
  * comportamento che nella griglia (tante tile piccole, si scrolla in
  * continuazione) sarebbe piu' fastidioso che utile.
+ *
+ * Nota su "card-reveal": quella classe (globals.css) usa
+ * `animation: ... both`, che blocca la proprieta' CSS `transform` sul
+ * valore dell'ultimo fotogramma per sempre dopo che l'animazione finisce
+ * - un'animazione CSS ha sempre la precedenza sullo style inline, quindi
+ * finche' quella classe resta applicata QUALUNQUE transform impostato qui
+ * via JS (mouse o touch) viene semplicemente ignorato dal browser, niente
+ * inclinazione visibile. Rimuoviamo "card-reveal" da className non appena
+ * l'animazione termina (onAnimationEnd) cosi' il controllo di transform
+ * torna disponibile - nessun salto visivo, l'ultimo fotogramma
+ * dell'animazione e lo stato di riposo di questo componente sono lo
+ * stesso identico transform "neutro".
  */
 export default function HoloFrame({
   children,
@@ -38,6 +50,10 @@ export default function HoloFrame({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const reducedMotion = useRef<boolean | null>(null);
+  const [revealDone, setRevealDone] = useState(false);
+  const effectiveClassName = revealDone
+    ? className.replace(/\bcard-reveal\b/, "").trim()
+    : className;
 
   function prefersReducedMotion(): boolean {
     if (reducedMotion.current === null) {
@@ -94,8 +110,9 @@ export default function HoloFrame({
       onTouchMove={touchTilt ? handleTouchMove : undefined}
       onTouchEnd={touchTilt ? resetTilt : undefined}
       onTouchCancel={touchTilt ? resetTilt : undefined}
+      onAnimationEnd={() => setRevealDone(true)}
       style={touchTilt ? { touchAction: "none" } : undefined}
-      className={`holo-frame rounded-card ${className}`}
+      className={`holo-frame rounded-card ${effectiveClassName}`}
     >
       {children}
     </div>

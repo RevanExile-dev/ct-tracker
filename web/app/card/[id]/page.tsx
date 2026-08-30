@@ -138,7 +138,7 @@ export default function CardDetailPage() {
         ← Torna al binder
       </Link>
 
-      <div className="grid md:grid-cols-[320px_1fr] gap-8 card-enter">
+      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-8 card-enter">
         <HoloFrame
           touchTilt
           className="card-reveal bg-base-surface border border-base-border overflow-hidden self-start"
