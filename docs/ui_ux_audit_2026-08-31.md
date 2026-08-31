@@ -488,17 +488,248 @@ al reviewer):
     meccanismo esplicito tap-to-reveal per queste informazioni su mobile,
     non solo l'attributo HTML nativo.
 
+## Esito della revisione ChatGPT (PR #6, commento del 2026-08-31 15:13 UTC)
+
+Riassunto critico, non trascrizione integrale (testo completo nel commento
+sulla PR #6). Tre affermazioni chiave verificate direttamente sul codice
+prima di accettarle — non prese per buone a scatola chiusa, come da
+disciplina del progetto.
+
+**La scoperta più importante di questo intero giro di revisione, verificata
+di persona riga per riga:** `web/lib/page.tsx`/`fetchCards()` in
+`web/lib/db.ts` **non applica mai un `LIMIT` SQL quando chiamato dalla
+home** (`opts.limit` è `undefined` lì) — la query scarica e materializza
+in oggetti JS **l'intero catalogo che soddisfa i filtri correnti** (dell'ordine
+di 30.000+ righe a catalogo pieno, per un commento nello stesso file), e
+solo DOPO `page.tsx` taglia a 60 con uno `.slice()` in JavaScript
+(`visibleCount`). Questo accade ad OGNI cambio di ricerca/filtro, non solo
+al primo caricamento — si somma direttamente al problema già trovato
+(punto 9, nessun debounce): oggi ogni tasto premuto nella ricerca rilancia
+una query SQL che restituisce e converte in memoria decine di migliaia di
+righe, di cui se ne mostrano 60. Questo è quasi certamente il singolo
+intervento con il rapporto valore/sforzo più alto di tutto l'audit — non
+un problema di "polish", un problema architetturale reale con impatto
+diretto su tempo di risposta e memoria, soprattutto su mobile.
+
+**Bug concreto aggiuntivo trovato verificando la nota di ChatGPT sul
+retry dell'errore di caricamento (punto 19):** `getDb()`/`getHistoryDb()`
+in `web/lib/db.ts` mettono in cache una Promise **anche quando fallisce**
+(`dbPromise = (async () => {...})()`, mai resettata a `null` in caso di
+errore). Verificato leggendo il codice: se il fetch del database fallisce
+una sola volta (rete instabile, file temporaneamente assente), **l'intero
+sito resta rotto per il resto di quella sessione del browser** — ogni
+chiamata successiva a `getDb()` restituisce la stessa Promise già
+rifiutata, un ricaricamento di pagina è l'unico modo per riprovare. Un
+eventuale pulsante "Riprova" (punto 19 dell'audit) è inutile senza
+sistemare prima questo — va risolto insieme, non separatamente.
+
+**Altri problemi reali trovati da ChatGPT, verificati sul codice attuale:**
+
+- **`CardTile.tsx` — bottone dentro link (HTML non valido).** Confermato:
+  l'intera tile è un `<Link>` (→ `<a>`) e i bottoni stella/cuore sono
+  `<button>` annidati al suo interno con `stopPropagation` sul pointer.
+  Contenuto interattivo dentro contenuto interattivo — non valido in
+  HTML5, comportamento ambiguo per tastiera/screen reader indipendentemente
+  da `stopPropagation` (che ferma solo la propagazione del click, non
+  risolve il problema semantico).
+- **`PriceChart.tsx` — interamente inaccessibile su touch e da tastiera.**
+  Confermato: l'unica interazione (`onMouseEnter`/`onMouseLeave` su `<rect>`
+  invisibili per scorrere la storia dei prezzi) non ha alcun equivalente
+  touch/pointer/keyboard. Su mobile il grafico mostra sempre e solo l'ultimo
+  punto — un'intera funzionalità (esplorare lo storico) è di fatto assente
+  per la maggioranza degli utenti reali di questo progetto, un impatto
+  concreto più alto di molte voci "micro-interazioni" dell'audit originale.
+- **`FilterDropdown.tsx` — focus non ripristinato in modo coerente alla
+  chiusura.** Confermato leggendo il codice: il percorso Escape chiama sia
+  `close()` sia `focusTrigger()` (righe 127-128); i percorsi ✕ e tap sul
+  backdrop chiamano solo `close()` (righe 255, 272), senza restituire il
+  focus al trigger. Inconsistenza verificabile, non ipotetica.
+- **Target di tocco incoerenti.** Confermato: i bottoni stella/cuore in
+  `CardTile.tsx` sono `w-7 h-7` (28px), mentre altrove nello stesso
+  progetto (`Toolbar.tsx`, `BinderBook.tsx`, i bottoni ✕/chiudi in
+  `FilterDropdown.tsx`) si usa sistematicamente `min-h-11`/`min-w-11`
+  (44px, la soglia raccomandata). Incoerenza reale tra componenti dello
+  stesso codebase.
+- **Ricerca senza etichetta accessibile.** Confermato: l'`<input>` di
+  ricerca in `Toolbar.tsx` ha solo `placeholder`, nessun `aria-label` né
+  `<label>` associato (a differenza della ricerca interna a
+  `FilterDropdown`, che invece ha già una `<label className="sr-only">`
+  corretta — incoerenza tra due componenti molto simili nello stesso
+  repository).
+
+**Disaccordi reali tra i revisori — non risolti a favore di uno a priori,
+segnalati come tali:**
+
+- **`<select>` nativo per l'ordinamento (punto 5/2):** io e Gemini lo
+  vediamo come un'incoerenza visiva da sistemare; ChatGPT dissente
+  esplicitamente — un `<select>` nativo è già accessibile e su iOS offre
+  un'interazione più robusta di un componente custom, va sostituito solo
+  se emerge un requisito funzionale reale, non per pura coerenza estetica.
+  **Non lo marco più come "da fare" — resta in sospeso, da decidere con
+  l'utente.**
+- **`CountUp` riusato per il delta di prezzo su ogni tile (punto 13/5):**
+  ChatGPT boccia la mia proposta — fino a 60 tile con `requestAnimationFrame`
+  indipendenti in esecuzione simultanea a ogni caricamento pagina è un
+  rischio di performance reale che non avevo considerato (io avevo
+  segnato l'impatto performance come "basso", ChatGPT lo valuta "alto").
+  **Rimuovo questo punto dal piano finale.**
+- **Shimmer ambientale come alternativa al tilt-su-tap (punto 2):**
+  Gemini lo aveva approvato come alternativa sicura al tilt-su-tap;
+  ChatGPT è scettico anche su questo (consumo batteria, distrazione da
+  animazione periodica) e preferirebbe un accento statico o una sola
+  animazione per sessione. **Declassato da "soluzione consigliata" a
+  "opzione tra altre, da validare con test reali prima di scegliere".**
+
+**Valutazione delle 4 risorse esterne — ChatGPT corregge parzialmente la
+mia:** conferma la cautela su canvasui.dev (HTML-in-canvas è dichiarato
+sperimentale/origin-trial, non solo "va prototipato con giudizio" come
+avevo scritto — un rischio di stabilità della piattaforma, non solo di
+performance) e correttamente mi corregge su beautifului.dev: **avevo
+scritto che il suo catalogo non mappa a nessun bisogno reale del
+progetto — ChatGPT nota che esistono componenti Search/Filter
+Table/Sidebar Nav/Records Table rilevanti come riferimento di pattern**
+(non come dipendenza). Correzione accolta: non è "bassa rilevanza diretta"
+quanto avevo scritto, va comunque consultato come riferimento per i
+componenti filtri/ricerca già in scope in questo audit.
+
+---
+
 File/componenti principalmente coinvolti se questi punti venissero
 implementati: `web/components/InteractiveCard.tsx`,
 `web/components/CardTile.tsx`, `web/components/Toolbar.tsx`,
 `web/components/FilterDropdown.tsx`, `web/components/FilterPresetControls.tsx`
 (tooltip title=), `web/components/SiteHeader.tsx`,
 `web/components/ConditionBadge.tsx` (icone, tooltip title=),
+`web/components/PriceChart.tsx` (touch/keyboard),
 `web/app/page.tsx`, `web/app/card/[id]/page.tsx`, `web/app/globals.css`,
-`web/lib/db.ts` (debounce/query).
+`web/lib/db.ts` (limit/debounce/query, cache di Promise rifiutate).
 
-Verificato con revisione indipendente Gemini (`ai_review.yml` run #23,
-2026-08-31 — log completo nel workflow "AI review" su questo branch):
-sezione dedicata sopra ("Esito della seconda opinione") con correzioni
-accolte, un falso positivo scartato dopo verifica, e due nuovi pattern
-reali aggiunti alla lista (punti 25-26).
+Verificato con due revisioni indipendenti: Gemini (`ai_review.yml` run
+#23, 2026-08-31 — log completo nel workflow "AI review" su questo branch)
+e ChatGPT (PR #6, commento del 2026-08-31 15:13 UTC) — sezioni dedicate
+sopra con correzioni accolte, un falso positivo scartato dopo verifica,
+disaccordi tra revisori segnalati esplicitamente (non risolti a priori),
+e più pattern reali aggiunti dopo verifica diretta sul codice.
+
+---
+
+## Piano finale ordinato per priorità (sintesi dei 3 giri di revisione)
+
+Non implementato — resta un piano, in attesa di indicazioni dall'utente su
+cosa affrontare e in che ordine. Le "difficoltà" sono stime, non misure.
+
+### Livello 0 — bug concreti, non solo "UX migliorabile"
+
+Questi non sono opinioni: sono comportamenti verificati leggendo il
+codice riga per riga, con un impatto diretto su correttezza/performance,
+non solo su "quanto è bello".
+
+1. **`fetchCards()` senza `LIMIT` sulla home — scarica l'intero catalogo
+   filtrato ad ogni ricerca/filtro, ne mostra 60.** (`web/lib/db.ts`,
+   `web/app/page.tsx`). Il singolo intervento a rapporto valore/sforzo più
+   alto di tutto l'audit.
+2. **Nessun debounce sulla ricerca** — si somma direttamente al punto 1:
+   ogni tasto rilancia la query senza LIMIT di cui sopra.
+3. **`dbPromise`/`historyDbPromise` restano una Promise rifiutata per
+   sempre dopo un solo fallimento di rete** (`web/lib/db.ts`,
+   `getDb()`/`getHistoryDb()`) — un pulsante "Riprova" (vedi sotto) non
+   serve a nulla finché questo non è risolto insieme.
+4. **Messaggio d'errore caricamento DB scritto per sviluppatori, non
+   utenti**, nessun retry funzionante (dipende dal punto 3).
+
+### Livello 1 — accessibilità reale, non rifinitura
+
+Trovati da ChatGPT, verificati da me sul codice attuale — non erano nel
+mio giro originale, che aveva sovrappesato motion/animazioni e
+sottopesato semantica/accessibilità (critica di ChatGPT accolta in pieno).
+
+5. `CardTile.tsx`: bottoni stella/cuore annidati dentro il `<Link>` della
+   card — HTML non valido, comportamento ambiguo per tastiera/screen
+   reader.
+6. `PriceChart.tsx`: nessuna interazione touch/keyboard — su mobile il
+   grafico prezzi è di fatto statico (mostra solo l'ultimo punto).
+7. `FilterDropdown.tsx`: il focus non torna al trigger chiudendo con ✕ o
+   tap sul backdrop (solo Escape lo fa oggi) — incoerenza verificata.
+8. Target di tocco incoerenti: 28px (stella/cuore in `CardTile.tsx`) contro
+   il 44px usato sistematicamente altrove nello stesso progetto.
+9. Ricerca principale (`Toolbar.tsx`) senza `aria-label`/label associata,
+   a differenza della ricerca interna a `FilterDropdown` che ce l'ha già.
+
+### Livello 2 — problemi confermati da entrambi i reviewer AI
+
+10. Fallback per immagini che falliscono il caricamento (`onError`
+    mancante ovunque) — attenzione a non creare un loop di retry.
+11. Tooltip `title=` invisibili su touch (8 occorrenze in 5 file) — non
+    trasformare ogni badge in popover touch (nota di ChatGPT accolta):
+    rendere visibili di default i dati essenziali (lingua, condizione,
+    paese), riservare i tooltip a dettagli davvero secondari.
+12. `<select>` nativo per l'ordinamento — **disaccordo tra i due
+    revisori, non deciso**: io/Gemini lo vediamo come incoerenza visiva
+    da sistemare, ChatGPT dissente (nativo = già accessibile, robusto su
+    iOS). Da chiedere all'utente prima di scegliere una direzione.
+13. Buco breakpoint tablet (`md:grid-cols-4`) — validità confermata da
+    Gemini, ChatGPT chiede di verificarlo empiricamente (768/820/912/1024px,
+    nomi lunghi) prima di cambiare, non di assumerlo.
+14. Chip rimovibili per i filtri attivi — valore alto confermato da
+    entrambi; attenzione mobile (riga a scorrimento orizzontale o riepilogo
+    collassabile, non crescita verticale illimitata).
+15. Conteggio risultati vicino a ricerca/filtri — valido, con `aria-live`
+    non aggressivo (non deve annunciare ad ogni carattere digitato).
+
+### Livello 3 — rifiniture valide, priorità normale
+
+16. Copia link/condividi vista filtrata (`navigator.share()` con fallback
+    clipboard).
+17. Indicatore leggero di refetch-in-corso (coordinato con debounce e
+    cancellazione richieste in corso, non un reset completo dello stato).
+18. Ridurre il peso visivo di "Inserzioni attive" rispetto al prezzo in
+    pagina dettaglio.
+19. Icone coerenti (SVG) al posto delle emoji miste.
+20. Zoom/lightbox sull'immagine carta in pagina dettaglio (chiarire che
+    mostra l'illustrazione, non lo stato fisico della copia posseduta).
+21. Placeholder immagini più curato in caricamento, unificato con il
+    fallback d'errore del punto 10.
+22. Spazio verticale header sulla home — **non** un secondo hook
+    hide-on-scroll indipendente da quello già live sulla toolbar
+    (rischio di layout shift/collisioni segnalato da Gemini): prima
+    compattazione responsive statica, poi eventualmente rivalutare.
+
+### Livello 4 — da testare prima di decidere, non da assumere
+
+23. Densità griglia 2 colonne su telefoni stretti (320-390px) con tutti i
+    badge presenti insieme.
+24. `2xl:grid-cols-6` su desktop molto larghi — preferenza di densità, non
+    "spreco" oggettivo secondo ChatGPT.
+
+### Livello 5 — congelati per ora (rischio > beneficio atteso)
+
+25. **Hero WebGL (card grande in pagina dettaglio).** Il CSS attuale è già
+    convincente; ChatGPT è più scettico di me — solo un eventuale spike
+    con criteri di stop chiari (FPS/memoria/batteria), non un intervento
+    pianificato.
+26. **View Transitions API griglia→dettaglio.** Entrambi i reviewer
+    concordano: rischio tecnico reale in Next.js App Router, non essenziale.
+    Solo prototipo isolato con feature detection e test su browser reali,
+    mai adozione diretta.
+27. **Tilt-su-tap mobile.** Sconsigliato da Gemini (input lag percepito
+    prima della navigazione). L'alternativa "shimmer ambientale" è a sua
+    volta contestata da ChatGPT (batteria/distrazione) — nessuna delle due
+    opzioni proposte ha convinto entrambi i reviewer: da ripensare da zero
+    o lasciare l'asimmetria desktop/mobile com'è.
+28. **`CountUp` su ogni tile della griglia.** Ritirato: rischio performance
+    reale con decine di `requestAnimationFrame` simultanei, non l'ottimizzazione
+    "quasi gratuita" che avevo stimato io.
+29. Effetto olografico modulato per rarità — resta una richiesta di
+    funzionalità legittima per un tracker da collezione, non la
+    correzione di un difetto: fuori da un piano di "audit fix", eventuale
+    iniziativa separata se l'utente la vuole.
+
+### Task strutturale separato, priorità alta
+
+- **Paginazione/count lato SQL per il catalogo intero** (non solo
+  aggiungere un `LIMIT` alla home — richiede ripensare come contare i
+  risultati totali e gestire "mostra altre N" con query incrementali
+  invece che con un array JS già interamente in memoria). Segnalato da
+  ChatGPT come intervento a parte, più ampio del semplice fix del punto 1
+  del Livello 0 — il punto 1 è il fix minimo urgente, questo è la sua
+  versione strutturale completa.
