@@ -23,6 +23,7 @@ separati da newline o virgola: il provider ricevera' solo quella parte del
 diff. Se la variabile non e' impostata il comportamento resta invariato e
 viene revisionato l'intero diff (esclusi lockfile/DB generati).
 """
+import math
 import os
 import subprocess
 import sys
@@ -50,9 +51,10 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 # abbandonandola se non risponde in tempo.
 REQUEST_HARD_TIMEOUT_S = 90
 
-# 5xx/503 "high demand" sono guasti temporanei del provider, non errori del
-# prompt o della chiave. Un paio di retry brevi evita di perdere una review
-# valida per un picco momentaneo senza trasformare il workflow in un loop.
+# 5xx/503 "high demand" e brevi 429/TPM sono condizioni temporanee del
+# provider, non errori del prompt. Un paio di retry evita di perdere una
+# review valida per un picco momentaneo senza trasformare il workflow in un
+# loop. Per 429 aspettiamo Retry-After se presente (massimo 20 secondi).
 TRANSIENT_STATUS_CODES = {500, 502, 503, 504}
 TRANSIENT_RETRIES = 2
 
@@ -138,6 +140,19 @@ def _is_quota_error(resp: requests.Response) -> bool:
     if resp.status_code == 403 and "RESOURCE_EXHAUSTED" in resp.text:
         return True
     return False
+
+
+def _retry_after_seconds(resp: requests.Response, retry: int) -> int:
+    """Attesa corta per rate limit temporanei. Non aspettiamo mai piu' di
+    20s: quote giornaliere/di account vanno gestite dal fallback, non dormendo
+    per minuti nel runner."""
+    header = resp.headers.get("Retry-After")
+    if header:
+        try:
+            return max(2, min(20, math.ceil(float(header))))
+        except ValueError:
+            pass
+    return min(20, 8 * (retry + 1))
 
 
 def _run_with_hard_timeout(label: str, call):
@@ -265,19 +280,22 @@ def main():
     for i, (attempt_provider_name, attempt_provider, api_key) in enumerate(attempts, start=1):
         used_provider_name = attempt_provider_name
 
-        # Retry sulla STESSA chiave solo per indisponibilita' temporanee 5xx.
-        # Quota/rate limit segue invece il normale percorso alla chiave/provider
-        # successivo: aspettare qui sarebbe inutile soprattutto su Groq, dove il
-        # limite gratuito puo' essere a livello organizzazione.
+        # Retry sulla STESSA chiave per indisponibilita' 5xx e brevi finestre
+        # TPM 429. Se dopo i retry la quota resta bloccata, il normale fallback
+        # prova la chiave/provider successivo (quando disponibile).
         for retry in range(TRANSIENT_RETRIES + 1):
             resp = attempt_provider["call"](api_key, full_prompt)
             if resp.ok:
                 break
-            if resp.status_code in TRANSIENT_STATUS_CODES and retry < TRANSIENT_RETRIES:
-                wait_s = 4 * (retry + 1)
+
+            retryable_5xx = resp.status_code in TRANSIENT_STATUS_CODES
+            retryable_rate = resp.status_code == 429
+            if (retryable_5xx or retryable_rate) and retry < TRANSIENT_RETRIES:
+                wait_s = _retry_after_seconds(resp, retry) if retryable_rate else 4 * (retry + 1)
+                reason = "rate limit temporaneo" if retryable_rate else f"errore temporaneo {resp.status_code}"
                 print(
-                    f"  [errore temporaneo {resp.status_code}] {attempt_provider_name}: "
-                    f"riprovo tra {wait_s}s ({retry + 1}/{TRANSIENT_RETRIES})",
+                    f"  [{reason}] {attempt_provider_name}: riprovo tra {wait_s}s "
+                    f"({retry + 1}/{TRANSIENT_RETRIES})",
                     file=sys.stderr,
                 )
                 time.sleep(wait_s)
