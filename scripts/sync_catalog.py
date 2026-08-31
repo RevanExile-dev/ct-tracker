@@ -3,10 +3,14 @@ Sincronizza il catalogo (espansioni + blueprint/carte) di CardTrader
 per tutte le espansioni elencate in config/tracked_sets.json.
 
 Va lanciato quando aggiungi una nuova espansione da tracciare, o quando
-esce un set nuovo. Non serve lanciarlo tutti i giorni: il catalogo
-(nomi, immagini) cambia raramente. I prezzi li aggiorna sync_prices.py.
+esce un set nuovo. Non serve rilanciare sempre il catalogo completo: la
+modalita' --only-missing sincronizza soltanto i codici tracciati che non
+hanno ancora carte nel database ed e' adatta al controllo automatico
+periodico dei set appena aggiunti da CardTrader.
 
-Uso: python scripts/sync_catalog.py
+Uso:
+  python scripts/sync_catalog.py
+  python scripts/sync_catalog.py --only-missing
 """
 import json
 import sys
@@ -46,6 +50,12 @@ def main():
         print(f"ERRORE: {CONFIG_PATH} non trovato.", file=sys.stderr)
         sys.exit(1)
 
+    unknown_args = [arg for arg in sys.argv[1:] if arg != "--only-missing"]
+    if unknown_args:
+        print(f"Argomenti non riconosciuti: {' '.join(unknown_args)}", file=sys.stderr)
+        sys.exit(2)
+    only_missing = "--only-missing" in sys.argv[1:]
+
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     codes = config.get("expansion_codes", [])
     if not codes:
@@ -53,17 +63,42 @@ def main():
         return
 
     db.init_db()
+    conn = db.get_connection()
+    history_conn = db.get_history_connection()
+
+    if only_missing:
+        # Un'espansione e' considerata gia' sincronizzata solo se nel DB esiste
+        # almeno una sua carta. Usare la sola tabella expansions non basta:
+        # CardTrader puo' pubblicare prima il contenitore del set e aggiungere
+        # i blueprint Singles in un secondo momento. In quel caso vogliamo
+        # continuare a riprovarci nei giri automatici successivi.
+        existing_codes = {
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT expansion_code FROM blueprints "
+                "WHERE expansion_code IS NOT NULL"
+            ).fetchall()
+        }
+        codes = [code for code in codes if code not in existing_codes]
+        if not codes:
+            print("Nessuna espansione tracciata mancante: catalogo invariato.")
+            conn.close()
+            history_conn.close()
+            return
+        print(
+            f"Modalita' --only-missing: controllo {len(codes)} codici "
+            "non ancora presenti nel catalogo."
+        )
+
     client = CardTraderClient()
 
     print("Recupero elenco espansioni Pokemon da CardTrader...")
     all_expansions = client.get_pokemon_expansions()
     by_code = {e["code"]: e for e in all_expansions}
-
-    conn = db.get_connection()
-    history_conn = db.get_history_connection()
     synced_at = datetime.now(timezone.utc).isoformat()
 
     total_cards = 0
+    synced_sets = 0
     for code in codes:
         expansion = by_code.get(code)
         if not expansion:
@@ -93,6 +128,8 @@ def main():
             )
         conn.commit()
         total_cards += len(blueprints)
+        if blueprints:
+            synced_sets += 1
 
     # Pulizia: rimuove eventuali prodotti non-carta (e i loro dati di prezzo
     # collegati, per via del vincolo di foreign key) inseriti da sync
@@ -123,6 +160,16 @@ def main():
     ).rowcount
     if removed:
         print(f"\nRimossi {removed} prodotti non-carta residui da sync precedenti.")
+
+    # In modalita' --only-missing, se CardTrader conosce i codici ma non ha
+    # ancora pubblicato alcuna carta Singles, non tocchiamo meta/DB: in questo
+    # modo il controllo giornaliero resta davvero un no-op e non genera commit
+    # binari inutili. Quei codici verranno riprovati al giro successivo.
+    if only_missing and synced_sets == 0 and removed == 0:
+        conn.close()
+        history_conn.close()
+        print("\nNessuna nuova carta disponibile: catalogo invariato.")
+        return
 
     db.set_meta(conn, "last_catalog_sync", synced_at)
     conn.commit()
