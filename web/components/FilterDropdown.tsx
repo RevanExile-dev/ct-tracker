@@ -87,7 +87,10 @@ export default function FilterDropdown({
   if (options.length === 0) return null;
 
   return (
-    <div ref={rootRef} className={`filter-inline max-w-full ${open ? "is-open" : ""}`}>
+    <div
+      ref={rootRef}
+      className={`filter-inline w-full max-w-full sm:w-auto ${open ? "is-open" : ""}`}
+    >
       <button
         type="button"
         aria-expanded={open}
@@ -96,12 +99,12 @@ export default function FilterDropdown({
           setOpen(!open);
           if (open) setQuery("");
         }}
-        className="filter-trigger min-h-11 cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary flex items-center gap-2 rounded-lg px-2 -mx-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+        className="filter-trigger min-h-11 w-full sm:w-auto cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary flex items-center justify-between sm:justify-start gap-2 rounded-lg px-2 -mx-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
       >
-        <span aria-hidden className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}>▸</span>
-        <span>{label}</span>
+        <span aria-hidden className={`shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}>▸</span>
+        <span className="min-w-0 flex-1 sm:flex-none truncate text-left">{label}</span>
         {selected.length > 0 && (
-          <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-accent-bright">{selected.length}</span>
+          <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-accent-bright">{selected.length}</span>
         )}
       </button>
 
@@ -127,7 +130,7 @@ export default function FilterDropdown({
         }`}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="filter-panel w-max max-w-[calc(100vw-2.5rem)] rounded-card border border-base-border bg-base-surface/95 shadow-card">
+          <div className="filter-panel w-full max-w-full sm:w-max sm:max-w-[calc(100vw-2.5rem)] rounded-card border border-base-border bg-base-surface/95 shadow-card">
             {searchable && (
               <div className="p-2 border-b border-base-border">
                 <label className="sr-only" htmlFor={`${panelId}-search`}>Cerca in {label.toLocaleLowerCase("it")}</label>
@@ -142,7 +145,7 @@ export default function FilterDropdown({
               </div>
             )}
             <div className={layout === "list"
-              ? "flex min-w-64 flex-col max-h-80 overflow-y-auto overscroll-contain p-2 gap-0.5"
+              ? "flex min-w-0 sm:min-w-64 flex-col max-h-80 overflow-y-auto overscroll-contain p-2 gap-0.5"
               : "flex max-w-[34rem] flex-wrap gap-2 p-3"}
             >
               {filtered.length === 0 && <div className="text-xs text-ink-faint px-2 py-2">Nessun risultato.</div>}
