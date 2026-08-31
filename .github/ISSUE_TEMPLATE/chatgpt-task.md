@@ -1,7 +1,7 @@
 ---
 name: ChatGPT delegated task
 about: Delegate a scoped task from Claude Code to ChatGPT
- title: "[CHATGPT] "
+title: "[CHATGPT] "
 labels: ""
 assignees: ""
 ---
