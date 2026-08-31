@@ -8,7 +8,7 @@ on:
   push:
     paths:
       - "web/**"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/ci_frontend.yml"
 
 permissions:
   contents: read

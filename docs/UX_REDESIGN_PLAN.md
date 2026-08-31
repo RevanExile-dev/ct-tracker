@@ -2,6 +2,15 @@
 
 Ultimo aggiornamento: 2026-08-30
 
+> **Nota (2026-08-31): documento storico.** Registra il lavoro di
+> revamp UI/prezzi di quella sessione (Codex + verifica Claude) — molte
+> caselle rimaste `[ ]` qui sotto sono state completate in sessioni
+> successive (review multi-AI, regression pass, ecc.), quindi lo stato di
+> spunta NON riflette più la realtà attuale. Per lo stato corrente vedi la
+> issue GitHub #1 ("Stato progetto e prossimi passi"). Lasciato invariato
+> come registro di cosa è stato fatto quella notte, non da aggiornare
+> retroattivamente.
+
 ## Obiettivo e principi
 
 Portare Carta Viva da prototipo funzionale a prodotto coerente e rifinito,

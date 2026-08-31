@@ -1,4 +1,4 @@
-# Binder — CardTrader Tracker
+# CartaViva — CardTrader Tracker
 
 Traccia prezzi, andamento e immagini delle tue carte Pokémon TCG (Illustration
 Rare, Special Illustration Rare, full art, promo...) da CardTrader.
@@ -191,7 +191,15 @@ più il grafico si popola.
 2. Aggiungilo a `expansion_codes` in `config/tracked_sets.json` (e anche a
    `daily_expansion_codes` se vuoi che i suoi prezzi si aggiornino ogni
    giorno invece che solo nel sync settimanale)
-3. Lancia manualmente "Sync catalogo" e poi uno dei due workflow prezzi
+3. Il catalogo si popola da solo: modificare `config/tracked_sets.json` su
+   `main` fa scattare automaticamente il workflow "Sync catalogo" in
+   modalità "solo mancanti" (aggiunge solo le espansioni tracciate ma non
+   ancora presenti, senza toccare quelle già sincronizzate). C'è anche un
+   controllo automatico ogni giorno alle 04:30 UTC, utile per i set
+   annunciati ma non ancora pubblicati su CardTrader al momento in cui li
+   aggiungi. Per i prezzi resta comunque da lanciare a mano uno dei due
+   workflow prezzi la prima volta (punto 6), o aspettare il prossimo giro
+   schedulato.
 
 ## Sviluppo locale (facoltativo)
 

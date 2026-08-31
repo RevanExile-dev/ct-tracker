@@ -73,5 +73,14 @@ per chiunque tocchi questo codice:
 - `scripts/`: sync Python (catalogo, prezzi, notifiche) che gira su GitHub
   Actions, non tocca `web/` direttamente ma scrive i `.db` che `web/`
   legge da `web/public/data/`.
-- Non esiste ancora una suite di test automatizzati nel repo: la verifica è
-  build + lint + type-check + controllo manuale/Playwright in browser.
+- `web/tests/mobile-toolbar.spec.mjs` (Playwright, gira in CI via
+  `.github/workflows/ui_smoke.yml`) copre la toolbar filtri responsive — non
+  è ancora una suite ampia, ma non è più vero che "non esiste nulla di
+  automatizzato". Per il resto la verifica è build + lint + type-check +
+  controllo manuale/Playwright in browser, come prima.
+- Se stai leggendo questo file come "ChatGPT" tramite il canale di dispatch
+  PR #6 (`coord/chatgpt-dispatch`, commenti `[CHATGPT]`/`[CHATGPT-REVISION]`)
+  invece che come Codex CLI: la meccanica completa del canale e quando
+  Claude delega vs tiene per sé è in `docs/multi_ai_coordination.md` — le
+  regole di questo file (non riscrivere `ai_review.py`, disciplina di
+  verifica, controllo sync prima del push) restano valide comunque.
