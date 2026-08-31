@@ -38,6 +38,18 @@ for (const device of mobileDevices) {
       let ov = await overflow(page);
       expect(ov.scrollWidth).toBeLessThanOrEqual(ov.clientWidth + 1);
 
+      // Guardia di regressione per un secondo bug reale, stesso reclamo:
+      // .filter-toolbar aveva flex-col+items-stretch sotto sm (ogni
+      // trigger a piena larghezza, impilati) E le etichette erano troppo
+      // lunghe ("Filtra per rarità" ecc.) per affiancarsi anche dopo aver
+      // tolto flex-col - a 360px il blocco restava comunque a ~274px con
+      // un controllo per riga. Accorciate le etichette (solo "Rarità" ecc.)
+      // cosi' entrano piu' controlli per riga anche sul telefono piu'
+      // stretto testato qui. Soglia sotto la vecchia altezza rotta.
+      const toolbarBox = await page.locator(".filter-toolbar").boundingBox();
+      expect(toolbarBox).not.toBeNull();
+      expect(toolbarBox.height).toBeLessThan(200);
+
       const expansion = expansionTrigger(page);
       await expect(expansion).toBeVisible({ timeout: 30_000 });
 
@@ -89,7 +101,7 @@ for (const device of mobileDevices) {
       // Filtro rarita: stesso controllo anti-auto-chiusura, poi chiusura via
       // tap sul backdrop (l'unico meccanismo di chiusura su mobile, niente
       // piu' listener document-level duplicati mousedown+touchstart).
-      const rarity = page.getByRole("button", { name: /Filtra per rarità/i });
+      const rarity = page.getByRole("button", { name: /Rarità/i });
       await rarity.tap();
       await page.waitForTimeout(100);
       await expect(rarity).toHaveAttribute("aria-expanded", "true");
@@ -143,7 +155,7 @@ test.describe("desktop", () => {
     expect(Math.abs(searchBox.y - expansionBox.y)).toBeLessThan(8);
     expect(Math.abs(expansionBox.y - sortBox.y)).toBeLessThan(8);
 
-    const rarity = page.getByRole("button", { name: /Filtra per rarità/i });
+    const rarity = page.getByRole("button", { name: /Rarità/i });
     await rarity.click();
     await page.waitForTimeout(300);
     await expect(rarity).toHaveAttribute("aria-expanded", "true");

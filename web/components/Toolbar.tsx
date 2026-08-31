@@ -133,7 +133,7 @@ export default function Toolbar({
 
       <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
         <FilterDropdown
-          label="Filtra per rarità"
+          label="Rarità"
           options={rarities}
           selected={selectedRarities}
           onToggle={onToggleRarity}
@@ -141,7 +141,7 @@ export default function Toolbar({
           onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
         />
         <FilterDropdown
-          label="Filtra per lingua"
+          label="Lingua"
           options={languages}
           selected={selectedLanguages}
           onToggle={onToggleLanguage}
@@ -150,7 +150,7 @@ export default function Toolbar({
           onOpenChange={(open) => setActiveFilter(open ? "language" : null)}
         />
         <FilterDropdown
-          label="Filtra per condizione"
+          label="Condizione"
           options={conditions}
           selected={selectedConditions}
           onToggle={onToggleCondition}
