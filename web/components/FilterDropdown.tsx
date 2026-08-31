@@ -26,6 +26,25 @@ export default function FilterDropdown({
   const [query, setQuery] = useState("");
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  // Tiene visibile il pannello (per il calcolo di layout/rendering) finche'
+  // la transizione di CHIUSURA non e' davvero finita: content-visibility
+  // passa a "hidden" un istante troppo presto interromperebbe di colpo
+  // l'animazione di chiusura (opacity/altezza) invece di lasciarla scorrere
+  // (bug reale, verificato: opacity gia' a 0 dopo 5ms invece dei 300ms
+  // previsti - anche il tentativo con transition-behavior:allow-discrete +
+  // @starting-style in CSS pura non ha funzionato in pratica, nonostante
+  // fosse la tecnica "giusta" sulla carta). closedSettled riparte da "non
+  // ancora assestato" ogni volta che si riapre - confrontando lo stato
+  // precedente durante il render (pattern documentato da React per
+  // "adjusting state when a prop changes", senza ref: qui i ref non sono
+  // leggibili durante il render per via del linting orientato al React
+  // Compiler di questo progetto).
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [closedSettled, setClosedSettled] = useState(!open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setClosedSettled(false);
+  }
 
   const setOpen = useCallback((open: boolean) => {
     if (controlledOpen === undefined) setInternalOpen(open);
@@ -89,14 +108,20 @@ export default function FilterDropdown({
       <div
         id={panelId}
         aria-hidden={!open}
-        // content-visibility: da chiuso il pannello ha comunque un contenuto
-        // largo (ricerca, elenco) che pur essendo alto 0px (grid-rows-[0fr])
-        // continua a "contare" per la larghezza minima dei suoi antenati -
-        // un pannello filtri chiuso finiva per schiacciare la casella di
-        // ricerca affianco su tablet (bug reale, verificato: 514px di
-        // contenuto misurato anche da chiuso). "hidden" rimuove il
-        // contenuto dal calcolo di layout finche' non e' aperto.
-        style={{ contentVisibility: open ? "visible" : "hidden" }}
+        // content-visibility: da chiuso E ASSESTATO (dopo la transizione) il
+        // pannello ha comunque un contenuto largo (ricerca, elenco) che pur
+        // essendo alto 0px (grid-rows-[0fr]) continua a "contare" per la
+        // larghezza minima dei suoi antenati - un pannello filtri chiuso
+        // finiva per schiacciare la casella di ricerca affianco su tablet
+        // (bug reale, verificato: 514px di contenuto misurato anche da
+        // chiuso). "hidden" rimuove il contenuto dal calcolo di layout, ma
+        // solo dopo che closedSettled conferma che la transizione e' finita
+        // (onTransitionEnd) - impostarlo subito interromperebbe di colpo
+        // l'animazione di chiusura invece di lasciarla scorrere.
+        style={{ contentVisibility: open || !closedSettled ? "visible" : "hidden" }}
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget && !open) setClosedSettled(true);
+        }}
         className={`filter-panel-grid grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out ${
           open ? "grid-rows-[1fr] opacity-100 mt-2" : "grid-rows-[0fr] opacity-0 mt-0 pointer-events-none"
         }`}

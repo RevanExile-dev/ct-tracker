@@ -4,6 +4,17 @@ import { useMemo, useState } from "react";
 import { PricePoint } from "@/lib/db";
 import { formatCents, formatDate, formatDateLong } from "@/lib/format";
 
+/** Coordinata X (0-100) per l'indice idx su un totale di `total` punti - un
+ * solo punto va al centro, altrimenti distribuito linearmente. Usata sia per
+ * posizionare le serie sia per la riga tratteggiata al passaggio del mouse:
+ * un calcolo duplicato tra le due cose (fatto in precedenza) puo' disallineare
+ * la riga dal punto vero quando total===1 (bug reale, verificato: la riga
+ * finiva al bordo sinistro invece che al centro dove sta davvero l'unico
+ * punto). */
+function xForIndex(idx: number, total: number): number {
+  return total <= 1 ? 50 : (idx / (total - 1)) * 100;
+}
+
 /** Trasforma una serie di prezzi (alcuni possibili null) in coordinate SVG
  * 0-100, usando un min/max CONDIVISO tra le serie passate cosi' due linee
  * nello stesso grafico restano comparabili invece di essere normalizzate
@@ -16,14 +27,13 @@ function buildSeries(
   max: number
 ): { path: string; coords: { x: number; y: number; idx: number }[] } {
   const span = max - min || 1;
-  const w = 100;
   const h = 100;
   const withValue = points
     .map((p, idx) => ({ v: pick(p), idx }))
     .filter((p): p is { v: number; idx: number } => p.v !== null);
   if (withValue.length === 0) return { path: "", coords: [] };
   const coords = withValue.map(({ v, idx }) => {
-    const x = points.length === 1 ? w / 2 : (idx / (points.length - 1)) * w;
+    const x = xForIndex(idx, points.length);
     const y = h - ((v - min) / span) * (h - 20) - 10;
     return { x, y, idx };
   });
@@ -156,7 +166,7 @@ export default function PriceChart({
         {withPrice.map((_, i) => (
           <rect
             key={i}
-            x={(i / Math.max(1, withPrice.length - 1)) * 100 - 100 / withPrice.length / 2}
+            x={xForIndex(i, withPrice.length) - 100 / withPrice.length / 2}
             y={0}
             width={100 / withPrice.length}
             height={100}
@@ -166,8 +176,8 @@ export default function PriceChart({
         ))}
         {hoverIdx !== null && (
           <line
-            x1={(hoverIdx / Math.max(1, withPrice.length - 1)) * 100}
-            x2={(hoverIdx / Math.max(1, withPrice.length - 1)) * 100}
+            x1={xForIndex(hoverIdx, withPrice.length)}
+            x2={xForIndex(hoverIdx, withPrice.length)}
             y1={0}
             y2={100}
             stroke="#565C63"
