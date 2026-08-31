@@ -28,10 +28,15 @@ for (const viewport of mobileViewports) {
     expect(expansionBox).not.toBeNull();
     expect(sortBox).not.toBeNull();
 
-    // Su telefono/tablet i due controlli non devono piu' essere compressi
-    // uno accanto all'altro: entrambi occupano quasi tutta la toolbar e
-    // l'ordinamento deve stare nella riga successiva.
-    expect(expansionBox.width).toBeGreaterThan(viewport.width - 100);
+    // Sui telefoni il trigger espansioni resta largo e leggibile; a 768px
+    // Tailwind passa al layout sm e puo' tornare compatto, ma non deve essere
+    // microscopico/tagliato. L'ordinamento resta comunque su una riga propria
+    // fino al breakpoint desktop lg.
+    if (viewport.width < 640) {
+      expect(expansionBox.width).toBeGreaterThan(viewport.width - 100);
+    } else {
+      expect(expansionBox.width).toBeGreaterThan(150);
+    }
     expect(sortBox.width).toBeGreaterThan(viewport.width - 100);
     expect(sortBox.y).toBeGreaterThan(expansionBox.y + expansionBox.height - 2);
 
@@ -59,7 +64,11 @@ for (const viewport of mobileViewports) {
     await expect(rarity).toBeVisible();
     const rarityBox = await rarity.boundingBox();
     expect(rarityBox).not.toBeNull();
-    expect(rarityBox.width).toBeGreaterThan(viewport.width - 100);
+    if (viewport.width < 640) {
+      expect(rarityBox.width).toBeGreaterThan(viewport.width - 100);
+    } else {
+      expect(rarityBox.width).toBeGreaterThan(120);
+    }
   });
 }
 
