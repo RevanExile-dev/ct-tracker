@@ -49,6 +49,14 @@ export default function FilterDropdown({
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Il bottom sheet mobile e' in portale su document.body, quindi NON e' un
+  // discendente DOM di rootRef: senza questo ref, il listener "fuori dal
+  // pannello chiudi" (pensato per il popover desktop) scambierebbe ogni tap
+  // dentro al foglio (casella di ricerca, pillole) per un tap fuori,
+  // richiudendolo all'istante - bug reale, trovato in review, non solo
+  // teorico (i test lo mascheravano perche' toccavano solo opzioni con
+  // closeOnSelect, che chiudono comunque).
+  const mobileSheetRef = useRef<HTMLDivElement>(null);
 
   // mounted: il pannello e' nel DOM (true durante apertura, resta true
   // durante l'animazione di chiusura, poi torna false a transizione finita
@@ -101,11 +109,15 @@ export default function FilterDropdown({
   }, []);
 
   useEffect(() => {
-    if (open && searchable) {
+    // Anche "mounted" in dipendenza: al primo giro con open=true l'input di
+    // ricerca non esiste ancora nel DOM (mounted e' ancora false, arriva un
+    // rAF dopo), quindi il ref sarebbe null e il focus fallirebbe in
+    // silenzio senza mai piu' ritentare (bug reale trovato in review).
+    if (open && mounted && searchable) {
       const raf = requestAnimationFrame(() => searchInputRef.current?.focus());
       return () => cancelAnimationFrame(raf);
     }
-  }, [open, searchable]);
+  }, [open, mounted, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -117,7 +129,10 @@ export default function FilterDropdown({
       }
     }
     function handleOutside(event: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) close();
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (mobileSheetRef.current?.contains(target)) return;
+      close();
     }
 
     document.addEventListener("keydown", handleKey);
@@ -239,6 +254,7 @@ export default function FilterDropdown({
             className={`filter-panel-anim absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out ${visible ? "opacity-100" : "opacity-0"}`}
           />
           <div
+            ref={mobileSheetRef}
             id={`${panelId}-mobile`}
             role="dialog"
             aria-modal="true"

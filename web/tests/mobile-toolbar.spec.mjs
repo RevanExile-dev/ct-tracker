@@ -90,6 +90,19 @@ for (const device of mobileDevices) {
       ov = await overflow(page);
       expect(ov.scrollWidth).toBeLessThanOrEqual(ov.clientWidth + 1);
 
+      // Bug reale trovato in review (Gemini): il foglio mobile e' in portale
+      // su document.body, quindi NON e' un discendente DOM del trigger - un
+      // tap su una pillola AL SUO INTERNO (senza closeOnSelect) veniva
+      // scambiato dal listener "fuori dal pannello chiudi" per un tap fuori,
+      // richiudendo il foglio all'istante prima ancora che la selezione
+      // "contasse" agli occhi dell'utente.
+      const raritySheet = page.locator('[role="dialog"][aria-modal="true"]');
+      const rarityPill = raritySheet.locator("button[aria-pressed]").first();
+      await rarityPill.tap();
+      await page.waitForTimeout(300);
+      await expect(rarity).toHaveAttribute("aria-expanded", "true");
+      await expect(rarityPill).toHaveAttribute("aria-pressed", "true");
+
       await page.mouse.click(5, 5); // tap sul backdrop, lontano dal foglio
       await page.waitForTimeout(350);
       await expect(rarity).toHaveAttribute("aria-expanded", "false");
