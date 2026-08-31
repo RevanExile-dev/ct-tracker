@@ -30,7 +30,9 @@ export function eraRank(code: string): number {
     "svi", "pal", "obf", "mew", "par", "paf", "tef", "twm", "sfa", "scr",
     "ssp", "pre", "jtg", "dri", "blk", "wht", "svpromo", "promosv",
   ]);
-  const MEGA = new Set(["meg", "mep", "pfl", "30c", "30th-ch", "asc"]);
+  const MEGA = new Set([
+    "meg", "mep", "pfl", "asc", "por", "cri", "pbl", "30c", "30th-ch", "der",
+  ]);
 
   if (c.startsWith("bw") || BW.has(c)) return 0;
   if (c.startsWith("xy") || XY.has(c)) return 1;
@@ -65,9 +67,11 @@ export function compareExpansions(
   return eraRank(a.code) - eraRank(b.code) || a.name.localeCompare(b.name);
 }
 
-/** Set annunciati ma non ancora nel catalogo CardTrader (quindi senza carte
- * da filtrare) — solo una nota informativa leggera, non un filtro vero.
- * Fonte: ricerca web del 2026-08-29, potrebbe cambiare. */
+/** Uscite occidentali gia' annunciate e verificate su CardTrader ma ancora
+ * future rispetto all'ultimo aggiornamento di questa lista. Se il catalogo
+ * CardTrader contiene gia' i Singles, il sync le rende anche filtrabili; la
+ * nota resta utile come promemoria della data di uscita ufficiale. */
 export const UPCOMING_SETS: { name: string; expectedDate: string }[] = [
-  { name: "Mega Evolution (JP, dopo Storm Emeralda, con Mega Lucario Z ex)", expectedDate: "27 nov 2026" },
+  { name: "30th Celebration", expectedDate: "16 set 2026" },
+  { name: "Delta Reign", expectedDate: "6 nov 2026" },
 ];
