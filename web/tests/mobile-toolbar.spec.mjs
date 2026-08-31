@@ -28,17 +28,20 @@ for (const viewport of mobileViewports) {
     expect(expansionBox).not.toBeNull();
     expect(sortBox).not.toBeNull();
 
-    // Sui telefoni il trigger espansioni resta largo e leggibile; a 768px
-    // Tailwind passa al layout sm e puo' tornare compatto, ma non deve essere
-    // microscopico/tagliato. L'ordinamento resta comunque su una riga propria
-    // fino al breakpoint desktop lg.
-    if (viewport.width < 640) {
+    if (viewport.width < 768) {
+      // Telefono: niente due colonne compresse; entrambi i controlli usano
+      // quasi tutta la toolbar e l'ordinamento scende sotto l'espansione.
       expect(expansionBox.width).toBeGreaterThan(viewport.width - 100);
+      expect(sortBox.width).toBeGreaterThan(viewport.width - 100);
+      expect(sortBox.y).toBeGreaterThan(expansionBox.y + expansionBox.height - 2);
     } else {
-      expect(expansionBox.width).toBeGreaterThan(150);
+      // Tablet portrait: c'e' abbastanza spazio per una riga bilanciata a due
+      // colonne, senza tornare al vecchio caso in cui uno dei due controlli
+      // veniva schiacciato a ~170px e l'altro occupava una riga enorme da solo.
+      expect(expansionBox.width).toBeGreaterThan(250);
+      expect(sortBox.width).toBeGreaterThan(250);
+      expect(Math.abs(sortBox.y - expansionBox.y)).toBeLessThan(8);
     }
-    expect(sortBox.width).toBeGreaterThan(viewport.width - 100);
-    expect(sortBox.y).toBeGreaterThan(expansionBox.y + expansionBox.height - 2);
 
     await expansion.click();
     const panel = page.locator(".filter-inline.is-open .filter-panel").first();
@@ -53,7 +56,30 @@ for (const viewport of mobileViewports) {
     // Il bug mostrato dall'utente produceva un documento piu' largo della
     // viewport e contenuto tagliato. Controlliamo il caso peggiore: pannello
     // espansioni aperto.
-    const overflow = await page.evaluate(() => ({
+    let overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
+
+    // QA dello stato realmente usato: selezionando un'espansione compare il
+    // pulsante X. Il trigger non deve invadere la sua area touch e il nome del
+    // set non deve riallargare il documento.
+    const firstExpansionOption = panel.locator("button[aria-pressed]").first();
+    await expect(firstExpansionOption).toBeVisible();
+    await firstExpansionOption.click();
+    await page.waitForTimeout(350);
+
+    const removeExpansion = page.getByRole("button", { name: "Rimuovi filtro espansione" });
+    await expect(removeExpansion).toBeVisible();
+    const selectedExpansionTrigger = page.locator(".filter-inline .filter-trigger").first();
+    const selectedBox = await selectedExpansionTrigger.boundingBox();
+    const removeBox = await removeExpansion.boundingBox();
+    expect(selectedBox).not.toBeNull();
+    expect(removeBox).not.toBeNull();
+    expect(selectedBox.x + selectedBox.width).toBeLessThanOrEqual(removeBox.x + 1);
+
+    overflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
     }));
