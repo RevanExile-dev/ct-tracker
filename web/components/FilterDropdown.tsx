@@ -6,7 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 export default function FilterDropdown({
   label, options, selected, onToggle, renderOption, searchable = false,
   getSearchText, layout = "pills", footerNote, closeOnSelect = false,
-  open: controlledOpen, onOpenChange,
+  open: controlledOpen, onOpenChange, compactFrom = "sm",
 }: {
   label: string;
   options: string[];
@@ -20,12 +20,26 @@ export default function FilterDropdown({
   closeOnSelect?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Breakpoint da cui il controllo puo' tornare compatto. I filtri secondari
+   * usano sm; il selettore espansioni principale resta full-width su tablet
+   * e si compatta solo nel layout desktop lg. */
+  compactFrom?: "sm" | "lg";
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const [query, setQuery] = useState("");
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const rootWidthClass = compactFrom === "lg"
+    ? "w-full max-w-full lg:w-auto"
+    : "w-full max-w-full sm:w-auto";
+  const triggerWidthClass = compactFrom === "lg" ? "w-full lg:w-auto" : "w-full sm:w-auto";
+  const panelWidthClass = compactFrom === "lg"
+    ? "w-full max-w-full lg:w-max lg:max-w-[calc(100vw-2.5rem)]"
+    : "w-full max-w-full sm:w-max sm:max-w-[calc(100vw-2.5rem)]";
+  const triggerJustifyClass = compactFrom === "lg" ? "justify-between lg:justify-start" : "justify-between sm:justify-start";
+  const labelFlexClass = compactFrom === "lg" ? "min-w-0 flex-1 lg:flex-none" : "min-w-0 flex-1 sm:flex-none";
+
   // Tiene visibile il pannello (per il calcolo di layout/rendering) finche'
   // la transizione di CHIUSURA non e' davvero finita: content-visibility
   // passa a "hidden" un istante troppo presto interromperebbe di colpo
@@ -89,7 +103,7 @@ export default function FilterDropdown({
   return (
     <div
       ref={rootRef}
-      className={`filter-inline w-full max-w-full sm:w-auto ${open ? "is-open" : ""}`}
+      className={`filter-inline ${rootWidthClass} ${open ? "is-open" : ""}`}
     >
       <button
         type="button"
@@ -99,10 +113,10 @@ export default function FilterDropdown({
           setOpen(!open);
           if (open) setQuery("");
         }}
-        className="filter-trigger min-h-11 w-full sm:w-auto cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary flex items-center justify-between sm:justify-start gap-2 rounded-lg px-2 -mx-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+        className={`filter-trigger min-h-11 ${triggerWidthClass} cursor-pointer select-none text-xs font-mono uppercase tracking-wider text-ink-muted hover:text-ink-primary flex items-center ${triggerJustifyClass} gap-2 rounded-lg px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70`}
       >
         <span aria-hidden className={`shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}>▸</span>
-        <span className="min-w-0 flex-1 sm:flex-none truncate text-left">{label}</span>
+        <span className={`${labelFlexClass} truncate text-left`}>{label}</span>
         {selected.length > 0 && (
           <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-accent-bright">{selected.length}</span>
         )}
@@ -130,7 +144,7 @@ export default function FilterDropdown({
         }`}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="filter-panel w-full max-w-full sm:w-max sm:max-w-[calc(100vw-2.5rem)] rounded-card border border-base-border bg-base-surface/95 shadow-card">
+          <div className={`filter-panel ${panelWidthClass} rounded-card border border-base-border bg-base-surface/95 shadow-card`}>
             {searchable && (
               <div className="p-2 border-b border-base-border">
                 <label className="sr-only" htmlFor={`${panelId}-search`}>Cerca in {label.toLocaleLowerCase("it")}</label>
