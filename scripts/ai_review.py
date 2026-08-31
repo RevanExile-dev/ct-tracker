@@ -26,6 +26,7 @@ viene revisionato l'intero diff (esclusi lockfile/DB generati).
 import os
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 import requests
@@ -48,6 +49,12 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 # reale sul tempo totale, applicato eseguendo la richiesta in un thread e
 # abbandonandola se non risponde in tempo.
 REQUEST_HARD_TIMEOUT_S = 90
+
+# 5xx/503 "high demand" sono guasti temporanei del provider, non errori del
+# prompt o della chiave. Un paio di retry brevi evita di perdere una review
+# valida per un picco momentaneo senza trasformare il workflow in un loop.
+TRANSIENT_STATUS_CODES = {500, 502, 503, 504}
+TRANSIENT_RETRIES = 2
 
 # Un diff enorme sforerebbe il contesto utile (e il livello gratuito ha
 # comunque un limite di token): tagliato con un avviso invece di fallire.
@@ -256,8 +263,27 @@ def main():
     resp = None
     used_provider_name = None
     for i, (attempt_provider_name, attempt_provider, api_key) in enumerate(attempts, start=1):
-        resp = attempt_provider["call"](api_key, full_prompt)
         used_provider_name = attempt_provider_name
+
+        # Retry sulla STESSA chiave solo per indisponibilita' temporanee 5xx.
+        # Quota/rate limit segue invece il normale percorso alla chiave/provider
+        # successivo: aspettare qui sarebbe inutile soprattutto su Groq, dove il
+        # limite gratuito puo' essere a livello organizzazione.
+        for retry in range(TRANSIENT_RETRIES + 1):
+            resp = attempt_provider["call"](api_key, full_prompt)
+            if resp.ok:
+                break
+            if resp.status_code in TRANSIENT_STATUS_CODES and retry < TRANSIENT_RETRIES:
+                wait_s = 4 * (retry + 1)
+                print(
+                    f"  [errore temporaneo {resp.status_code}] {attempt_provider_name}: "
+                    f"riprovo tra {wait_s}s ({retry + 1}/{TRANSIENT_RETRIES})",
+                    file=sys.stderr,
+                )
+                time.sleep(wait_s)
+                continue
+            break
+
         if resp.ok:
             break
         if _is_quota_error(resp) and i < len(attempts):
@@ -268,8 +294,10 @@ def main():
             continue
         break  # errore non di quota, o ultimo tentativo rimasto: non ha senso ritentare ancora
 
-    if not resp.ok:
-        print(f"ERRORE chiamata {used_provider_name} ({resp.status_code}): {resp.text[:2000]}", file=sys.stderr)
+    if resp is None or not resp.ok:
+        status = resp.status_code if resp is not None else "nessuna risposta"
+        detail = resp.text[:2000] if resp is not None else ""
+        print(f"ERRORE chiamata {used_provider_name} ({status}): {detail}", file=sys.stderr)
         sys.exit(1)
 
     data = resp.json()
