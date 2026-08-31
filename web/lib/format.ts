@@ -26,23 +26,33 @@ export type TrendVsAverage = { avgCents: number; deltaPct: number; days: number 
  * Confronta il prezzo attuale con la media mobile degli ultimi `days` giorni
  * di storico gia' scaricato (niente richieste aggiuntive). Se lo storico
  * disponibile e' piu' corto di `days`, usa tutto quello che c'e'.
+ *
+ * Confronta lo STESSO tipo di prezzo di currentCents: se il chiamante passa
+ * best_price_cents (Near Mint + CardTrader Zero, il caso comune nella pagina
+ * carta), la media va calcolata sullo storico dello stesso prezzo
+ * (best_price_cents per snapshot, con fallback a min_price_cents sugli
+ * snapshot precedenti all'introduzione di quella colonna) - confrontare
+ * "best" di oggi con la media del "min" storico avrebbe mostrato un calo/
+ * rialzo falso ogni volta che i due differiscono, anche a mercato fermo.
  */
 export function trendVsMovingAverage(
-  history: { captured_at: string; min_price_cents: number | null }[],
+  history: { captured_at: string; min_price_cents: number | null; best_price_cents?: number | null }[],
   currentCents: number | null,
   days = 30
 ): TrendVsAverage | null {
   if (currentCents === null || currentCents === undefined) return null;
 
+  const valueOf = (p: { min_price_cents: number | null; best_price_cents?: number | null }) =>
+    p.best_price_cents ?? p.min_price_cents;
+
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
-  const withPrice = history.filter((p) => p.min_price_cents !== null);
+  const withPrice = history.filter((p) => valueOf(p) !== null);
   const windowed = withPrice.filter((p) => new Date(p.captured_at) >= cutoff);
   const points = windowed.length > 0 ? windowed : withPrice;
   if (points.length === 0) return null;
 
-  const avgCents =
-    points.reduce((sum, p) => sum + (p.min_price_cents as number), 0) / points.length;
+  const avgCents = points.reduce((sum, p) => sum + (valueOf(p) as number), 0) / points.length;
   if (avgCents === 0) return null;
 
   return {

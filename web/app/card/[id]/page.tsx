@@ -9,6 +9,7 @@ import {
   fetchBestListings, fetchCardDetail, fetchPriceHistory,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
 import InteractiveCard from "@/components/InteractiveCard";
 import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
@@ -29,7 +30,9 @@ function CardDetailContent() {
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const [inBinder, setInBinder] = useState(false);
+  const [inWishlist, setInWishlist] = useState(false);
   const [popping, setPopping] = useState(false);
+  const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [onlyZeroListings, setOnlyZeroListings] = useState(false);
 
@@ -39,7 +42,10 @@ function CardDetailContent() {
     fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch(() => { if (!cancelled) setCard(null); });
     fetchPriceHistory(id).then((value) => { if (!cancelled) setHistory(value); }).catch(() => {});
     fetchBestListings(id).then((value) => { if (!cancelled) setListings(value); }).catch(() => {});
-    const frame = requestAnimationFrame(() => setInBinder(getBinderIds().has(id)));
+    const frame = requestAnimationFrame(() => {
+      setInBinder(getBinderIds().has(id));
+      setInWishlist(getWishlistIds().has(id));
+    });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
   }, [id]);
 
@@ -210,6 +216,22 @@ function CardDetailContent() {
               }`}
             >
               {inBinder ? "★ nel binder" : "☆ aggiungi al binder"}
+            </button>
+            <button
+              onClick={() => {
+                setInWishlist(new Set(toggleWishlist(id)).has(id));
+                setPoppingWishlist(true);
+              }}
+              onAnimationEnd={() => setPoppingWishlist(false)}
+              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+                poppingWishlist ? "pop-on-toggle" : ""
+              } ${
+                inWishlist
+                  ? "bg-accent/10 border-accent/60 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              }`}
+            >
+              {inWishlist ? "♥ nella lista desideri" : "♡ aggiungi ai desideri"}
             </button>
           </div>
 

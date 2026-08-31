@@ -352,6 +352,12 @@ export type PricePoint = {
   min_price_cents: number | null;
   avg_price_cents: number | null;
   listings_count: number;
+  // Prezzo "migliore" storico (Near Mint + CardTrader Zero quando esiste,
+  // stesso criterio di best_price_cents in latest_prices - vedi
+  // _pick_best_listing in scripts/db.py) per quello snapshot. NULL sugli
+  // snapshot precedenti all'introduzione di questa colonna: usare sempre
+  // con fallback a min_price_cents.
+  best_price_cents: number | null;
 };
 
 /** Storico completo di una carta: scarica price_history.db solo alla prima
@@ -359,7 +365,7 @@ export type PricePoint = {
 export async function fetchPriceHistory(blueprintId: number): Promise<PricePoint[]> {
   const db = await getHistoryDb();
   const stmt = db.prepare(`
-    SELECT captured_at, min_price_cents, avg_price_cents, listings_count
+    SELECT captured_at, min_price_cents, avg_price_cents, listings_count, best_price_cents
     FROM price_snapshots
     WHERE blueprint_id = $id
     ORDER BY captured_at ASC

@@ -15,12 +15,21 @@ export default function CardTile({
   index = 0,
   inBinder,
   onToggleBinder,
+  inWishlist,
+  onToggleWishlist,
   returnTo,
 }: {
   card: CardRow;
   index?: number;
   inBinder?: boolean;
   onToggleBinder?: () => void;
+  /** Analogo a inBinder/onToggleBinder ma per la lista desideri (cuore
+   * invece di stella) - usato dalla pagina /wishlist per rimuovere una
+   * carta direttamente dalla griglia, senza aprirla. Le due liste sono
+   * indipendenti: una pagina passa l'uno o l'altro, mai entrambi insieme
+   * in pratica. */
+  inWishlist?: boolean;
+  onToggleWishlist?: () => void;
   returnTo?: string;
 }) {
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -40,6 +49,7 @@ export default function CardTile({
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
   const [popping, setPopping] = useState(false);
+  const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
@@ -96,6 +106,28 @@ export default function CardTile({
               }`}
             >
               {inBinder ? "★" : "☆"}
+            </button>
+          )}
+          {onToggleWishlist && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPoppingWishlist(true);
+                onToggleWishlist();
+              }}
+              onAnimationEnd={() => setPoppingWishlist(false)}
+              aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
+              className={`absolute top-2 ${onToggleBinder ? "right-11" : "right-2"} w-7 h-7 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
+                poppingWishlist ? "pop-on-toggle" : ""
+              } ${
+                inWishlist
+                  ? "bg-accent/20 border-accent/60 text-accent-bright"
+                  : "bg-black/60 border-white/10 text-white/70 hover:text-white"
+              }`}
+            >
+              {inWishlist ? "♥" : "♡"}
             </button>
           )}
         </div>

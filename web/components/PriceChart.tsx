@@ -4,6 +4,33 @@ import { useMemo, useState } from "react";
 import { PricePoint } from "@/lib/db";
 import { formatCents, formatDate, formatDateLong } from "@/lib/format";
 
+/** Trasforma una serie di prezzi (alcuni possibili null) in coordinate SVG
+ * 0-100, usando un min/max CONDIVISO tra le serie passate cosi' due linee
+ * nello stesso grafico restano comparabili invece di essere normalizzate
+ * ciascuna per conto proprio (che le farebbe sembrare vicine anche quando
+ * i prezzi reali sono molto diversi). */
+function buildSeries(
+  points: PricePoint[],
+  pick: (p: PricePoint) => number | null,
+  min: number,
+  max: number
+): { path: string; coords: { x: number; y: number; idx: number }[] } {
+  const span = max - min || 1;
+  const w = 100;
+  const h = 100;
+  const withValue = points
+    .map((p, idx) => ({ v: pick(p), idx }))
+    .filter((p): p is { v: number; idx: number } => p.v !== null);
+  if (withValue.length === 0) return { path: "", coords: [] };
+  const coords = withValue.map(({ v, idx }) => {
+    const x = points.length === 1 ? w / 2 : (idx / (points.length - 1)) * w;
+    const y = h - ((v - min) / span) * (h - 20) - 10;
+    return { x, y, idx };
+  });
+  const path = coords.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x} ${c.y}`).join(" ");
+  return { path, coords };
+}
+
 export default function PriceChart({
   points,
   currency,
@@ -12,26 +39,30 @@ export default function PriceChart({
   currency: string;
 }) {
   const withPrice = points.filter((p) => p.min_price_cents !== null);
+  const hasBest = points.some((p) => p.best_price_cents !== null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  const { path, areaPath, coords, min, max } = useMemo(() => {
+  const { minLine, bestLine, areaPath, min, max } = useMemo(() => {
     if (withPrice.length === 0) {
-      return { path: "", areaPath: "", coords: [] as { x: number; y: number }[], min: 0, max: 0 };
+      return {
+        minLine: { path: "", coords: [] as { x: number; y: number; idx: number }[] },
+        bestLine: { path: "", coords: [] as { x: number; y: number; idx: number }[] },
+        areaPath: "",
+        min: 0,
+        max: 0,
+      };
     }
-    const values = withPrice.map((p) => p.min_price_cents as number);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const span = max - min || 1;
-    const w = 100;
-    const h = 100;
-    const coords = withPrice.map((p, i) => {
-      const x = withPrice.length === 1 ? w / 2 : (i / (withPrice.length - 1)) * w;
-      const y = h - (((p.min_price_cents as number) - min) / span) * (h - 20) - 10;
-      return { x, y };
-    });
-    const path = coords.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x} ${c.y}`).join(" ");
-    const areaPath = `${path} L ${coords[coords.length - 1].x} ${h} L ${coords[0].x} ${h} Z`;
-    return { path, areaPath, coords, min, max };
+    const allValues = withPrice.flatMap((p) =>
+      [p.min_price_cents, p.best_price_cents].filter((v): v is number => v !== null)
+    );
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    const minLine = buildSeries(withPrice, (p) => p.min_price_cents, min, max);
+    const bestLine = buildSeries(withPrice, (p) => p.best_price_cents, min, max);
+    const areaPath = minLine.path
+      ? `${minLine.path} L ${minLine.coords[minLine.coords.length - 1].x} 100 L ${minLine.coords[0].x} 100 Z`
+      : "";
+    return { minLine, bestLine, areaPath, min, max };
   }, [withPrice]);
 
   if (withPrice.length === 0) {
@@ -47,20 +78,42 @@ export default function PriceChart({
 
   return (
     <div className="rounded-card border border-base-border bg-base-surface p-5">
-      <div className="flex items-baseline justify-between mb-4">
+      <div className="flex items-baseline justify-between mb-4 flex-wrap gap-x-4 gap-y-2">
         <div>
           <div className="text-xs uppercase tracking-wider text-ink-muted font-mono">
             {hoverIdx !== null ? formatDateLong(active.captured_at) : "Prezzo più recente"}
           </div>
-          <div className="font-display text-3xl font-bold text-ink-primary mt-0.5">
-            {formatCents(active.min_price_cents, currency)}
+          <div className="flex items-baseline gap-3 flex-wrap mt-0.5">
+            <div className="font-display text-3xl font-bold text-ink-primary">
+              {formatCents(active.min_price_cents, currency)}
+            </div>
+            <div className="text-xs font-mono text-ink-faint">più basso in assoluto</div>
           </div>
+          {active.best_price_cents !== null && (
+            <div className="flex items-baseline gap-2 flex-wrap mt-1">
+              <div className="font-display text-lg font-bold text-accent-bright">
+                {formatCents(active.best_price_cents, currency)}
+              </div>
+              <div className="text-xs font-mono text-ink-faint">Near Mint · CardTrader Zero</div>
+            </div>
+          )}
         </div>
         <div className="text-right text-xs text-ink-muted font-mono">
           <div>min {formatCents(min, currency)}</div>
           <div>max {formatCents(max, currency)}</div>
         </div>
       </div>
+
+      {hasBest && (
+        <div className="flex items-center gap-4 mb-3 text-[11px] font-mono text-ink-faint">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block w-3 h-0.5 bg-[#2DD8C9]" /> più basso in assoluto
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block w-3 h-0.5 bg-accent-bright" /> Near Mint · Zero
+          </span>
+        </div>
+      )}
 
       <svg
         viewBox="0 0 100 100"
@@ -77,7 +130,7 @@ export default function PriceChart({
         <path d={areaPath} fill="url(#areaFill)" stroke="none" />
         <path
           className="price-line"
-          d={path}
+          d={minLine.path}
           pathLength={1}
           fill="none"
           stroke="#2DD8C9"
@@ -87,12 +140,25 @@ export default function PriceChart({
           strokeLinejoin="round"
           style={{ "--line-length": 1 } as React.CSSProperties}
         />
-        {coords.map((c, i) => (
+        {bestLine.path && (
+          <path
+            d={bestLine.path}
+            pathLength={1}
+            fill="none"
+            stroke="#F5A623"
+            strokeWidth="1.2"
+            strokeDasharray="2.5 2"
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+        {withPrice.map((_, i) => (
           <rect
             key={i}
-            x={c.x - 100 / coords.length / 2}
+            x={(i / Math.max(1, withPrice.length - 1)) * 100 - 100 / withPrice.length / 2}
             y={0}
-            width={100 / coords.length}
+            width={100 / withPrice.length}
             height={100}
             fill="transparent"
             onMouseEnter={() => setHoverIdx(i)}
@@ -100,8 +166,8 @@ export default function PriceChart({
         ))}
         {hoverIdx !== null && (
           <line
-            x1={coords[hoverIdx].x}
-            x2={coords[hoverIdx].x}
+            x1={(hoverIdx / Math.max(1, withPrice.length - 1)) * 100}
+            x2={(hoverIdx / Math.max(1, withPrice.length - 1)) * 100}
             y1={0}
             y2={100}
             stroke="#565C63"
@@ -110,8 +176,21 @@ export default function PriceChart({
             vectorEffect="non-scaling-stroke"
           />
         )}
-        {hoverIdx !== null && (
-          <circle cx={coords[hoverIdx].x} cy={coords[hoverIdx].y} r="1.8" fill="#5FF0E3" />
+        {hoverIdx !== null && minLine.coords.find((c) => c.idx === hoverIdx) && (
+          <circle
+            cx={minLine.coords.find((c) => c.idx === hoverIdx)!.x}
+            cy={minLine.coords.find((c) => c.idx === hoverIdx)!.y}
+            r="1.8"
+            fill="#5FF0E3"
+          />
+        )}
+        {hoverIdx !== null && bestLine.coords.find((c) => c.idx === hoverIdx) && (
+          <circle
+            cx={bestLine.coords.find((c) => c.idx === hoverIdx)!.x}
+            cy={bestLine.coords.find((c) => c.idx === hoverIdx)!.y}
+            r="1.6"
+            fill="#F5A623"
+          />
         )}
       </svg>
 

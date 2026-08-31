@@ -49,7 +49,7 @@ export default function FilterDropdown({
     }
     document.addEventListener("keydown", handleKey);
     document.addEventListener("mousedown", handlePointer);
-    document.addEventListener("touchstart", handlePointer);
+    document.addEventListener("touchstart", handlePointer, { passive: true });
     return () => {
       document.removeEventListener("keydown", handleKey);
       document.removeEventListener("mousedown", handlePointer);
@@ -89,6 +89,14 @@ export default function FilterDropdown({
       <div
         id={panelId}
         aria-hidden={!open}
+        // content-visibility: da chiuso il pannello ha comunque un contenuto
+        // largo (ricerca, elenco) che pur essendo alto 0px (grid-rows-[0fr])
+        // continua a "contare" per la larghezza minima dei suoi antenati -
+        // un pannello filtri chiuso finiva per schiacciare la casella di
+        // ricerca affianco su tablet (bug reale, verificato: 514px di
+        // contenuto misurato anche da chiuso). "hidden" rimuove il
+        // contenuto dal calcolo di layout finche' non e' aperto.
+        style={{ contentVisibility: open ? "visible" : "hidden" }}
         className={`filter-panel-grid grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out ${
           open ? "grid-rows-[1fr] opacity-100 mt-2" : "grid-rows-[0fr] opacity-0 mt-0 pointer-events-none"
         }`}
