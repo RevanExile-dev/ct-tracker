@@ -4,7 +4,9 @@ name: TEMP PR review (Gemini + Groq)
 # espone workflow_dispatch. Usa lo stesso reviewer e gli stessi secret gia'
 # definiti dal progetto; verra' rimosso prima del merge.
 # Le review sono separate per provider e per area. I due controlli dello stesso
-# provider sono serializzati per non sommare il consumo TPM del livello gratuito.
+# provider sono serializzati per non sommare il consumo TPM del livello gratuito;
+# `if: always()` fa comunque partire la review UI se la review catalogo incontra
+# un errore temporaneo del provider.
 on:
   pull_request:
     branches: [main]
@@ -47,6 +49,7 @@ jobs:
   ui-groq:
     name: Groq - UI responsive
     needs: catalog-groq
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -107,6 +110,7 @@ jobs:
   ui-gemini:
     name: Gemini - UI responsive
     needs: catalog-gemini
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
