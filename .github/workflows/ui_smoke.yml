@@ -1,0 +1,59 @@
+name: UI smoke (responsive toolbar)
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/ui_smoke.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  responsive-toolbar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Installa dipendenze
+        run: npm ci
+
+      - name: Installa Playwright solo per il test CI
+        run: |
+          npm install --no-save --package-lock=false @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Avvia server
+        run: |
+          npm run start -- -p 3000 > /tmp/ct-tracker-next.log 2>&1 &
+          echo $! > /tmp/ct-tracker-next.pid
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ct-tracker-next.log
+          exit 1
+
+      - name: Test 360/390/430/768 + desktop
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+        run: npx playwright test tests/mobile-toolbar.spec.ts --project=chromium --reporter=line
+
+      - name: Log server in caso di errore
+        if: failure()
+        run: cat /tmp/ct-tracker-next.log || true
