@@ -252,7 +252,7 @@ export default function FilterDropdown({
       {mounted && createPortal(
         <div className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-4" aria-hidden={!open}>
           <div
-            onClick={close}
+            onClick={() => { close(); focusTrigger(); }}
             className={`filter-panel-anim absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out ${visible ? "opacity-100" : "opacity-0"}`}
           />
           <div
@@ -269,7 +269,7 @@ export default function FilterDropdown({
               <span className="text-sm font-mono uppercase tracking-wider text-ink-primary">{label}</span>
               <button
                 type="button"
-                onClick={close}
+                onClick={() => { close(); focusTrigger(); }}
                 aria-label="Chiudi"
                 className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-ink-faint hover:text-ink-primary hover:bg-base-surface2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >

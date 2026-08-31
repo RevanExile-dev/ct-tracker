@@ -1,14 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  CardRow, ExpansionInfo, SortOption,
-  fetchCards, fetchCatalogStats, fetchConditions, fetchExpansions, fetchLanguages, fetchMeta, fetchRarities,
-  normalizeRarity,
+  CardRow, CardsSummary, ExpansionInfo, SortOption,
+  fetchCards, fetchCardsCount, fetchCardsSummary, fetchCatalogStats, fetchConditions, fetchExpansions,
+  fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import { priceDeltaPct } from "@/lib/format";
 import { FilterPreset } from "@/lib/filterPreset";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
@@ -29,6 +28,12 @@ function HomeContent() {
   const searchParams = useSearchParams();
 
   const [cards, setCards] = useState<CardRow[] | null>(null);
+  // Conteggio totale delle carte che soddisfano i filtri correnti,
+  // calcolato in SQL (fetchCardsCount) - NON e' cards.length: cards e'
+  // limitato a visibleCount (vedi fetchCards limit), altrimenti ogni
+  // ricerca/filtro tornerebbe a scaricare l'intero catalogo in JS solo per
+  // sapere quante righe corrispondono in tutto.
+  const [resultCount, setResultCount] = useState<number | undefined>();
   const [expansions, setExpansions] = useState<ExpansionInfo[]>([]);
   const [rarities, setRarities] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
@@ -36,11 +41,28 @@ function HomeContent() {
   const [lastSync, setLastSync] = useState<string | undefined>();
   const [totalCards, setTotalCards] = useState<number | undefined>();
   const [error, setError] = useState<string | null>(null);
+  // Incrementato dal pulsante "Riprova" nello stato d'errore per rilanciare
+  // le stesse fetch senza dover duplicare la logica in due punti diversi -
+  // funziona perche' getDb()/getHistoryDb() ora resettano la Promise in
+  // cache a null quando falliscono (altrimenti riproverebbe la STESSA
+  // richiesta gia' fallita per sempre, vedi lib/db.ts).
+  const [reloadTick, setReloadTick] = useState(0);
+  const [expansionSummaryData, setExpansionSummaryData] = useState<CardsSummary | null>(null);
 
   // Lo stato dei filtri e' inizializzato dalla query string cosi' che
   // "indietro" dal browser dopo aver aperto una carta torni alla stessa
   // vista filtrata, invece di una home resettata.
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  // Il valore digitato aggiorna subito l'input (search, sopra) ma la query
+  // vera e propria parte solo 250ms dopo l'ultimo tasto premuto: senza
+  // questo, ogni singolo carattere rilanciava una query SQL sull'intero
+  // catalogo (bug reale trovato in revisione, aggravato dal fatto che
+  // fetchCards prima non aveva nemmeno un LIMIT - vedi sotto).
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
   const [expansionCode, setExpansionCode] = useState(() => searchParams.get("exp") ?? "");
   const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
     splitCsv(searchParams.get("rarity")).map(normalizeRarity)
@@ -60,7 +82,7 @@ function HomeContent() {
     const shown = Number(searchParams.get("shown"));
     return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
   });
-  const filterKey = [search, expansionCode, selectedRarities.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
+  const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
   const previousFilterKey = useRef(filterKey);
 
   // Barra filtri sticky: si nasconde scrollando verso il basso (piu' spazio
@@ -102,21 +124,27 @@ function HomeContent() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  // Ricarica le carte quando cambiano i filtri lato-query (ricerca, espansione,
-  // rarità, lingua, condizione, ordinamento): sono gestiti in SQL, non serve
-  // rifiltrare in JS.
+  // Ricarica le carte quando cambiano i filtri lato-query (ricerca,
+  // espansione, rarità, lingua, condizione, ordinamento) o quante mostrarne
+  // (visibleCount, "mostra altre"): sono gestiti in SQL con un LIMIT, non
+  // si scarica ne' si rifiltra in JS. reloadTick permette al pulsante
+  // "Riprova" dello stato d'errore di rilanciare la stessa fetch.
+  // `limit` qui e' l'intervento piu' importante trovato in revisione:
+  // prima, senza LIMIT, ogni ricerca/filtro materializzava in oggetti JS
+  // TUTTE le righe corrispondenti (decine di migliaia a catalogo pieno)
+  // per poi mostrarne solo 60 con uno slice() lato client.
   useEffect(() => {
     let cancelled = false;
     fetchCards({
-      search, expansionCode, rarities: selectedRarities, languages: selectedLanguages,
-      conditions: selectedConditions, onlyZero, sortBy,
+      search: debouncedSearch, expansionCode, rarities: selectedRarities, languages: selectedLanguages,
+      conditions: selectedConditions, onlyZero, sortBy, limit: visibleCount,
     })
       .then((nextCards) => {
         if (!cancelled) { setError(null); setCards(nextCards); }
       })
       .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); });
     return () => { cancelled = true; };
-  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy]);
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, reloadTick]);
 
   useEffect(() => {
     if (previousFilterKey.current !== filterKey) {
@@ -125,27 +153,43 @@ function HomeContent() {
     }
   }, [filterKey]);
 
-  const filtered = cards;
+  // Conteggio totale e andamento medio dell'espansione: calcolati in SQL
+  // (fetchCardsCount/fetchCardsSummary) invece che derivati da `cards`, che
+  // ora e' limitato a visibleCount e non contiene piu' tutte le righe che
+  // soddisfano i filtri correnti. Non dipende da visibleCount/reloadTick
+  // sortBy: il totale e l'andamento medio non cambiano ne' scorrendo "mostra
+  // altre" ne' cambiando ordinamento.
+  useEffect(() => {
+    let cancelled = false;
+    let frame: number | null = null;
+    const filters = {
+      search: debouncedSearch, expansionCode, rarities: selectedRarities,
+      languages: selectedLanguages, conditions: selectedConditions, onlyZero,
+    };
+    fetchCardsCount(filters).then((c) => { if (!cancelled) setResultCount(c); }).catch(() => {});
+    if (expansionCode) {
+      fetchCardsSummary(filters)
+        .then((s) => { if (!cancelled) setExpansionSummaryData(s); })
+        .catch(() => { if (!cancelled) setExpansionSummaryData(null); });
+    } else {
+      // setState va dentro un callback (rAF), mai sincrono nel corpo
+      // dell'effetto (regola di lint del progetto, react-hooks/set-state-in-effect).
+      frame = requestAnimationFrame(() => { if (!cancelled) setExpansionSummaryData(null); });
+    }
+    return () => { cancelled = true; if (frame !== null) cancelAnimationFrame(frame); };
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero]);
 
-  const visible = filtered ? filtered.slice(0, visibleCount) : null;
+  // Gia' limitato lato SQL a visibleCount (vedi fetchCards sopra): nessuno
+  // slice() lato client necessario.
+  const visible = cards;
   const currentQuery = searchParams.toString();
   const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
 
   useScrollRestoration("catalog", cards !== null || error !== null, returnTo);
 
-  // Indice di mercato dell'espansione selezionata: media delle variazioni
-  // giorno-su-giorno delle carte gia' caricate (nessuna richiesta aggiuntiva,
-  // usa solo prev_price_cents gia' presente in cardtrader.db).
-  const expansionSummary = useMemo(() => {
-    if (!expansionCode || !cards) return null;
-    const deltas = cards
-      .map((c) => priceDeltaPct(c.best_price_cents ?? c.latest_price_cents, c.prev_best_price_cents ?? c.prev_price_cents))
-      .filter((d): d is number => d !== null);
-    if (deltas.length === 0) return null;
-    const avgPct = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
-    const expansionName = cards[0]?.expansion_name ?? "";
-    return { avgPct, sampleSize: deltas.length, totalCards: cards.length, expansionName };
-  }, [expansionCode, cards]);
+  const expansionSummary = expansionSummaryData && cards
+    ? { ...expansionSummaryData, expansionName: cards[0]?.expansion_name ?? "" }
+    : null;
 
   function handleToggleRarity(r: string) {
     setSelectedRarities((prev) =>
@@ -240,6 +284,7 @@ function HomeContent() {
                 hasActiveFilters={hasActiveFilters}
                 onResetAll={resetAllFilters}
                 onApplyPreset={applyPreset}
+                resultCount={resultCount}
               />
             </div>
           </div>
@@ -289,13 +334,24 @@ function HomeContent() {
       )}
 
       {error && (
-        <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 text-signal-down p-5 font-mono text-sm">
-          {error}
-          <div className="text-ink-muted mt-2 font-body">
-            Verifica che il workflow &quot;Sync prezzi&quot; sia già stato eseguito almeno una
-            volta e che il file sia stato copiato in{" "}
-            <code className="text-ink-primary">web/public/data/cardtrader.db</code>.
+        <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 p-5">
+          <div className="text-signal-down font-display font-medium">
+            Non riesco a caricare il catalogo al momento.
           </div>
+          <p className="text-ink-muted mt-1.5 text-sm">
+            Può essere un problema di connessione temporaneo — riprova tra qualche secondo.
+          </p>
+          <button
+            type="button"
+            onClick={() => setReloadTick((t) => t + 1)}
+            className="btn-lift mt-4 text-sm px-4 py-2 rounded-card border border-signal-down/40 text-signal-down hover:bg-signal-down/10 transition-colors active:scale-95"
+          >
+            Riprova
+          </button>
+          <details className="mt-3 text-xs text-ink-faint">
+            <summary className="cursor-pointer select-none">Dettagli tecnici</summary>
+            <div className="mt-1 font-mono">{error}</div>
+          </details>
         </div>
       )}
 
@@ -323,7 +379,7 @@ function HomeContent() {
         </div>
       )}
 
-      {filtered && filtered.length === 0 && (
+      {cards && cards.length === 0 && (
         <div className="mt-16 text-center text-ink-muted">
           Nessuna carta trovata. Prova a modificare la ricerca o i filtri.
         </div>
@@ -344,14 +400,14 @@ function HomeContent() {
               ))}
           </div>
 
-          {filtered && visibleCount < filtered.length && (
+          {resultCount !== undefined && visibleCount < resultCount && (
             <div className="flex justify-center mt-8">
               <button
                 onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
                 className="btn-lift text-sm px-6 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
               >
-                Mostra altre {Math.min(PAGE_SIZE, filtered.length - visibleCount)} carte
-                <span className="text-ink-faint"> ({visibleCount}/{filtered.length})</span>
+                Mostra altre {Math.min(PAGE_SIZE, resultCount - visibleCount)} carte
+                <span className="text-ink-faint"> ({cards?.length ?? 0}/{resultCount})</span>
               </button>
             </div>
           )}

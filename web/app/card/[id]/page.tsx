@@ -33,6 +33,7 @@ function CardDetailContent() {
   const [inWishlist, setInWishlist] = useState(false);
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [onlyZeroListings, setOnlyZeroListings] = useState(false);
 
@@ -45,6 +46,12 @@ function CardDetailContent() {
     const frame = requestAnimationFrame(() => {
       setInBinder(getBinderIds().has(id));
       setInWishlist(getWishlistIds().has(id));
+      // Il componente non viene rimontato passando da una carta all'altra
+      // (stessa route dinamica) - senza reset qui, un errore di
+      // caricamento sulla carta precedente resterebbe visibile anche per
+      // la carta nuova finche' l'immagine non finisce di caricare/fallire
+      // di nuovo.
+      setImgError(false);
     });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
   }, [id]);
@@ -162,18 +169,19 @@ function CardDetailContent() {
           className="w-full max-w-[400px] mx-auto md:mx-0 bg-base-surface border border-base-border overflow-hidden self-start shadow-card"
         >
           <div className="relative aspect-[5/7] bg-base-surface2">
-            {card.image_url ? (
+            {card.image_url && !imgError ? (
               <Image
                 src={card.image_url}
                 alt={card.name}
                 fill
-              sizes="(max-width: 767px) 90vw, 400px"
+                sizes="(max-width: 767px) 90vw, 400px"
                 className="object-cover"
                 priority
+                onError={() => setImgError(true)}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono">
-                nessuna immagine
+              <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono text-center px-4">
+                {imgError ? "immagine non disponibile" : "nessuna immagine"}
               </div>
             )}
           </div>
