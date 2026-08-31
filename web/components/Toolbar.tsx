@@ -59,23 +59,21 @@ export default function Toolbar({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+      {/* Mobile/tablet: i controlli principali restano impilati a larghezza
+          piena. La vecchia griglia a due colonne comprimiva sia il filtro
+          espansioni sia l'ordinamento (e, quando il pannello si apriva,
+          lasciava il pannello intrappolato in mezza viewport). Solo da lg
+          torniamo al layout orizzontale desktop. */}
+      <div className="flex flex-col lg:flex-row lg:items-start gap-3">
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Cerca una carta per nome…"
-          className="sm:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
+          className="lg:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
         />
 
-        {/* Su mobile espansione+ordina condividono una riga (invece di 4 righe
-            piene una sotto l'altra) cosi' si arriva prima alle carte.
-            min-w-0 e' necessario: senza, questo contenitore (essendo lui
-            stesso flex/grid) rifiuta di restringersi sotto la sua larghezza
-            "naturale" quando e' un figlio del flex row esterno, schiacciando
-            la ricerca a pochi pixel su viewport medi tipo tablet (bug reale
-            trovato testando a 768px). */}
-        <div className="min-w-0 grid grid-cols-2 sm:flex sm:flex-row gap-3">
-          <div className="min-w-0 flex items-center gap-1">
+        <div className="min-w-0 w-full grid grid-cols-1 gap-3 lg:w-auto lg:flex lg:flex-row">
+          <div className="min-w-0 w-full lg:w-auto flex items-center gap-1">
             <FilterDropdown
               label={selectedExpansion ? `${selectedExpansion.name} (${selectedExpansion.cardCount})` : "Tutte le espansioni"}
               options={expansions.map((e) => e.code)}
@@ -90,8 +88,8 @@ export default function Toolbar({
                 if (!e) return code;
                 const date = releaseDateFor(code);
                 return (
-                  <span className="flex items-center justify-between gap-3 w-full">
-                    <span className="truncate">
+                  <span className="flex items-center justify-between gap-3 w-full min-w-0">
+                    <span className="truncate min-w-0">
                       {e.name} <span className="text-ink-faint">({e.cardCount})</span>
                     </span>
                     {date && <span className="text-ink-faint text-[10px] shrink-0">{formatDateLong(date)}</span>}
@@ -112,7 +110,7 @@ export default function Toolbar({
                 onClick={() => onExpansionChange("")}
                 aria-label="Rimuovi filtro espansione"
                 title="Rimuovi filtro espansione"
-                className="shrink-0 min-h-8 min-w-8 flex items-center justify-center rounded-full text-ink-faint hover:text-signal-down hover:bg-base-surface2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                className="shrink-0 min-h-11 min-w-11 flex items-center justify-center rounded-full text-ink-faint hover:text-signal-down hover:bg-base-surface2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 ✕
               </button>
@@ -122,7 +120,8 @@ export default function Toolbar({
           <select
             value={sortBy}
             onChange={(e) => onSortChange(e.target.value as SortOption)}
-            className="min-w-0 bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60 sm:max-w-[9rem] lg:max-w-[13rem]"
+            aria-label="Ordina carte"
+            className="min-w-0 w-full lg:w-auto bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60 lg:max-w-[13rem]"
           >
             <option value="expansion">Ordina: espansione</option>
             <option value="price_asc">Prezzo: dal più basso</option>
@@ -132,10 +131,9 @@ export default function Toolbar({
             <option value="name">Nome A-Z</option>
           </select>
         </div>
-
       </div>
 
-      <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
+      <div className="filter-toolbar flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
         <FilterDropdown
           label="Filtra per rarità"
           options={rarities}
@@ -165,7 +163,7 @@ export default function Toolbar({
         <button
           type="button"
           onClick={onToggleOnlyZero}
-          className={`min-h-11 text-xs px-3 py-2 rounded-full border transition-colors active:scale-95 ${
+          className={`min-h-11 w-full sm:w-auto text-xs px-3 py-2 rounded-full border transition-colors active:scale-95 ${
             onlyZero
               ? "bg-accent/10 border-accent/60 text-accent-bright"
               : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -177,7 +175,7 @@ export default function Toolbar({
           <button
             type="button"
             onClick={onResetAll}
-            className="min-h-11 text-xs px-2 font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
+            className="min-h-11 w-full sm:w-auto text-xs px-2 font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
           >
             ✕ Reset filtri
           </button>
