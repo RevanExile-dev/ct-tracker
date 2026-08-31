@@ -173,6 +173,28 @@ esplicito**: rileggere l'elenco delle cose toccate in questo giro e chiedersi
 un altro stato della stessa UI?" — non è retorico, va effettivamente cercato
 (grep/Read), non solo considerato a memoria.
 
+**6. "Verificato su mobile con Playwright" non significa niente se non si sono
+simulati eventi touch veri.** Errore reale, ripetuto per più giri in questa
+sessione (2026-08-31): i filtri venivano dichiarati "testati e funzionanti su
+telefono" dopo test che facevano solo `page.setViewportSize({width: 390, ...})`
++ `.click()` — un resize del viewport più un click sintetico, che Chromium
+gestisce come se venisse dal mouse. Questo non esercita AFFATTO il percorso
+`touchstart`/`pointerdown` reale, quindi un bug legato specificamente alla
+sequenza touch (es. un listener `document`-level che scambia un tap dentro un
+elemento in portale per un tap "fuori", richiudendolo all'istante) passa i
+test e si ripresenta puntualmente sul telefono vero dell'utente — che lo nota
+subito e lo fa notare ("ma le testi le cose?"). Per un test mobile che voglia
+dire qualcosa serve `browser.newContext({ ...devices['iPhone 13'] })` (o
+`isMobile: true, hasTouch: true`) e `.tap()` invece di `.click()`; anche i
+test committati in `web/tests/*.spec.mjs` vanno scritti con
+`test.use({ hasTouch: true, isMobile: true })`, non solo con un viewport
+stretto. Corollario: un test che seleziona un'opzione con `closeOnSelect`
+può mascherare un bug di chiusura prematura (il pannello si chiude comunque,
+"correttamente" per il test, ma per il motivo sbagliato) — serve anche un
+caso che tocchi un elemento INTERNO a un pannello che non si chiude da solo
+alla selezione (es. una pillola in un filtro senza `closeOnSelect`, o la
+casella di ricerca) per verificare che il tap non lo richiuda per errore.
+
 ## Struttura del progetto
 
 CartaViva è un tracker di carte Pokémon TCG basato sui dati di CardTrader.
