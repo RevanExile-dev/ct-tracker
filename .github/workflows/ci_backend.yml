@@ -1,0 +1,36 @@
+name: CI (Python e config)
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - "config/**"
+      - ".github/workflows/sync_catalog.yml"
+      - ".github/workflows/ci_backend.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "config/**"
+      - ".github/workflows/sync_catalog.yml"
+      - ".github/workflows/ci_backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verifica sintassi Python
+        run: python -m compileall -q scripts
+
+      - name: Verifica configurazioni JSON
+        run: |
+          python -m json.tool config/tracked_sets.json >/dev/null
+          python -m json.tool config/watchlist.json >/dev/null
