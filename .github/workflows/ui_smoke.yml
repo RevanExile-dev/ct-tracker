@@ -52,7 +52,7 @@ jobs:
       - name: Test 360/390/430/768 + desktop
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
-        run: npx playwright test tests/mobile-toolbar.spec.ts --project=chromium --reporter=line
+        run: npx playwright test tests/mobile-toolbar.spec.ts --reporter=line
 
       - name: Log server in caso di errore
         if: failure()
