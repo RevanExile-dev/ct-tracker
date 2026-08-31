@@ -106,9 +106,13 @@ def main():
             continue
 
         print(f"\nEspansione: {expansion['name']} ({code}, id={expansion['id']})")
-        db.upsert_expansion(conn, expansion)
-        conn.commit()
 
+        # Prima leggiamo i blueprint e isoliamo i Singles. In --only-missing un
+        # set annunciato puo' esistere su CardTrader prima che vengano pubblicate
+        # le carte: in quel caso non dobbiamo neppure upsertare la riga expansion,
+        # altrimenti il DB binario cambierebbe pur dichiarando un no-op e il
+        # workflow potrebbe creare un commit inutile. Il set verra' riprovato al
+        # giro successivo perche' non ha ancora alcun blueprint nel DB.
         all_blueprints = client.get_blueprints(expansion["id"])
         blueprints = [
             bp for bp in all_blueprints
@@ -116,6 +120,16 @@ def main():
         ]
         skipped = len(all_blueprints) - len(blueprints)
         print(f"  {len(blueprints)} carte trovate" + (f" ({skipped} prodotti non-carta esclusi)" if skipped else ""))
+
+        if only_missing and not blueprints:
+            print("  Nessuna carta Singles disponibile: nessuna modifica al DB, riprovero' al prossimo controllo.")
+            continue
+
+        # Nel full sync manteniamo il comportamento storico: registriamo anche
+        # l'espansione se al momento non contiene Singles. Nel missing-only la
+        # riga viene invece scritta solo quando esiste almeno una carta reale.
+        db.upsert_expansion(conn, expansion)
+        conn.commit()
 
         for bp in blueprints:
             premium = is_premium_name(bp.get("name", ""))
