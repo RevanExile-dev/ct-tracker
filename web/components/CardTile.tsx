@@ -78,8 +78,10 @@ export default function CardTile({
           )}
           {onToggleBinder && (
             <button
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 setPopping(true);
                 onToggleBinder();
               }}

@@ -75,36 +75,49 @@ export default function Toolbar({
             la ricerca a pochi pixel su viewport medi tipo tablet (bug reale
             trovato testando a 768px). */}
         <div className="min-w-0 grid grid-cols-2 sm:flex sm:flex-row gap-3">
-          <FilterDropdown
-            label={selectedExpansion ? `${selectedExpansion.name} (${selectedExpansion.cardCount})` : "Tutte le espansioni"}
-            options={expansions.map((e) => e.code)}
-            selected={expansionCode ? [expansionCode] : []}
-            onToggle={(code) => onExpansionChange(code === expansionCode ? "" : code)}
-            searchable
-            closeOnSelect
-            layout="list"
-            getSearchText={(code) => expansions.find((e) => e.code === code)?.name ?? code}
-            renderOption={(code) => {
-              const e = expansions.find((x) => x.code === code);
-              if (!e) return code;
-              const date = releaseDateFor(code);
-              return (
-                <span className="flex items-center justify-between gap-3 w-full">
-                  <span className="truncate">
-                    {e.name} <span className="text-ink-faint">({e.cardCount})</span>
+          <div className="min-w-0 flex items-center gap-1">
+            <FilterDropdown
+              label={selectedExpansion ? `${selectedExpansion.name} (${selectedExpansion.cardCount})` : "Tutte le espansioni"}
+              options={expansions.map((e) => e.code)}
+              selected={expansionCode ? [expansionCode] : []}
+              onToggle={(code) => onExpansionChange(code === expansionCode ? "" : code)}
+              searchable
+              closeOnSelect
+              layout="list"
+              getSearchText={(code) => expansions.find((e) => e.code === code)?.name ?? code}
+              renderOption={(code) => {
+                const e = expansions.find((x) => x.code === code);
+                if (!e) return code;
+                const date = releaseDateFor(code);
+                return (
+                  <span className="flex items-center justify-between gap-3 w-full">
+                    <span className="truncate">
+                      {e.name} <span className="text-ink-faint">({e.cardCount})</span>
+                    </span>
+                    {date && <span className="text-ink-faint text-[10px] shrink-0">{formatDateLong(date)}</span>}
                   </span>
-                  {date && <span className="text-ink-faint text-[10px] shrink-0">{formatDateLong(date)}</span>}
-                </span>
-              );
-            }}
-            footerNote={
-              UPCOMING_SETS.length > 0 ? (
-                <span>
-                  📅 In arrivo: {UPCOMING_SETS.map((s) => `${s.name} (${s.expectedDate})`).join(", ")}
-                </span>
-              ) : undefined
-            }
-          />
+                );
+              }}
+              footerNote={
+                UPCOMING_SETS.length > 0 ? (
+                  <span>
+                    📅 In arrivo: {UPCOMING_SETS.map((s) => `${s.name} (${s.expectedDate})`).join(", ")}
+                  </span>
+                ) : undefined
+              }
+            />
+            {expansionCode && (
+              <button
+                type="button"
+                onClick={() => onExpansionChange("")}
+                aria-label="Rimuovi filtro espansione"
+                title="Rimuovi filtro espansione"
+                className="shrink-0 min-h-8 min-w-8 flex items-center justify-center rounded-full text-ink-faint hover:text-signal-down hover:bg-base-surface2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
           <select
             value={sortBy}

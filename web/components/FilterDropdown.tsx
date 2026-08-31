@@ -40,8 +40,21 @@ export default function FilterDropdown({
         rootRef.current?.querySelector<HTMLButtonElement>("[aria-expanded]")?.focus();
       }
     }
+    // Un pannello aperto che resta li' finche' non lo richiudi a mano (o
+    // apri un altro filtro) e' scomodo su una pagina con piu' filtri in
+    // fila - un tap/click nel vuoto deve richiuderlo, come un qualunque
+    // menu a tendina.
+    function handlePointer(event: MouseEvent | TouchEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+    }
     document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("touchstart", handlePointer);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("touchstart", handlePointer);
+    };
   }, [open, setOpen]);
 
   const filtered = searchable && query
