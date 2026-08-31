@@ -138,6 +138,53 @@ for (const device of mobileDevices) {
   });
 }
 
+test.describe("barra filtri: si nasconde scrollando giu, torna scrollando su", () => {
+  test.use({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+
+  test("scroll giu nasconde, scroll su mostra, la maniglia funziona, lo scrollY si assesta", async ({ page }) => {
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    const wrap = page.locator('[data-testid="toolbar-collapse"]');
+    await expect(wrap).toBeVisible({ timeout: 30_000 });
+
+    const topHeight = (await wrap.boundingBox()).height;
+    expect(topHeight).toBeGreaterThan(100);
+
+    // Bug reale trovato durante lo sviluppo: comprimere la barra (sticky
+    // ma nel flusso del documento) cambia l'altezza della pagina, e senza
+    // overflow-anchor:none lo "scroll anchoring" nativo del browser
+    // compensava da solo scrollY per tenere fermo il contenuto sotto -
+    // generando un nuovo evento scroll che il hook interpretava come un
+    // gesto dell'utente, in un loop infinito che non si assestava mai.
+    await page.mouse.wheel(0, 600);
+    await page.mouse.wheel(0, 300);
+    await page.waitForTimeout(1500);
+    const y1 = await page.evaluate(() => window.scrollY);
+    await page.waitForTimeout(300);
+    const y2 = await page.evaluate(() => window.scrollY);
+    expect(y1).toBe(y2); // scrollY assestato, non ancora in oscillazione
+
+    const hiddenHeight = (await wrap.boundingBox()).height;
+    expect(hiddenHeight).toBeLessThan(40); // resta solo la maniglia
+
+    await page.mouse.wheel(0, -200);
+    await page.waitForTimeout(400);
+    const shownHeight = (await wrap.boundingBox()).height;
+    expect(shownHeight).toBeGreaterThan(100);
+
+    // Maniglia manuale, indipendente dallo scroll.
+    const handle = page.getByRole("button", { name: /Nascondi filtri|Mostra filtri/i });
+    await handle.tap();
+    await page.waitForTimeout(400);
+    expect((await wrap.boundingBox()).height).toBeLessThan(40);
+    await handle.tap();
+    await page.waitForTimeout(400);
+    expect((await wrap.boundingBox()).height).toBeGreaterThan(100);
+
+    const ov = await overflow(page);
+    expect(ov.scrollWidth).toBeLessThanOrEqual(ov.clientWidth + 1);
+  });
+});
+
 test.describe("desktop", () => {
   test.use({ viewport: { width: 1366, height: 900 } });
 

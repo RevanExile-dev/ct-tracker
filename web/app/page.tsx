@@ -11,6 +11,7 @@ import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { priceDeltaPct } from "@/lib/format";
 import { FilterPreset } from "@/lib/filterPreset";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
 import CardTile from "@/components/CardTile";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
@@ -61,6 +62,14 @@ function HomeContent() {
   });
   const filterKey = [search, expansionCode, selectedRarities.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
   const previousFilterKey = useRef(filterKey);
+
+  // Barra filtri sticky: si nasconde scrollando verso il basso (piu' spazio
+  // per vedere le carte, richiesto esplicitamente dall'utente - "quando
+  // scrollo in basso il filtro scompaia"), torna scrollando verso l'alto.
+  // Anche una maniglia manuale (sotto) puo' aprirla/chiuderla in qualunque
+  // momento, indipendentemente dallo scroll.
+  const toolbarWrapRef = useRef<HTMLDivElement>(null);
+  const [toolbarVisible, setToolbarVisible] = useHideOnScrollDown(toolbarWrapRef);
 
   // Specchia i filtri nella URL (senza aggiungere una entry nella cronologia
   // ad ogni singola modifica: solo la navigazione verso una carta la crea).
@@ -186,37 +195,73 @@ function HomeContent() {
   }
 
   return (
-    <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12">
+    // overflow-anchor:none e' necessario, non decorativo: la barra filtri
+    // sticky sotto cambia altezza reale (si comprime/espande) quando si
+    // nasconde/mostra scrollando. Senza questo, lo "scroll anchoring"
+    // nativo del browser compensa quel cambio di altezza spostando da solo
+    // scrollY per tenere fermo il contenuto sotto - il che genera un NUOVO
+    // evento scroll, che il hook interpreta come un gesto dell'utente e
+    // reagisce di nuovo, in un loop infinito (bug reale, osservato: scrollY
+    // oscillava senza mai assestarsi, decine di volte al secondo).
+    <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12 [overflow-anchor:none]">
       <SiteHeader
         lastSync={lastSync}
         totalCards={totalCards}
         onLogoClick={hasActiveFilters ? resetAllFilters : undefined}
       />
 
-      <div className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 py-3 bg-base-bg/85 backdrop-blur-sm">
-        <Toolbar
-          search={search}
-          onSearch={setSearch}
-          expansions={expansions}
-          expansionCode={expansionCode}
-          onExpansionChange={setExpansionCode}
-          rarities={rarities}
-          selectedRarities={selectedRarities}
-          onToggleRarity={handleToggleRarity}
-          languages={languages}
-          selectedLanguages={selectedLanguages}
-          onToggleLanguage={handleToggleLanguage}
-          conditions={conditions}
-          selectedConditions={selectedConditions}
-          onToggleCondition={handleToggleCondition}
-          onlyZero={onlyZero}
-          onToggleOnlyZero={() => setOnlyZero((v) => !v)}
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-          hasActiveFilters={hasActiveFilters}
-          onResetAll={resetAllFilters}
-          onApplyPreset={applyPreset}
-        />
+      <div ref={toolbarWrapRef} data-testid="toolbar-collapse" className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 bg-base-bg/85 backdrop-blur-sm">
+        <div
+          className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+            toolbarVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div className="py-3">
+              <Toolbar
+                search={search}
+                onSearch={setSearch}
+                expansions={expansions}
+                expansionCode={expansionCode}
+                onExpansionChange={setExpansionCode}
+                rarities={rarities}
+                selectedRarities={selectedRarities}
+                onToggleRarity={handleToggleRarity}
+                languages={languages}
+                selectedLanguages={selectedLanguages}
+                onToggleLanguage={handleToggleLanguage}
+                conditions={conditions}
+                selectedConditions={selectedConditions}
+                onToggleCondition={handleToggleCondition}
+                onlyZero={onlyZero}
+                onToggleOnlyZero={() => setOnlyZero((v) => !v)}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                hasActiveFilters={hasActiveFilters}
+                onResetAll={resetAllFilters}
+                onApplyPreset={applyPreset}
+              />
+            </div>
+          </div>
+        </div>
+        {/* Maniglia sempre visibile (fuori dal blocco che si comprime) per
+            riaprire/richiudere a mano, indipendentemente dallo scroll -
+            richiesto esplicitamente: "una tendina a scomparsa che lo fa
+            estendere o nascondere". */}
+        <button
+          type="button"
+          onClick={() => setToolbarVisible((v) => !v)}
+          aria-expanded={toolbarVisible}
+          aria-label={toolbarVisible ? "Nascondi filtri" : "Mostra filtri"}
+          className="w-full min-h-6 flex items-center justify-center text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
+        >
+          <span
+            aria-hidden
+            className={`text-[10px] transition-transform duration-300 ${toolbarVisible ? "rotate-180" : ""}`}
+          >
+            ▲
+          </span>
+        </button>
       </div>
 
       {expansionSummary && (
