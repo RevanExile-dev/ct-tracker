@@ -3,8 +3,8 @@ name: TEMP PR review (Gemini + Groq)
 # Workflow temporaneo per questa PR: il connettore GitHub della sessione non
 # espone workflow_dispatch. Usa lo stesso reviewer e gli stessi secret gia'
 # definiti dal progetto; verra' rimosso prima del merge.
-# Le review sono separate per provider e per area per evitare che un errore o
-# un limite di token di un provider impedisca all'altro di partire.
+# Le review sono separate per provider e per area. I due controlli dello stesso
+# provider sono serializzati per non sommare il consumo TPM del livello gratuito.
 on:
   pull_request:
     branches: [main]
@@ -15,61 +15,6 @@ permissions:
   contents: read
 
 jobs:
-  ui-groq:
-    name: Groq - UI responsive
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Installa dipendenze
-        run: pip install -r requirements.txt
-      - name: Review UI con Groq
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
-          AI_REVIEW_PATHS: |
-            web/components/FilterDropdown.tsx
-            web/components/Toolbar.tsx
-            web/tests/mobile-toolbar.spec.mjs
-            .github/workflows/ui_smoke.yml
-        run: >-
-          python scripts/ai_review.py
-          "Review tecnica focalizzata esclusivamente sul fix responsive dei filtri catalogo. Cerca bug concreti, regressioni, clipping/overflow, controlli schiacciati, problemi touch e differenze indesiderate tra 360/390/430/768/1366px. Controlla anche che i test Playwright verifichino il comportamento utile senza imporre layout arbitrari. Non suggerire cosmetica generica; segnala solo problemi reali con severita' e motivo."
-          origin/main HEAD groq
-
-  ui-gemini:
-    name: Gemini - UI responsive
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Installa dipendenze
-        run: pip install -r requirements.txt
-      - name: Review UI con Gemini
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
-          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
-          AI_REVIEW_PATHS: |
-            web/components/FilterDropdown.tsx
-            web/components/Toolbar.tsx
-            web/tests/mobile-toolbar.spec.mjs
-            .github/workflows/ui_smoke.yml
-        run: >-
-          python scripts/ai_review.py
-          "Review UX/UI e tecnica focalizzata sul fix responsive dei filtri catalogo. Cerca clipping, overflow, gerarchie scomode, breakpoint fragili, problemi touch e regressioni desktop. Valuta 360/390/430/768/1366px e controlla che il test Playwright sia coerente con l'obiettivo reale. Non modificare file e riporta solo problemi concreti con severita' e motivo, oppure conferma che non ne vedi."
-          origin/main HEAD gemini
-
   catalog-groq:
     name: Groq - catalogo e sync
     runs-on: ubuntu-latest
@@ -97,6 +42,36 @@ jobs:
         run: >-
           python scripts/ai_review.py
           "Review tecnica focalizzata su espansioni CardTrader e sincronizzazione. Verifica coerenza dei codici/date aggiunti per Perfect Order, Chaos Rising, Pitch Black e Delta Reign, separazione corretta da set giapponesi, logica --only-missing, no-op quando un set non ha ancora Singles e concurrency con i workflow prezzi. Cerca regressioni o rischi DB concreti. Non modificare file; riporta solo problemi reali con severita' e motivo."
+          origin/main HEAD groq
+
+  ui-groq:
+    name: Groq - UI responsive
+    needs: catalog-groq
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+      - name: Attendi finestra TPM Groq
+        run: sleep 6
+      - name: Review UI con Groq
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          AI_REVIEW_PATHS: |
+            web/components/FilterDropdown.tsx
+            web/components/Toolbar.tsx
+            web/tests/mobile-toolbar.spec.mjs
+            .github/workflows/ui_smoke.yml
+        run: >-
+          python scripts/ai_review.py
+          "Review tecnica focalizzata esclusivamente sul fix responsive dei filtri catalogo. Cerca bug concreti, regressioni, clipping/overflow, controlli schiacciati, problemi touch e differenze indesiderate tra 360/390/430/768/1366px. Controlla anche che i test Playwright verifichino il comportamento utile senza imporre layout arbitrari. Non suggerire cosmetica generica; segnala solo problemi reali con severita' e motivo."
           origin/main HEAD groq
 
   catalog-gemini:
@@ -127,4 +102,35 @@ jobs:
         run: >-
           python scripts/ai_review.py
           "Review indipendente focalizzata su catalogo e sync. Verifica coerenza interna dei codici/date dei set occidentali recenti, che set futuri o senza Singles non producano dati falsi, che --only-missing non salti casi importanti e che concurrency/no-op non introducano regressioni. Non modificare file e riporta solo problemi concreti con severita' e motivo, oppure conferma che non ne vedi."
+          origin/main HEAD gemini
+
+  ui-gemini:
+    name: Gemini - UI responsive
+    needs: catalog-gemini
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+      - name: Attendi prima del secondo check Gemini
+        run: sleep 3
+      - name: Review UI con Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          AI_REVIEW_PATHS: |
+            web/components/FilterDropdown.tsx
+            web/components/Toolbar.tsx
+            web/tests/mobile-toolbar.spec.mjs
+            .github/workflows/ui_smoke.yml
+        run: >-
+          python scripts/ai_review.py
+          "Review UX/UI e tecnica focalizzata sul fix responsive dei filtri catalogo. Cerca clipping, overflow, gerarchie scomode, breakpoint fragili, problemi touch e regressioni desktop. Valuta 360/390/430/768/1366px e controlla che il test Playwright sia coerente con l'obiettivo reale. Non modificare file e riporta solo problemi concreti con severita' e motivo, oppure conferma che non ne vedi."
           origin/main HEAD gemini
