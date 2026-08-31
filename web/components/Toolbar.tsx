@@ -59,11 +59,9 @@ export default function Toolbar({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Mobile/tablet: i controlli principali restano impilati a larghezza
-          piena. La vecchia griglia a due colonne comprimiva sia il filtro
-          espansioni sia l'ordinamento (e, quando il pannello si apriva,
-          lasciava il pannello intrappolato in mezza viewport). Solo da lg
-          torniamo al layout orizzontale desktop. */}
+      {/* Telefono: controlli impilati a larghezza piena. Tablet md: espansione
+          e ordinamento condividono una riga senza essere compressi. Desktop lg:
+          ricerca + controlli tornano nel layout orizzontale compatto. */}
       <div className="flex flex-col lg:flex-row lg:items-start gap-3">
         <input
           value={search}
@@ -72,7 +70,7 @@ export default function Toolbar({
           className="lg:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
         />
 
-        <div className="min-w-0 w-full grid grid-cols-1 gap-3 lg:w-auto lg:flex lg:flex-row">
+        <div className="min-w-0 w-full grid grid-cols-1 md:grid-cols-2 gap-3 lg:w-auto lg:flex lg:flex-row">
           <div className="min-w-0 w-full lg:w-auto flex items-center gap-1">
             <FilterDropdown
               label={selectedExpansion ? `${selectedExpansion.name} (${selectedExpansion.cardCount})` : "Tutte le espansioni"}
@@ -82,6 +80,7 @@ export default function Toolbar({
               searchable
               closeOnSelect
               layout="list"
+              compactFrom="lg"
               getSearchText={(code) => expansions.find((e) => e.code === code)?.name ?? code}
               renderOption={(code) => {
                 const e = expansions.find((x) => x.code === code);
