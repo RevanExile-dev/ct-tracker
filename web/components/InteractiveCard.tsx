@@ -93,7 +93,13 @@ export default function InteractiveCard({ children, className = "", level = "til
       onPointerMove={(event) => {
         if (pointerActiveRef.current && pointerIdRef.current === event.pointerId) {
           const start = dragStartRef.current;
-          if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 5) {
+          // Soglia piu' larga su touch: un dito reale si sposta facilmente
+          // di 5-15px anche durante un tap "fermo" (attrito schermo/pelle) -
+          // a 5px un tap normale veniva scambiato per un trascinamento e il
+          // click sulla carta soppresso, rendendo le carte del binder poco
+          // reattive al tocco. Il mouse resta a 5px: un click e' gia' preciso.
+          const threshold = event.pointerType === "touch" ? 12 : 5;
+          if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= threshold) {
             suppressClickRef.current = true;
           }
           queuePoint(event.clientX, event.clientY);

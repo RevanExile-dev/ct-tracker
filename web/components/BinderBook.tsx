@@ -106,6 +106,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const [flip, setFlip] = useState<Flip | null>(null);
   const gestureStart = useRef<{ x: number; y: number } | null>(null);
   const didSwipe = useRef(false);
+  const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screens = useMemo(() => buildScreens(cards, singlePage ? 4 : 9), [cards, singlePage]);
   const step = singlePage ? 1 : 2;
   const viewPage = singlePage ? Math.min(page, screens.length - 1) : Math.min(Math.floor(page / 2) * 2, Math.max(0, screens.length - 1));
@@ -122,17 +123,41 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
 
   useEffect(() => onPageChange?.(viewPage), [viewPage, onPageChange]);
 
+  function clearFlipTimeout() {
+    if (flipTimeoutRef.current !== null) {
+      clearTimeout(flipTimeoutRef.current);
+      flipTimeoutRef.current = null;
+    }
+  }
+
   function turn(direction: "next" | "prev") {
     if ((direction === "next" && !canNext) || (direction === "prev" && !canPrev)) return;
     setFlip({ direction, started: false });
     requestAnimationFrame(() => requestAnimationFrame(() => setFlip({ direction, started: true })));
+    // Rete di sicurezza: onTransitionEnd non e' garantito al 100% (tab in
+    // background, frame drop, dispositivi lenti) - senza un fallback un solo
+    // evento perso blocca la pagina per sempre, perche' canNext/canPrev
+    // richiedono flip===null. Il timeout completa comunque il turn dopo la
+    // durata della transizione CSS (680ms, vedi globals.css) + margine.
+    clearFlipTimeout();
+    flipTimeoutRef.current = setTimeout(finishFlip, 900);
   }
 
   function finishFlip() {
-    if (!flip) return;
-    setPage((current) => Math.max(0, Math.min(screens.length - 1, current + (flip.direction === "next" ? step : -step))));
-    setFlip(null);
+    clearFlipTimeout();
+    // Aggiornamento funzionale: finishFlip puo' arrivare sia da
+    // onTransitionEnd sia dal timeout di sicurezza sopra, con closure creata
+    // in render diversi - leggere flip da state (non dalla closure esterna)
+    // evita di agire su un valore stantio o di eseguire il turn due volte.
+    setFlip((current) => {
+      if (!current) return null;
+      const direction = current.direction;
+      setPage((page) => Math.max(0, Math.min(screens.length - 1, page + (direction === "next" ? step : -step))));
+      return null;
+    });
   }
+
+  useEffect(() => clearFlipTimeout, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
