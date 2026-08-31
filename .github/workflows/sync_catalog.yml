@@ -2,6 +2,17 @@ name: Sync catalogo (carte tracciate)
 
 on:
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "config/tracked_sets.json"
+  schedule:
+    # Controllo leggero giornaliero: in automatico vengono sincronizzate
+    # soltanto le espansioni tracciate che non hanno ancora carte nel DB.
+    # Cosi' i set aggiunti da CardTrader dopo il loro annuncio entrano nel
+    # catalogo senza dover ricordare un lancio manuale e senza riscrivere
+    # ogni giorno tutte le decine di migliaia di blueprint gia' presenti.
+    - cron: "30 4 * * *"
 
 permissions:
   contents: write
@@ -30,7 +41,12 @@ jobs:
       - name: Sincronizza catalogo
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
-        run: python scripts/sync_catalog.py
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python scripts/sync_catalog.py
+          else
+            python scripts/sync_catalog.py --only-missing
+          fi
 
       - name: Copia i DB per il sito Next.js
         run: |
