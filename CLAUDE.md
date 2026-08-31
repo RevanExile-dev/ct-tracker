@@ -23,6 +23,16 @@ chiave del secret corrispondente). Funziona cosi' da qualunque sessione
 Claude Code — cloud, locale, cellulare — perché non dipende da nulla
 installato su una macchina specifica.
 
+Da fine agosto 2026 c'è anche un quarto ruolo: **ChatGPT come implementatore
+delegato** (non un reviewer di sola lettura come Gemini/Groq — scrive
+codice, ma isolato su branch proprie e Draft PR, mai un merge diretto).
+Canale: PR permanente #6 (`coord/chatgpt-dispatch`, mai da mergiare/chiudere)
+— Claude delega postando un commento `[CHATGPT]` con obiettivo/criteri di
+accettazione/scope, ChatGPT risponde sulla stessa PR con la Draft PR
+risultante. Per la meccanica completa (formato del commento, quando delegare
+vs tenere per sé, come evitare di pestarsi i piedi, revisione prima del
+merge) vedi `docs/multi_ai_coordination.md` — non ripeterla qui.
+
 Due provider disponibili, entrambi a livello gratuito:
 - **Gemini** — modello generalista, quota giornaliera per chiave, supporta
   chiavi di riserva (`GEMINI_API_KEY_2`, `_3`, ...) da account Google
