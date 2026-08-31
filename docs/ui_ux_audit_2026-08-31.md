@@ -340,16 +340,102 @@ persona prima di qualunque adozione.
 
 ---
 
+## Esito della seconda opinione (Gemini, `ai_review.yml` run #23)
+
+Riassunto critico, non trascrizione integrale (log completo nel workflow
+"AI review" su questo branch). Verificato punto per punto contro il codice
+reale prima di accettarlo, come da disciplina del progetto — non preso per
+buono a scatola chiusa.
+
+**Confermato come problema reale e prioritario** (accordo pieno): mancanza
+di debounce sulla ricerca (punto 3), messaggio d'errore dev-facing (punto
+7), `<select>` nativo incoerente (punto 2), buco breakpoint tablet
+(punto 4).
+
+**Correzioni accettate al mio ragionamento:**
+
+- **Tilt/glow su tap mobile (punto 1) — rischio che avevo sottovalutato.**
+  Gemini nota che un'animazione di tilt avviata sul tap introdurrebbe un
+  ritardo percepito prima della navigazione (l'utente su mobile si aspetta
+  reattività immediata: tap → pagina). Accolgo la critica: **l'alternativa
+  "shimmer ambient periodico"** che avevo già proposto come opzione B è
+  la scelta più sicura, non il tilt-su-tap come opzione principale.
+- **View Transitions API griglia→dettaglio (punto 6) — rischio tecnico che
+  avevo sottostimato.** Cross-route View Transitions in Next.js App Router
+  sono ancora un'area delicata (richiedono lavoro extra per integrarsi
+  bene con l'App Router) e possono interagire male con
+  `useScrollRestoration`, già presente e già fonte di un bug reale in
+  passato in questa sessione. Declassato da "idea con potenziale reale" a
+  **prototipo a rischio, da validare in isolamento prima di qualunque
+  adozione** — non un intervento a basso rischio.
+- **Effetto olografico per rarità (punto 1) — riclassificato.** È una
+  richiesta di funzionalità/estetica legittima per un tracker di carte da
+  collezione, non la correzione di un gap di usabilità: lo tratto come tale
+  nella classificazione finale, non allo stesso livello dei problemi
+  strutturali sopra.
+
+**Tensione interna segnalata, valida:** propongo sia di aver appena
+verificato l'hide-on-scroll della toolbar filtri (già spedito) sia di
+applicare lo stesso trattamento all'header (punto 8) — due elementi
+indipendenti che si comprimono/nascondono allo scroll aumentano il rischio
+di layout shift e di collisioni z-index con pannelli filtro aperti. Se
+questo intervento verrà mai implementato, va trattato come **un singolo
+sistema di scroll behavior condiviso tra header e toolbar**, non due hook
+`useHideOnScrollDown` indipendenti — annotato nel riepilogo finale.
+
+**Nuovi pattern trovati da Gemini, verificati e confermati reali** (li
+aggiungo alla lista, non erano nel mio giro):
+
+- **[Nuovo] Nessun fallback per immagini che falliscono il caricamento.**
+  Verificato via grep: nessun `onError`/`onerror` in tutto `web/components`.
+  Un URL immagine CardTrader morto (404, CDN irraggiungibile) lascia oggi
+  un riquadro vuoto/rotto invece di un'immagine placeholder (es. il retro
+  di una carta Pokémon) — pattern mancante sia in `CardTile.tsx` sia in
+  `InteractiveCard`/pagina dettaglio.
+- **[Nuovo] Tooltip `title=` invisibili su touch — stesso pattern
+  dell'asimmetria hover/tap già trovato per il tilt 3D, ma più esteso.**
+  Verificato via grep: l'attributo `title` (tooltip nativo del browser, che
+  su praticamente nessun browser mobile è raggiungibile via tap/long-press)
+  è usato 8 volte in 5 file (`CardTile.tsx`, `ConditionBadge.tsx`,
+  `Toolbar.tsx`, `FilterPresetControls.tsx`, `card/[id]/page.tsx`) per
+  spiegazioni non banali: lingua della carta, badge "NM Zero", nome
+  condizione per esteso, paese di spedizione, media prezzo N giorni. Su
+  desktop questi dettagli sono scopribili via hover; **su mobile sono
+  semplicemente persi**, non solo meno comodi — stesso principio
+  dell'asimmetria già segnalata al punto 1, qui applicato sistematicamente
+  invece che a un solo componente.
+
+**Claim di Gemini verificato e scartato (non un gap reale):** ha segnalato
+come mancante uno stato "0 risultati" — verificato in `page.tsx:326-330`,
+esiste già ("Nessuna carta trovata. Prova a modificare la ricerca o i
+filtri."). Falso positivo dovuto al fatto che il reviewer vede solo il
+diff (il documento di audit), non l'intero codice sorgente — confermato
+perché in questo caso avevo il file aperto io stesso. Non incluso nel
+riepilogo.
+
+**Claim di Gemini non verificabile senza ulteriore lettura, non incluso per
+ora:** ipotesi che esistano campi filtro numerici (es. intervallo di
+prezzo min/max) con lo stesso problema di debounce del punto 3. Verificato:
+**non esiste alcun filtro di intervallo prezzo nel codice attuale** — il
+campo di ricerca testuale in `FilterDropdown` (prop `searchable`, usato dal
+filtro espansioni) filtra un array già in memoria via JS, non una query SQL
+ripetuta — natura del problema diversa (costo trascurabile), quindi non
+equiparabile al punto 3. Nessuna azione aggiuntiva necessaria qui.
+
+---
+
 ## Riepilogo — modifiche candidate (non implementate)
 
 Elenco piatto per la revisione ChatGPT/riconciliazione finale, senza
 priorità ancora assegnata in modo formale (richiesta come compito separato
 al reviewer):
 
-1. Modulare tilt/glow/shimmer della carta per rarità.
-2. Attivare un accenno di tilt/glow anche su tap semplice (non solo
-   drag) su mobile, o un'alternativa ambient (es. shimmer periodico
-   leggero) per rendere l'effetto visibile nel flusso d'uso reale.
+1. **[Feature request, non bug]** Modulare tilt/glow/shimmer della carta
+   per rarità.
+2. Rendere l'effetto 3D visibile nel flusso d'uso reale su mobile —
+   **non** con tilt sul tap (rischio input-lag percepito prima della
+   navigazione, criticato da Gemini e accolto), ma con uno shimmer ambient
+   periodico leggero indipendente dal tocco.
 3. Zoom/lightbox sull'immagine carta in pagina dettaglio.
 4. Riga di chip rimovibili per i filtri attivi.
 5. Sostituire il `<select>` ordinamento con un `FilterDropdown` coerente.
@@ -366,7 +452,11 @@ al reviewer):
 14. Feedback esplicito su "Reset filtri".
 15. Placeholder immagine più curato durante il caricamento (blur-up/shimmer
     invece di fade su sfondo piatto).
-16. Prototipo View Transitions API per la navigazione griglia → dettaglio.
+16. **[Rischio tecnico reale, non "basso rischio"]** Prototipo View
+    Transitions API per la navigazione griglia → dettaglio, DA VALIDARE IN
+    ISOLAMENTO prima di adottare: interazione cross-route in Next.js App
+    Router ancora delicata, rischio concreto di regressione su
+    `useScrollRestoration`.
 17. Profilare se il re-stagger della griglia si ripete indesideratamente
     ad ogni variazione di filtro/ricerca.
 18. Indicatore leggero di refetch-in-corso sulla griglia filtri (non un
@@ -376,17 +466,39 @@ al reviewer):
 20. Ridurre il peso visivo di "Inserzioni attive" rispetto al prezzo in
     evidenza in pagina carta.
 21. Recuperare spazio verticale dell'header non-compact sulla home
-    (stesso obiettivo dell'hide-on-scroll toolbar, applicato all'header).
+    (stesso obiettivo dell'hide-on-scroll toolbar, applicato all'header) —
+    **se implementato insieme al punto 8 (hide-on-scroll toolbar già
+    live), va progettato come UN sistema di scroll behavior condiviso
+    header+toolbar, non due hook indipendenti**: rischio segnalato da
+    Gemini di layout shift/collisioni z-index altrimenti.
 22. Pulsante "copia link" su una carta/vista filtrata.
 23. `2xl:grid-cols-6` per desktop molto larghi.
 24. Prototipo WebGL (es. pattern canvasui.dev) mirato SOLO alla card hero
     della pagina dettaglio, con fallback CSS e feature-detection — non
-    sulla griglia.
+    sulla griglia. Gemini è più scettico di me sul rapporto costo/beneficio
+    anche per questo singolo caso: da trattare come esperimento a basso
+    impegno con criterio di stop chiaro, non come intervento pianificato.
+25. **[Nuovo, da revisione Gemini, verificato]** Fallback per immagini che
+    falliscono il caricamento (nessun `onError` in tutto `web/components`
+    oggi) — placeholder dedicato invece di un riquadro rotto/vuoto.
+26. **[Nuovo, da revisione Gemini, verificato]** I tooltip `title=` nativi
+    (8 occorrenze in 5 file: lingua, badge NM Zero, condizione, paese di
+    spedizione, media prezzo) sono invisibili su touch — stesso principio
+    dell'asimmetria hover/tap del punto 1/2, qui sistemico. Servirebbe un
+    meccanismo esplicito tap-to-reveal per queste informazioni su mobile,
+    non solo l'attributo HTML nativo.
 
 File/componenti principalmente coinvolti se questi punti venissero
 implementati: `web/components/InteractiveCard.tsx`,
 `web/components/CardTile.tsx`, `web/components/Toolbar.tsx`,
-`web/components/FilterDropdown.tsx`, `web/components/SiteHeader.tsx`,
-`web/components/ConditionBadge.tsx` (icone), `web/app/page.tsx`,
-`web/app/card/[id]/page.tsx`, `web/app/globals.css`, `web/lib/db.ts`
-(debounce/query).
+`web/components/FilterDropdown.tsx`, `web/components/FilterPresetControls.tsx`
+(tooltip title=), `web/components/SiteHeader.tsx`,
+`web/components/ConditionBadge.tsx` (icone, tooltip title=),
+`web/app/page.tsx`, `web/app/card/[id]/page.tsx`, `web/app/globals.css`,
+`web/lib/db.ts` (debounce/query).
+
+Verificato con revisione indipendente Gemini (`ai_review.yml` run #23,
+2026-08-31 — log completo nel workflow "AI review" su questo branch):
+sezione dedicata sopra ("Esito della seconda opinione") con correzioni
+accolte, un falso positivo scartato dopo verifica, e due nuovi pattern
+reali aggiunti alla lista (punti 25-26).
