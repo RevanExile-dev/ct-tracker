@@ -17,6 +17,11 @@ esaurita (quota giornaliera/di rate del livello gratuito), si passa
 automaticamente alla successiva invece di fallire subito - ma per Groq il
 rate limit e' per organizzazione, non per chiave: piu' chiavi dello STESSO
 account Groq non aumentano la quota reale, serve un account diverso.
+
+Per review grandi si puo' impostare AI_REVIEW_PATHS con una lista di path
+separati da newline o virgola: il provider ricevera' solo quella parte del
+diff. Se la variabile non e' impostata il comportamento resta invariato e
+viene revisionato l'intero diff (esclusi lockfile/DB generati).
 """
 import os
 import subprocess
@@ -63,9 +68,31 @@ DIFF_EXCLUDE_PATHSPECS = [
 ]
 
 
+def _review_pathspecs() -> list[str]:
+    """Restituisce i path da includere nella review.
+
+    AI_REVIEW_PATHS e' intenzionalmente semplice: newline o virgole. I path
+    vengono passati direttamente a `git diff --`, quindi possono essere file,
+    directory o pathspec Git. Senza variabile mantiene il comportamento storico
+    e revisiona tutto il repository.
+    """
+    raw = os.environ.get("AI_REVIEW_PATHS", "").strip()
+    if not raw:
+        return ["."]
+
+    paths: list[str] = []
+    for line in raw.splitlines():
+        for part in line.split(","):
+            value = part.strip()
+            if value:
+                paths.append(value)
+    return paths or ["."]
+
+
 def _git_diff(base_ref: str, head_ref: str) -> str:
+    include_paths = _review_pathspecs()
     result = subprocess.run(
-        ["git", "diff", f"{base_ref}...{head_ref}", "--", ".", *DIFF_EXCLUDE_PATHSPECS],
+        ["git", "diff", f"{base_ref}...{head_ref}", "--", *include_paths, *DIFF_EXCLUDE_PATHSPECS],
         check=True, capture_output=True, text=True,
     )
     diff = result.stdout
