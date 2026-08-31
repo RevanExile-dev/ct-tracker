@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
+
 const mobileViewports = [
   { width: 360, height: 800 },
   { width: 390, height: 844 },
@@ -10,7 +12,7 @@ const mobileViewports = [
 for (const viewport of mobileViewports) {
   test(`catalog toolbar stays usable at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
     const search = page.getByPlaceholder("Cerca una carta per nome…");
     await expect(search).toBeVisible({ timeout: 30_000 });
@@ -44,8 +46,8 @@ for (const viewport of mobileViewports) {
     expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(viewport.width + 1);
 
     // Il bug mostrato dall'utente produceva un documento piu' largo della
-    // viewport e contenuto tagliato. Controlliamo sia col pannello chiuso sia
-    // nel caso peggiore: pannello espansioni aperto.
+    // viewport e contenuto tagliato. Controlliamo il caso peggiore: pannello
+    // espansioni aperto.
     const overflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
@@ -63,7 +65,7 @@ for (const viewport of mobileViewports) {
 
 test("desktop keeps compact horizontal primary controls", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
   const search = page.getByPlaceholder("Cerca una carta per nome…");
   const expansion = page.getByRole("button", { name: /Tutte le espansioni/i });
