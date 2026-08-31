@@ -3,6 +3,14 @@
  * estrapolati sullo stesso gradiente verde->rosso. Scala a 5 livelli
  * verificata sui dati reali del catalogo (nessun "Heavily Played" trovato). */
 const CONDITION_STYLES: Record<string, { label: string; className: string }> = {
+  // Rarissima su CardTrader (1 inserzione su oltre 500k campionate) ma
+  // reale, non un errore di battitura: un grado sopra Near Mint. Senza
+  // questa voce cadeva nel fallback generico (label "MI", grigio neutro),
+  // visibile nella UI come una pillola anomala/spenta tra le altre colorate.
+  "Mint": {
+    label: "MT",
+    className: "bg-cyan-500/15 text-cyan-400 border-cyan-500/40",
+  },
   "Near Mint": {
     label: "NM",
     className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/40",

@@ -131,7 +131,7 @@ export default function Toolbar({
         </div>
       </div>
 
-      <div className="filter-toolbar flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
+      <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
         <FilterDropdown
           label="Filtra per rarità"
           options={rarities}
@@ -161,7 +161,7 @@ export default function Toolbar({
         <button
           type="button"
           onClick={onToggleOnlyZero}
-          className={`min-h-11 w-full sm:w-auto text-xs px-3 py-2 rounded-full border transition-colors active:scale-95 ${
+          className={`min-h-11 text-xs px-3 py-2 rounded-full border transition-colors active:scale-95 ${
             onlyZero
               ? "bg-accent/10 border-accent/60 text-accent-bright"
               : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -173,7 +173,7 @@ export default function Toolbar({
           <button
             type="button"
             onClick={onResetAll}
-            className="min-h-11 w-full sm:w-auto text-xs px-2 font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
+            className="min-h-11 text-xs px-2 font-mono uppercase tracking-wider text-ink-faint hover:text-signal-down transition-colors"
           >
             ✕ Reset filtri
           </button>

@@ -244,11 +244,13 @@ export default function FilterDropdown({
         </div>
       )}
 
-      {/* Telefono: bottom sheet in portale su document.body, con backdrop
-          dedicato - chiusura affidabile con UN solo evento click reale sul
-          backdrop, niente listener document-level duplicati da inseguire. */}
+      {/* Telefono: modale centrato in portale su document.body (non un
+          bottom sheet - richiesto esplicitamente: "quando apro un filtro
+          nn si posiziona in centro"), con backdrop dedicato - chiusura
+          affidabile con UN solo evento click reale sul backdrop, niente
+          listener document-level duplicati da inseguire. */}
       {mounted && createPortal(
-        <div className="sm:hidden fixed inset-0 z-50" aria-hidden={!open}>
+        <div className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-4" aria-hidden={!open}>
           <div
             onClick={close}
             className={`filter-panel-anim absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out ${visible ? "opacity-100" : "opacity-0"}`}
@@ -259,8 +261,8 @@ export default function FilterDropdown({
             role="dialog"
             aria-modal="true"
             aria-label={label}
-            className={`filter-panel-anim absolute inset-x-0 bottom-0 flex flex-col max-h-[80vh] rounded-t-2xl border-t border-base-border bg-base-surface shadow-card transition-transform duration-200 ${
-              visible ? "translate-y-0 ease-out" : "translate-y-full ease-in"
+            className={`filter-panel-anim relative w-full max-w-sm max-h-[80vh] flex flex-col rounded-2xl border border-base-border bg-base-surface shadow-card transition-[opacity,transform] duration-200 ${
+              visible ? "opacity-100 scale-100 ease-out" : "opacity-0 scale-95 ease-in"
             }`}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-base-border shrink-0">

@@ -445,7 +445,7 @@ export async function fetchCatalogStats(): Promise<{ totalCards: number; pricedC
  * alla peggiore (stessa scala usata da ConditionBadge). */
 export async function fetchConditions(): Promise<string[]> {
   const db = await getDb();
-  const order = ["Near Mint", "Slightly Played", "Moderately Played", "Played", "Poor"];
+  const order = ["Mint", "Near Mint", "Slightly Played", "Moderately Played", "Played", "Poor"];
   const stmt = db.prepare(
     "SELECT DISTINCT condition FROM price_listings WHERE condition IS NOT NULL AND condition != ''"
   );

@@ -23,7 +23,7 @@ const mobileDevices = [
 ];
 
 for (const device of mobileDevices) {
-  test.describe(`bottom sheet filtri - telefono ${device.name}`, () => {
+  test.describe(`modale filtri centrato - telefono ${device.name}`, () => {
     test.use({ viewport: device.viewport, hasTouch: true, isMobile: true });
 
     test(`nessun overflow e nessuna chiusura automatica a ${device.name}`, async ({ page }) => {
@@ -57,6 +57,15 @@ for (const device of mobileDevices) {
       expect(sheetBox).not.toBeNull();
       expect(sheetBox.x).toBeGreaterThanOrEqual(-1);
       expect(sheetBox.x + sheetBox.width).toBeLessThanOrEqual(device.viewport.width + 1);
+
+      // Richiesto esplicitamente dall'utente: un modale centrato, non un
+      // bottom sheet ancorato in fondo allo schermo ("quando apro un
+      // filtro nn si posiziona in centro"). Guardia di regressione: il
+      // centro del dialogo deve restare vicino al centro del viewport.
+      const dialogCenterX = sheetBox.x + sheetBox.width / 2;
+      const dialogCenterY = sheetBox.y + sheetBox.height / 2;
+      expect(Math.abs(dialogCenterX - device.viewport.width / 2)).toBeLessThan(10);
+      expect(Math.abs(dialogCenterY - device.viewport.height / 2)).toBeLessThan(device.viewport.height * 0.15);
 
       ov = await overflow(page);
       expect(ov.scrollWidth).toBeLessThanOrEqual(ov.clientWidth + 1);

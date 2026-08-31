@@ -66,7 +66,7 @@ function CardDetailContent() {
   }, [listings]);
 
   const availableConditions = useMemo(() => {
-    const order = ["Near Mint", "Slightly Played", "Moderately Played", "Played", "Poor"];
+    const order = ["Mint", "Near Mint", "Slightly Played", "Moderately Played", "Played", "Poor"];
     const set = new Set(listings.map((l) => l.condition).filter((c): c is string => !!c));
     return Array.from(set).sort((a, b) => {
       const ra = order.indexOf(a), rb = order.indexOf(b);
