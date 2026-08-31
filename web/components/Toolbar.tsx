@@ -80,7 +80,6 @@ export default function Toolbar({
               searchable
               closeOnSelect
               layout="list"
-              compactFrom="lg"
               getSearchText={(code) => expansions.find((e) => e.code === code)?.name ?? code}
               renderOption={(code) => {
                 const e = expansions.find((x) => x.code === code);

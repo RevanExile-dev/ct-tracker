@@ -97,25 +97,6 @@ body::after {
   -webkit-user-drag: none;
 }
 
-/* Un solo pannello filtro e' aperto alla volta. Quando lo e', scende su una
-   riga propria e usa tutta la larghezza disponibile: le pillole si
-   distribuiscono orizzontalmente invece di creare una colonna alta con un
-   grande vuoto accanto. */
-.filter-toolbar > .filter-inline.is-open {
-  flex-basis: 100%;
-  max-width: 100%;
-  order: 20;
-}
-
-.filter-toolbar > .filter-inline.is-open .filter-panel {
-  width: 100%;
-  max-width: 100%;
-}
-
-.filter-toolbar > .filter-inline.is-open .filter-panel > .flex {
-  max-width: none;
-}
-
 .interactive-card::before {
   content: "";
   position: absolute;
@@ -669,7 +650,7 @@ body::after {
   .brand-wave,
   .binder-pocket-caption,
   .binder-flip,
-  .filter-panel-grid {
+  .filter-panel-anim {
     transition: none !important;
   }
 }
