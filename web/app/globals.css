@@ -664,6 +664,13 @@ body::after {
 .binder-flip-back {
   transform: rotateY(180deg);
 }
+@keyframes binder-page-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.binder-page-fade {
+  animation: binder-page-fade-in 260ms ease-out;
+}
 
 @media (hover: none) {
   .binder-pocket-caption { display: none; }
@@ -695,6 +702,9 @@ body::after {
   .binder-flip,
   .filter-panel-anim {
     transition: none !important;
+  }
+  .binder-page-fade {
+    animation: none !important;
   }
 }
 

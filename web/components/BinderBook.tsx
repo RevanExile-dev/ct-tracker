@@ -63,13 +63,22 @@ function Pocket({ card, returnTo }: { card: CardRow | undefined; returnTo: strin
   );
 }
 
-function ScreenView({ screen, returnTo }: { screen: Screen | undefined; returnTo: string }) {
+// Chiave stabile per identita' di contenuto: usata per far rimontare
+// ScreenView (e quindi far ripartire la dissolvenza .binder-page-fade)
+// solo quando lo "schermo" mostrato cambia davvero, non ad ogni render.
+function screenKey(screen: Screen | undefined): string {
+  if (!screen) return "blank";
+  return screen.kind === "cover" ? "cover" : `sheet-${screen.sheetNumber}`;
+}
+
+function ScreenView({ screen, returnTo, fade = false }: { screen: Screen | undefined; returnTo: string; fade?: boolean }) {
+  const fadeClass = fade ? " binder-page-fade" : "";
   if (!screen) {
-    return <div className="binder-page binder-page-blank"><span className="text-ink-faint/50 text-xs font-mono">— fine binder —</span></div>;
+    return <div className={`binder-page binder-page-blank${fadeClass}`}><span className="text-ink-faint/50 text-xs font-mono">— fine binder —</span></div>;
   }
   if (screen.kind === "cover") {
     return (
-      <div className="binder-page binder-page-cover">
+      <div className={`binder-page binder-page-cover${fadeClass}`}>
         <div className="binder-cover-shine" />
         <div className="relative z-10 flex flex-col h-full justify-between p-[clamp(1.25rem,4vw,3rem)]">
           <div>
@@ -86,7 +95,7 @@ function ScreenView({ screen, returnTo }: { screen: Screen | undefined; returnTo
   }
   const cells = Array.from({ length: screen.cells }, (_, index) => screen.cards[index]);
   return (
-    <div className="binder-page binder-page-sheet">
+    <div className={`binder-page binder-page-sheet${fadeClass}`}>
       <div className={`binder-sheet-grid ${screen.cells === 4 ? "binder-sheet-grid-4" : "binder-sheet-grid-9"}`}>
         {cells.map((card, index) => <Pocket key={card?.id ?? `empty-${index}`} card={card} returnTo={returnTo} />)}
       </div>
@@ -204,11 +213,11 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
         }}
       >
         <div className={`binder-spread ${singlePage ? "is-single" : "is-double"}`}>
-          <div className="binder-slot binder-slot-left"><ScreenView screen={underlyingLeft} returnTo={returnTo} /></div>
+          <div className="binder-slot binder-slot-left"><ScreenView key={screenKey(underlyingLeft)} screen={underlyingLeft} returnTo={returnTo} fade /></div>
           {!singlePage && (
             <>
               <div className="binder-spine" aria-hidden><span className="binder-ring" /><span className="binder-ring" /><span className="binder-ring" /></div>
-              <div className="binder-slot binder-slot-right"><ScreenView screen={underlyingRight} returnTo={returnTo} /></div>
+              <div className="binder-slot binder-slot-right"><ScreenView key={screenKey(underlyingRight)} screen={underlyingRight} returnTo={returnTo} fade /></div>
             </>
           )}
 
