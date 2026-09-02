@@ -136,8 +136,17 @@ export default function FilterDropdown({
     }
     reposition();
     window.addEventListener("resize", reposition);
+    // Un ResizeObserver sul pannello, non solo sulla finestra: con
+    // layout="list" e ricerca (es. "Tutte le espansioni") digitare nella
+    // casella filtra le opzioni e puo' restringere il contenuto piu' largo
+    // che determina w-max, cambiando la larghezza del pannello A PANNELLO
+    // GIA' APERTO - senza questo, uno shift calcolato sulla larghezza
+    // iniziale resterebbe quello anche dopo che il pannello si e' ristretto.
+    const ro = new ResizeObserver(reposition);
+    ro.observe(panel);
     return () => {
       window.removeEventListener("resize", reposition);
+      ro.disconnect();
       panel.style.removeProperty("--tw-translate-x");
     };
   }, [open, mounted]);
