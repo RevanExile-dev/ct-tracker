@@ -462,11 +462,53 @@ body::after {
 .brand-wordmark {
   letter-spacing: -0.045em;
 }
-.brand-wordmark span:first-child {
-  color: #70e0d7;
+
+/* Lamina olografica sul nome del sito: stessa palette del bordo delle
+   carte (teal/magenta/oro), ma un momento a se' - una rivelazione decisa
+   al primo paint (non un fade generico: scala da leggermente piu' piccola
+   + flash di luminosita', come una carta foil che "accende" la luce
+   appena la giri) seguita da uno shimmer continuo ma discreto. Un solo
+   elemento, nessun testo duplicato: il bagliore e' un drop-shadow, che
+   segue la sagoma del testo clippato (funziona perche' opera sul canale
+   alpha del risultato gia' clippato, non su un box rettangolare). */
+.brand-wordmark-holo {
+  background: linear-gradient(100deg, #2dd8c9 0%, #e85fd1 25%, #f4c15c 50%, #e85fd1 75%, #2dd8c9 100%);
+  background-size: 300% auto;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 18px rgba(232, 95, 209, 0.25));
+  animation:
+    brand-wordmark-shimmer 5s ease-in-out infinite,
+    brand-wordmark-reveal 900ms var(--ease-out-premium) backwards;
 }
-.brand-wordmark span:last-child {
-  color: #ed78d8;
+.brand-logo:hover .brand-wordmark-holo,
+.brand-logo:focus-visible .brand-wordmark-holo {
+  animation:
+    brand-wordmark-shimmer 5s ease-in-out infinite,
+    brand-wordmark-pulse 700ms var(--ease-out-premium);
+}
+@keyframes brand-wordmark-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes brand-wordmark-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: drop-shadow(0 0 0 rgba(232, 95, 209, 0)) brightness(1.7);
+  }
+  55% { opacity: 1; filter: brightness(1.3); }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 18px rgba(232, 95, 209, 0.25)) brightness(1);
+  }
+}
+@keyframes brand-wordmark-pulse {
+  0%, 100% { filter: drop-shadow(0 0 18px rgba(232, 95, 209, 0.25)) brightness(1); }
+  45% { filter: drop-shadow(0 0 28px rgba(244, 193, 92, 0.5)) brightness(1.35); }
 }
 .brand-mark {
   flex: none;
@@ -643,6 +685,7 @@ body::after {
 
 @media (prefers-reduced-motion: reduce) {
   .brand-spark,
+  .brand-wordmark-holo,
   .binder-cover-shine {
     animation: none !important;
   }
