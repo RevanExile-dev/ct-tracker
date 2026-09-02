@@ -49,31 +49,39 @@ export default function PriceChart({
   currency: string;
 }) {
   const withPrice = points.filter((p) => p.min_price_cents !== null);
-  const hasBest = points.some((p) => p.best_price_cents !== null);
+  // Tracciamo la serie ESATTA italiano+Near Mint+CardTrader Zero, non piu'
+  // best_price_cents: quest'ultima e' un'euristica a cascata (allenta i
+  // vincoli se non trova un'offerta con tutti e tre insieme) che
+  // l'etichetta "Near Mint · CardTrader Zero" qui sotto rendeva scorretta
+  // ogni volta che il fallback scattava (bug segnalato: un'offerta magari
+  // Slightly Played o senza Zero veniva comunque chiamata "Near Mint ·
+  // Zero"). it_nm_zero_price_cents non ha questo problema per costruzione:
+  // o e' esattamente questo profilo, o e' NULL.
+  const hasExact = points.some((p) => p.it_nm_zero_price_cents !== null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const { minLine, bestLine, areaPath, min, max } = useMemo(() => {
+  const { minLine, exactLine, areaPath, min, max } = useMemo(() => {
     if (withPrice.length === 0) {
       return {
         minLine: { path: "", coords: [] as { x: number; y: number; idx: number }[] },
-        bestLine: { path: "", coords: [] as { x: number; y: number; idx: number }[] },
+        exactLine: { path: "", coords: [] as { x: number; y: number; idx: number }[] },
         areaPath: "",
         min: 0,
         max: 0,
       };
     }
     const allValues = withPrice.flatMap((p) =>
-      [p.min_price_cents, p.best_price_cents].filter((v): v is number => v !== null)
+      [p.min_price_cents, p.it_nm_zero_price_cents].filter((v): v is number => v !== null)
     );
     const min = Math.min(...allValues);
     const max = Math.max(...allValues);
     const minLine = buildSeries(withPrice, (p) => p.min_price_cents, min, max);
-    const bestLine = buildSeries(withPrice, (p) => p.best_price_cents, min, max);
+    const exactLine = buildSeries(withPrice, (p) => p.it_nm_zero_price_cents, min, max);
     const areaPath = minLine.path
       ? `${minLine.path} L ${minLine.coords[minLine.coords.length - 1].x} 100 L ${minLine.coords[0].x} 100 Z`
       : "";
-    return { minLine, bestLine, areaPath, min, max };
+    return { minLine, exactLine, areaPath, min, max };
   }, [withPrice]);
 
   if (withPrice.length === 0) {
@@ -154,12 +162,20 @@ export default function PriceChart({
             </div>
             <div className="text-xs font-mono text-ink-faint">più basso in assoluto</div>
           </div>
-          {active.best_price_cents !== null && (
+          {active.it_nm_zero_price_cents !== null ? (
             <div className="flex items-baseline gap-2 flex-wrap mt-1">
               <div className="font-display text-lg font-bold text-accent-bright">
-                {formatCents(active.best_price_cents, currency)}
+                {formatCents(active.it_nm_zero_price_cents, currency)}
               </div>
-              <div className="text-xs font-mono text-ink-faint">Near Mint · CardTrader Zero</div>
+              <div className="text-xs font-mono text-ink-faint">Italiano · Near Mint · CardTrader Zero</div>
+            </div>
+          ) : hasExact && (
+            // Solo se il profilo esiste in almeno un altro punto dello storico
+            // (altrimenti sarebbe rumore mostrarlo su una carta che non ha mai
+            // avuto un'offerta cosi'): il giorno selezionato semplicemente non
+            // ne aveva una, non e' un errore ne' un dato mancante da nascondere.
+            <div className="text-xs font-mono text-ink-faint mt-1">
+              Nessuna offerta IT NM Zero rilevata in questo giorno
             </div>
           )}
         </div>
@@ -169,13 +185,13 @@ export default function PriceChart({
         </div>
       </div>
 
-      {hasBest && (
+      {hasExact && (
         <div className="flex items-center gap-4 mb-3 text-[11px] font-mono text-ink-faint">
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block w-3 h-0.5 bg-[#2DD8C9]" /> più basso in assoluto
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block w-3 h-0.5 bg-accent-bright" /> Near Mint · Zero
+            <span className="inline-block w-3 h-0.5 bg-accent-bright" /> Italiano · Near Mint · Zero
           </span>
         </div>
       )}
@@ -212,9 +228,9 @@ export default function PriceChart({
           strokeLinejoin="round"
           style={{ "--line-length": 1 } as React.CSSProperties}
         />
-        {bestLine.path && (
+        {exactLine.path && (
           <path
-            d={bestLine.path}
+            d={exactLine.path}
             pathLength={1}
             fill="none"
             stroke="#F5A623"
@@ -245,10 +261,10 @@ export default function PriceChart({
             fill="#5FF0E3"
           />
         )}
-        {hoverIdx !== null && bestLine.coords.find((c) => c.idx === hoverIdx) && (
+        {hoverIdx !== null && exactLine.coords.find((c) => c.idx === hoverIdx) && (
           <circle
-            cx={bestLine.coords.find((c) => c.idx === hoverIdx)!.x}
-            cy={bestLine.coords.find((c) => c.idx === hoverIdx)!.y}
+            cx={exactLine.coords.find((c) => c.idx === hoverIdx)!.x}
+            cy={exactLine.coords.find((c) => c.idx === hoverIdx)!.y}
             r="1.6"
             fill="#F5A623"
           />
@@ -264,6 +280,9 @@ export default function PriceChart({
           Trascina sul grafico per scorrere lo storico
         </p>
       )}
+      <p className="mt-3 text-[10px] text-ink-faint/70">
+        Un punto al giorno, non in tempo reale — il marketplace CardTrader può inoltre avere una breve cache lato loro tra un aggiornamento e l&apos;altro.
+      </p>
     </div>
   );
 }
