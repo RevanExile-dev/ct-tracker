@@ -40,7 +40,17 @@ export function getDb(): Promise<Database> {
       }
       const buf = await res.arrayBuffer();
       return new SQL.Database(new Uint8Array(buf));
-    })();
+    })().catch((err) => {
+      // Senza questo, un solo fallimento (rete instabile, file
+      // temporaneamente assente) mette in cache per sempre la stessa
+      // Promise rifiutata: ogni chiamata successiva a getDb() la
+      // restituirebbe di nuovo senza mai ritentare, anche con un
+      // pulsante "Riprova" - solo un reload completo della pagina
+      // sbloccherebbe il sito. Resettando la cache qui, la prossima
+      // chiamata a getDb() riparte da zero.
+      dbPromise = null;
+      throw err;
+    });
   }
   return dbPromise;
 }
@@ -60,7 +70,12 @@ export function getHistoryDb(): Promise<Database> {
       }
       const buf = await res.arrayBuffer();
       return new SQL.Database(new Uint8Array(buf));
-    })();
+    })().catch((err) => {
+      // Stesso motivo di getDb(): niente Promise rifiutata in cache per
+      // sempre dopo un solo errore di rete.
+      historyDbPromise = null;
+      throw err;
+    });
   }
   return historyDbPromise;
 }
@@ -156,24 +171,32 @@ const CARD_ROW_SELECT = `
   lp.prev_best_price_cents AS prev_best_price_cents
 `;
 
-/** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
-export async function fetchCards(opts: {
+type CardsFilterOpts = {
   search?: string;
   expansionCode?: string;
   rarities?: string[];
   languages?: string[];
   conditions?: string[];
   onlyZero?: boolean;
-  sortBy?: SortOption;
-  // Applica LIMIT direttamente in SQL invece di scaricare tutte le righe
-  // e tagliare in JS: sicuro SOLO per sortBy che ordinano gia' le righe
-  // "valide" prima di quelle scartate a valle (vedi drop_first/rise_first,
-  // il CASE WHEN le mette in coda) - altrimenti un LIMIT prematuro
-  // rischierebbe di tagliare via righe che poi sarebbero risultate valide.
-  limit?: number;
-}): Promise<CardRow[]> {
-  const db = await getDb();
+  // Filtra su un insieme esplicito di ID invece che sull'intero catalogo -
+  // usato da binder/wishlist (vedi fetchCards), che altrimenti scaricavano
+  // e materializzavano TUTTE le carte del catalogo solo per tenerne poi
+  // una manciata via un Set.id in JS: stesso pattern del problema
+  // principale trovato nell'audit UI/UX (fetchCards senza LIMIT sulla
+  // home), qui pero' evitabile del tutto perche' gli ID voluti sono gia'
+  // noti in anticipo.
+  ids?: number[];
+};
 
+/** WHERE condiviso tra fetchCards/fetchCardsCount/fetchCardsSummary, cosi'
+ * "quante carte" e "che carte" restano sempre coerenti per costruzione
+ * invece di dover mantenere due query separate allineate a mano. */
+function buildCardsFilter(opts: CardsFilterOpts): {
+  where: string[];
+  params: Record<string, string | number>;
+  listingFilters: string[];
+  hasListingFilter: boolean;
+} {
   const where: string[] = [];
   const params: Record<string, string | number> = {};
 
@@ -190,6 +213,18 @@ export async function fetchCards(opts: {
     const placeholders = rarityFilters.map((_, i) => `$rarity${i}`).join(", ");
     rarityFilters.forEach((r, i) => (params[`$rarity${i}`] = r));
     where.push(`b.rarity IN (${placeholders})`);
+  }
+  if (opts.ids) {
+    // Array vuoto (es. binder/wishlist senza ancora nessuna carta salvata):
+    // nessuna riga puo' corrispondere, "0" evita una IN () sintatticamente
+    // invalida ed evita comunque una query inutile sul resto dei filtri.
+    if (opts.ids.length === 0) {
+      where.push("0");
+    } else {
+      const placeholders = opts.ids.map((_, i) => `$id${i}`).join(", ");
+      opts.ids.forEach((id, i) => (params[`$id${i}`] = id));
+      where.push(`b.id IN (${placeholders})`);
+    }
   }
   // Lingua/condizione/Zero filtrano tutti sulle stesse inserzioni salvate
   // (price_listings, fino a 25 per carta): usiamo UN SOLO set di criteri
@@ -220,18 +255,79 @@ export async function fetchCards(opts: {
     );
   }
 
-  // best_price_cents (Near Mint + CardTrader Zero quando esiste) e' il
-  // prezzo "vero" da mostrare/ordinare; COALESCE su latest_price_cents e'
-  // solo una rete di sicurezza per le carte non ancora ripassate dal sync
-  // che popola best_price_cents. Se pero' e' attivo un filtro lingua/
-  // condizione/Zero, il prezzo mostrato deve venire da un'inserzione che
-  // rispetta QUEL filtro (filtered_price_cents, dal LEFT JOIN qui sotto),
-  // altrimenti si rischia di filtrare per IT e mostrare comunque il prezzo
-  // migliore in giapponese perche' quello e' il piu' economico assoluto.
+  return { where, params, listingFilters, hasListingFilter };
+}
+
+// best_price_cents (Near Mint + CardTrader Zero quando esiste) e' il
+// prezzo "vero" da mostrare/ordinare; COALESCE su min_price_cents e' solo
+// una rete di sicurezza per le carte non ancora ripassate dal sync che
+// popola best_price_cents. Se pero' e' attivo un filtro lingua/condizione/
+// Zero, il prezzo mostrato deve venire da un'inserzione che rispetta QUEL
+// filtro (fl.price_cents, dal LEFT JOIN costruito da buildFilteredJoinSql),
+// altrimenti si rischia di filtrare per IT e mostrare comunque il prezzo
+// migliore in giapponese perche' quello e' il piu' economico assoluto.
+// Nomi di colonna qualificati (non gli alias da CARD_ROW_SELECT, es.
+// "latest_price_cents"): cosi' l'espressione funziona identica sia dentro
+// un ORDER BY dopo una SELECT con quegli alias (fetchCards) sia dentro una
+// SELECT aggregata che non li definisce affatto (fetchCardsSummary) -
+// un'espressione basata su alias funzionerebbe solo nel primo caso.
+function buildPriceExprs(hasListingFilter: boolean): { priceExpr: string; prevPriceExpr: string } {
   const priceExpr = hasListingFilter
-    ? "COALESCE(filtered_price_cents, best_price_cents, latest_price_cents)"
-    : "COALESCE(best_price_cents, latest_price_cents)";
-  const prevPriceExpr = "COALESCE(prev_best_price_cents, prev_price_cents)";
+    ? "COALESCE(fl.price_cents, lp.best_price_cents, lp.min_price_cents)"
+    : "COALESCE(lp.best_price_cents, lp.min_price_cents)";
+  const prevPriceExpr = "COALESCE(lp.prev_best_price_cents, lp.prev_price_cents)";
+  return { priceExpr, prevPriceExpr };
+}
+
+// Inserzione piu' economica tra quelle che rispettano TUTTI i filtri
+// lingua/condizione/Zero insieme, solo quando almeno uno di questi filtri
+// e' attivo — cosi' il percorso senza filtri resta leggero come prima. In
+// due passi invece di un unico ROW_NUMBER() su tutte le righe filtrate
+// (misurato: 25-40% piu' lento, fino a ~1.450ms su un catalogo di 31.700+
+// carte dopo il sync completo):
+//   1) GROUP BY + MIN(price_cents) per trovare il prezzo minimo per carta
+//      — SQLite puo' sfruttare l'indice (blueprint_id, price_cents) per
+//      calcolarlo senza dover ordinare/numerare ogni singola riga.
+//   2) ROW_NUMBER() SOLO tra le righe che hanno esattamente quel prezzo
+//      minimo (di norma una, raramente piu' di una - un pareggio di prezzo
+//      esatto) per il tie-break deterministico (Zero prima, poi la riga
+//      piu' vecchia), invece che su tutte le righe filtrate.
+// Verificato: stessi identici risultati nello stesso ordine della versione
+// precedente su piu' combinazioni di filtri.
+function buildFilteredJoinSql(hasListingFilter: boolean, listingFilters: string[]): string {
+  if (!hasListingFilter) return "";
+  return `LEFT JOIN (
+       WITH mins AS (
+         SELECT blueprint_id, MIN(price_cents) AS price_cents
+         FROM price_listings pl
+         WHERE ${listingFilters.join(" AND ")}
+         GROUP BY blueprint_id
+       )
+       SELECT m.blueprint_id, pl.price_cents, pl.price_currency, pl.condition, pl.language, pl.can_sell_via_hub,
+              ROW_NUMBER() OVER (
+                PARTITION BY m.blueprint_id
+                ORDER BY pl.can_sell_via_hub DESC, pl.id ASC
+              ) AS rn
+       FROM mins m
+       JOIN price_listings pl
+         ON pl.blueprint_id = m.blueprint_id AND pl.price_cents = m.price_cents
+         AND ${listingFilters.join(" AND ")}
+     ) fl ON fl.blueprint_id = b.id AND fl.rn = 1`;
+}
+
+/** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
+export async function fetchCards(opts: CardsFilterOpts & {
+  sortBy?: SortOption;
+  // Applica LIMIT direttamente in SQL invece di scaricare tutte le righe
+  // e tagliare in JS: sicuro SOLO per sortBy che ordinano gia' le righe
+  // "valide" prima di quelle scartate a valle (vedi drop_first/rise_first,
+  // il CASE WHEN le mette in coda) - altrimenti un LIMIT prematuro
+  // rischierebbe di tagliare via righe che poi sarebbero risultate valide.
+  limit?: number;
+}): Promise<CardRow[]> {
+  const db = await getDb();
+  const { where, params, listingFilters, hasListingFilter } = buildCardsFilter(opts);
+  const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
 
   let orderBy = "b.expansion_id DESC, b.name ASC";
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
@@ -261,40 +357,7 @@ export async function fetchCards(opts: {
     `;
   }
 
-  // Inserzione piu' economica tra quelle che rispettano TUTTI i filtri
-  // lingua/condizione/Zero insieme, solo quando almeno uno di questi
-  // filtri e' attivo — cosi' il percorso senza filtri resta leggero come
-  // prima. In due passi invece di un unico ROW_NUMBER() su tutte le righe
-  // filtrate (misurato: 25-40% piu' lento, fino a ~1.450ms su un catalogo
-  // di 31.700+ carte dopo il sync completo):
-  //   1) GROUP BY + MIN(price_cents) per trovare il prezzo minimo per
-  //      carta — SQLite puo' sfruttare l'indice (blueprint_id, price_cents)
-  //      per calcolarlo senza dover ordinare/numerare ogni singola riga.
-  //   2) ROW_NUMBER() SOLO tra le righe che hanno esattamente quel prezzo
-  //      minimo (di norma una, raramente piu' di una - un pareggio di
-  //      prezzo esatto) per il tie-break deterministico (Zero prima, poi
-  //      la riga piu' vecchia), invece che su tutte le righe filtrate.
-  // Verificato: stessi identici risultati nello stesso ordine della
-  // versione precedente su piu' combinazioni di filtri.
-  const filteredJoin = hasListingFilter
-    ? `LEFT JOIN (
-         WITH mins AS (
-           SELECT blueprint_id, MIN(price_cents) AS price_cents
-           FROM price_listings pl
-           WHERE ${listingFilters.join(" AND ")}
-           GROUP BY blueprint_id
-         )
-         SELECT m.blueprint_id, pl.price_cents, pl.price_currency, pl.condition, pl.language, pl.can_sell_via_hub,
-                ROW_NUMBER() OVER (
-                  PARTITION BY m.blueprint_id
-                  ORDER BY pl.can_sell_via_hub DESC, pl.id ASC
-                ) AS rn
-         FROM mins m
-         JOIN price_listings pl
-           ON pl.blueprint_id = m.blueprint_id AND pl.price_cents = m.price_cents
-           AND ${listingFilters.join(" AND ")}
-       ) fl ON fl.blueprint_id = b.id AND fl.rn = 1`
-    : "";
+  const filteredJoin = buildFilteredJoinSql(hasListingFilter, listingFilters);
   const filteredSelect = hasListingFilter
     ? `, fl.price_cents AS filtered_price_cents, fl.price_currency AS filtered_price_currency,
        fl.condition AS filtered_condition, fl.language AS filtered_language,
@@ -322,6 +385,63 @@ export async function fetchCards(opts: {
   }
   stmt.free();
   return rows;
+}
+
+/** Conteggio delle carte che soddisfano gli stessi filtri di fetchCards,
+ * senza materializzare le righe in JS - usato per "N carte trovate" e per
+ * sapere quando fermare "mostra altre" mentre fetchCards viene limitato
+ * con `limit` invece di scaricare l'intero catalogo filtrato ad ogni
+ * ricerca (bug reale trovato in revisione: senza `limit`, ogni tasto
+ * premuto nella ricerca materializzava in oggetti JS tutte le righe
+ * corrispondenti - decine di migliaia a catalogo pieno - per poi mostrarne
+ * solo 60 con uno slice() lato client). */
+export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
+  const db = await getDb();
+  const { where, params } = buildCardsFilter(opts);
+  const sql = `SELECT COUNT(*) AS c FROM blueprints b ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  stmt.step();
+  const row = stmt.getAsObject() as { c: number };
+  stmt.free();
+  return row.c;
+}
+
+/** Media delle variazioni giorno-su-giorno delle carte che soddisfano i
+ * filtri correnti, calcolata in SQL invece di scaricare tutte le righe
+ * filtrate per farne la media in JS (stesso motivo di fetchCardsCount:
+ * fetchCards ora e' limitato da `limit`, quindi non ha piu' tutte le righe
+ * necessarie per questo calcolo). Stessa identica regola di
+ * priceDeltaPct() in format.ts - un prezzo o prezzo precedente a 0 o NULL
+ * non conta come variazione valida (falsy-zero esclusa anche qui, deve
+ * restare in sincrono con quella funzione). */
+export type CardsSummary = { avgPct: number; sampleSize: number; totalCards: number };
+
+export async function fetchCardsSummary(
+  opts: CardsFilterOpts
+): Promise<CardsSummary | null> {
+  const db = await getDb();
+  const { where, params, listingFilters, hasListingFilter } = buildCardsFilter(opts);
+  const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
+  const filteredJoin = buildFilteredJoinSql(hasListingFilter, listingFilters);
+  const validExpr = `${priceExpr} IS NOT NULL AND ${priceExpr} != 0 AND ${prevPriceExpr} IS NOT NULL AND ${prevPriceExpr} != 0`;
+  const sql = `
+    SELECT
+      AVG(CASE WHEN ${validExpr} THEN (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} * 100 END) AS avgPct,
+      COUNT(CASE WHEN ${validExpr} THEN 1 END) AS sampleSize,
+      COUNT(*) AS totalCards
+    FROM blueprints b
+    LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
+    ${filteredJoin}
+    ${where.length ? "WHERE " + where.join(" AND ") : ""}
+  `;
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  stmt.step();
+  const row = stmt.getAsObject() as { avgPct: number | null; sampleSize: number; totalCards: number };
+  stmt.free();
+  if (row.avgPct === null || row.sampleSize === 0) return null;
+  return { avgPct: row.avgPct, sampleSize: row.sampleSize, totalCards: row.totalCards };
 }
 
 export type CardDetail = CardRow & {

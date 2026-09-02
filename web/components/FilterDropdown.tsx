@@ -48,7 +48,20 @@ export default function FilterDropdown({
   const [query, setQuery] = useState("");
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Due ref/id distinti (desktop e mobile), MAI condivisi: il pannello
+  // desktop (nascosto sotto sm, "hidden sm:block") e il modale mobile in
+  // portale renderizzano entrambi il corpo del filtro (ricerca inclusa)
+  // SEMPRE, uno dei due semplicemente nascosto via CSS in base al
+  // breakpoint - mai smontato. Usare lo stesso id/ref per entrambi (come
+  // in una versione precedente) produceva ID duplicati nel DOM (HTML non
+  // valido: un <label htmlFor> si lega sempre al primo, che e' quello
+  // desktop anche su schermi stretti) e un ref che finiva per puntare a
+  // un solo input a seconda dell'ordine di commit - su desktop, quello
+  // nascosto: l'autofocus della ricerca chiamava .focus() su un elemento
+  // display:none, un no-op silenzioso (bug reale, trovato investigando
+  // una segnalazione di filtri "buggati" su piu' browser/device).
+  const desktopSearchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   // Il bottom sheet mobile e' in portale su document.body, quindi NON e' un
   // discendente DOM di rootRef: senza questo ref, il listener "fuori dal
   // pannello chiudi" (pensato per il popover desktop) scambierebbe ogni tap
@@ -113,8 +126,14 @@ export default function FilterDropdown({
     // ricerca non esiste ancora nel DOM (mounted e' ancora false, arriva un
     // rAF dopo), quindi il ref sarebbe null e il focus fallirebbe in
     // silenzio senza mai piu' ritentare (bug reale trovato in review).
+    // Sceglie l'istanza REALMENTE visibile in base al breakpoint (stesso
+    // "sm" di Tailwind, 640px, non personalizzato in questo progetto):
+    // chiamare .focus() sull'istanza nascosta via CSS e' un no-op silenzioso.
     if (open && mounted && searchable) {
-      const raf = requestAnimationFrame(() => searchInputRef.current?.focus());
+      const raf = requestAnimationFrame(() => {
+        const isDesktop = window.matchMedia("(min-width: 640px)").matches;
+        (isDesktop ? desktopSearchInputRef : mobileSearchInputRef).current?.focus();
+      });
       return () => cancelAnimationFrame(raf);
     }
   }, [open, mounted, searchable]);
@@ -173,14 +192,21 @@ export default function FilterDropdown({
       ? `min-h-11 text-left text-sm px-3 py-2.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${active ? "bg-accent/10 text-accent-bright" : "text-ink-muted hover:bg-base-surface2 hover:text-ink-primary"}`
       : `min-h-11 text-sm px-3 py-2.5 rounded-full border transition-[color,background-color,border-color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${active ? "bg-accent/10 border-accent/60 text-accent-bright" : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"}`;
 
-  const optionsBody = (
+  // Genera il corpo del pannello per UNA istanza (id e ref parametrizzati
+  // in base a idSuffix) - mai un unico blocco JSX riusato in due punti
+  // dell'albero, altrimenti desktop e mobile finiscono con lo stesso id
+  // (HTML non valido) e lo stesso ref dell'input di ricerca (uno dei due
+  // .focus() diventa un no-op silenzioso su un elemento display:none).
+  function renderOptionsBody(idSuffix: string, inputRef: React.RefObject<HTMLInputElement | null>) {
+    const searchId = `${panelId}-search-${idSuffix}`;
+    return (
     <>
       {searchable && (
         <div className="p-2 border-b border-base-border shrink-0">
-          <label className="sr-only" htmlFor={`${panelId}-search`}>Cerca in {label.toLocaleLowerCase("it")}</label>
+          <label className="sr-only" htmlFor={searchId}>Cerca in {label.toLocaleLowerCase("it")}</label>
           <input
-            ref={searchInputRef}
-            id={`${panelId}-search`}
+            ref={inputRef}
+            id={searchId}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Cerca…"
@@ -207,7 +233,8 @@ export default function FilterDropdown({
       </div>
       {footerNote && <div className="border-t border-base-border px-3 py-2 text-[11px] text-ink-faint shrink-0">{footerNote}</div>}
     </>
-  );
+    );
+  }
 
   return (
     <div ref={rootRef} className="filter-inline relative max-w-full">
@@ -239,7 +266,7 @@ export default function FilterDropdown({
           }`}
         >
           <div className={layout === "list" ? "flex flex-col max-h-80" : "flex flex-col max-h-[28rem]"}>
-            {optionsBody}
+            {renderOptionsBody("desktop", desktopSearchInputRef)}
           </div>
         </div>
       )}
@@ -252,7 +279,7 @@ export default function FilterDropdown({
       {mounted && createPortal(
         <div className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-4" aria-hidden={!open}>
           <div
-            onClick={close}
+            onClick={() => { close(); focusTrigger(); }}
             className={`filter-panel-anim absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out ${visible ? "opacity-100" : "opacity-0"}`}
           />
           <div
@@ -269,14 +296,14 @@ export default function FilterDropdown({
               <span className="text-sm font-mono uppercase tracking-wider text-ink-primary">{label}</span>
               <button
                 type="button"
-                onClick={close}
+                onClick={() => { close(); focusTrigger(); }}
                 aria-label="Chiudi"
                 className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-ink-faint hover:text-ink-primary hover:bg-base-surface2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 ✕
               </button>
             </div>
-            <div className="flex flex-col overflow-y-auto">{optionsBody}</div>
+            <div className="flex flex-col overflow-y-auto">{renderOptionsBody("mobile", mobileSearchInputRef)}</div>
           </div>
         </div>,
         document.body

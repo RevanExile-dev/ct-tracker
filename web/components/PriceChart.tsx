@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PricePoint } from "@/lib/db";
 import { formatCents, formatDate, formatDateLong } from "@/lib/format";
 
@@ -51,6 +51,7 @@ export default function PriceChart({
   const withPrice = points.filter((p) => p.min_price_cents !== null);
   const hasBest = points.some((p) => p.best_price_cents !== null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const { minLine, bestLine, areaPath, min, max } = useMemo(() => {
     if (withPrice.length === 0) {
@@ -85,6 +86,60 @@ export default function PriceChart({
   }
 
   const active = hoverIdx !== null ? withPrice[hoverIdx] : withPrice[withPrice.length - 1];
+
+  // Prima l'unica interazione era onMouseEnter su rettangoli invisibili per
+  // colonna - funzionava solo col mouse, su touch il grafico era di fatto
+  // statico (mostrava sempre e solo l'ultimo punto). Qui invece la
+  // posizione del puntatore su TUTTO l'svg determina l'indice piu' vicino,
+  // con Pointer Events (copre mouse/touch/pen con lo stesso codice).
+  function indexFromClientX(clientX: number): number {
+    const svg = svgRef.current;
+    if (!svg || withPrice.length <= 1) return 0;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return 0;
+    const px = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return Math.round(px * (withPrice.length - 1));
+  }
+
+  function scrubTo(clientX: number) {
+    setHoverIdx(indexFromClientX(clientX));
+  }
+
+  function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    scrubTo(event.clientX);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    // Il mouse segue il semplice passaggio (hover), come prima; su
+    // touch/pen non esiste un equivalente "hover senza toccare" - serve un
+    // tocco attivo (buttons===1, il dito ancora sullo schermo) per
+    // scorrere lo storico trascinando.
+    if (event.pointerType === "mouse" || event.buttons === 1) scrubTo(event.clientX);
+  }
+
+  function handlePointerLeave(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType === "mouse") setHoverIdx(null);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<SVGSVGElement>) {
+    if (withPrice.length === 0) return;
+    const current = hoverIdx ?? withPrice.length - 1;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setHoverIdx(Math.max(0, current - 1));
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setHoverIdx(Math.min(withPrice.length - 1, current + 1));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setHoverIdx(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setHoverIdx(withPrice.length - 1);
+    } else if (event.key === "Escape") {
+      setHoverIdx(null);
+    }
+  }
 
   return (
     <div className="rounded-card border border-base-border bg-base-surface p-5">
@@ -126,10 +181,17 @@ export default function PriceChart({
       )}
 
       <svg
+        ref={svgRef}
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
-        className="w-full h-40 overflow-visible"
-        onMouseLeave={() => setHoverIdx(null)}
+        className="w-full h-40 overflow-visible touch-pan-y cursor-crosshair rounded outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+        role="img"
+        tabIndex={0}
+        aria-label={`Andamento prezzo. Punto selezionato: ${formatDateLong(active.captured_at)}, ${formatCents(active.min_price_cents, currency)}. Trascina o usa le frecce sinistra/destra per scorrere lo storico.`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        onKeyDown={handleKeyDown}
       >
         <defs>
           <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
@@ -163,17 +225,6 @@ export default function PriceChart({
             strokeLinejoin="round"
           />
         )}
-        {withPrice.map((_, i) => (
-          <rect
-            key={i}
-            x={xForIndex(i, withPrice.length) - 100 / withPrice.length / 2}
-            y={0}
-            width={100 / withPrice.length}
-            height={100}
-            fill="transparent"
-            onMouseEnter={() => setHoverIdx(i)}
-          />
-        ))}
         {hoverIdx !== null && (
           <line
             x1={xForIndex(hoverIdx, withPrice.length)}
@@ -208,6 +259,11 @@ export default function PriceChart({
         <span>{formatDate(withPrice[0].captured_at)}</span>
         <span>{formatDate(withPrice[withPrice.length - 1].captured_at)}</span>
       </div>
+      {withPrice.length > 1 && (
+        <p className="sm:hidden mt-2 text-center text-[10px] text-ink-faint">
+          Trascina sul grafico per scorrere lo storico
+        </p>
+      )}
     </div>
   );
 }

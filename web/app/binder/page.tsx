@@ -25,8 +25,12 @@ function BinderContent() {
   useEffect(() => {
     let cancelled = false;
     const binderIds = getBinderIds();
-    fetchCards({})
-      .then((all) => { if (!cancelled) setCards(all.filter((card) => binderIds.has(card.id))); })
+    // Filtro SQL sugli ID salvati invece di scaricare l'intero catalogo per
+    // poi tenerne solo una manciata in JS - stesso pattern del problema
+    // principale trovato nell'audit (fetchCards senza limite sulla home),
+    // qui evitabile del tutto perche' gli ID voluti sono gia' noti.
+    fetchCards({ ids: Array.from(binderIds) })
+      .then((cards) => { if (!cancelled) setCards(cards); })
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; };
   }, []);

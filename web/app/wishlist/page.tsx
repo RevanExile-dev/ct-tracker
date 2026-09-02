@@ -21,8 +21,11 @@ function WishlistContent() {
     let cancelled = false;
     const ids = getWishlistIds();
     const frame = requestAnimationFrame(() => setWishlistIds(ids));
-    fetchCards({})
-      .then((all) => { if (!cancelled) setCards(all.filter((c) => ids.has(c.id))); })
+    // Filtro SQL sugli ID salvati invece di scaricare l'intero catalogo per
+    // poi tenerne solo una manciata in JS - stesso pattern del problema
+    // principale trovato nell'audit (fetchCards senza limite sulla home).
+    fetchCards({ ids: Array.from(ids) })
+      .then((cards) => { if (!cancelled) setCards(cards); })
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
   }, []);

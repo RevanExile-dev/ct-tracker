@@ -31,19 +31,21 @@ function buildScreens(cards: CardRow[], cells: number): Screen[] {
 }
 
 function Pocket({ card, returnTo }: { card: CardRow | undefined; returnTo: string }) {
+  const [imgError, setImgError] = useState(false);
   if (!card) return <div className="binder-pocket binder-pocket-empty" aria-hidden />;
   const href = `/card/${card.id}?from=${encodeURIComponent(returnTo)}`;
   return (
     <Link href={href} className="binder-pocket group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/80" aria-label={`Apri ${card.name}`}>
       <InteractiveCard level="binder" className="h-full w-full overflow-hidden rounded-[4px]">
         <div className="relative w-full h-full">
-          {card.image_url ? (
+          {card.image_url && !imgError ? (
             <Image
               src={card.image_url}
               alt={card.name}
               fill
               sizes="(max-width: 767px) 45vw, 15vw"
               className="object-cover"
+              onError={() => setImgError(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-ink-faint text-[9px] font-mono text-center px-1">{card.name}</div>

@@ -13,9 +13,24 @@ import { useEffect, useRef, useState } from "react";
  * automatico.
  *
  * containerRef (opzionale): se l'utente ha il focus dentro il
- * contenitore (es. sta scrivendo nella ricerca, o un pannello filtro e'
- * aperto), lo scroll non lo nasconde - non ha senso far sparire un
- * controllo che si sta usando attivamente.
+ * contenitore (es. sta scrivendo nella ricerca), lo scroll non lo
+ * nasconde - non ha senso far sparire un controllo che si sta usando
+ * attivamente.
+ *
+ * keepVisible (opzionale): stessa idea ma basata su stato applicativo
+ * invece che sul focus DOM - necessaria perche' il solo controllo di
+ * focus ha due buchi reali, entrambi trovati riproducendo il bug
+ * ("i filtri si buggavano" segnalato su iOS e desktop): (1) un pannello
+ * filtro renderizzato in portale su document.body (per il modale
+ * mobile) non e' un discendente di containerRef, quindi il controllo di
+ * focus non lo vede mai come "in uso"; (2) Safari (sia macOS sia iOS) non
+ * assegna il focus a un <button> al click/tap, quindi anche il pannello
+ * desktop ancorato al trigger risultava "senza focus dentro" pur essendo
+ * visibilmente aperto. In entrambi i casi lo scroll comprimeva la barra
+ * (grid-template-rows a 0), portando con se' il popover ancorato che
+ * spariva a meta' consultazione - non un difetto visivo minore, il
+ * pannello diventava introvabile. Passare qui lo stato "e' aperto un
+ * filtro" gia' tracciato dal chiamante evita di dover indovinare dal DOM.
  *
  * Confronta lo scroll corrente con un "ancora" (l'ultima posizione in cui
  * la direzione e' stata confermata), non con l'evento immediatamente
@@ -30,11 +45,28 @@ import { useEffect, useRef, useState } from "react";
 export function useHideOnScrollDown(
   containerRef?: React.RefObject<HTMLElement | null>,
   revealThresholdPx = 80,
-  directionThresholdPx = 24
+  directionThresholdPx = 24,
+  keepVisible = false
 ) {
   const [visible, setVisible] = useState(true);
   const anchorY = useRef(0);
   const ticking = useRef(false);
+  const keepVisibleRef = useRef(keepVisible);
+
+  useEffect(() => {
+    keepVisibleRef.current = keepVisible;
+  }, [keepVisible]);
+
+  // Forza la barra visibile appena keepVisible passa a true (es. un
+  // filtro si e' appena aperto) - non aspetta il prossimo evento scroll,
+  // altrimenti resterebbe nascosta finche' l'utente non scrolla verso
+  // l'alto per conto suo.
+  useEffect(() => {
+    if (!keepVisible) return;
+    const raf = requestAnimationFrame(() => setVisible(true));
+    anchorY.current = window.scrollY;
+    return () => cancelAnimationFrame(raf);
+  }, [keepVisible]);
 
   useEffect(() => {
     anchorY.current = window.scrollY;
@@ -47,6 +79,13 @@ export function useHideOnScrollDown(
 
         if (y < revealThresholdPx) {
           setVisible(true);
+          anchorY.current = y;
+          return;
+        }
+        if (keepVisibleRef.current) {
+          // Ancora aggiornata anche mentre e' "tenuta" visibile, cosi'
+          // quando keepVisible torna false non scatta un salto di stato
+          // dovuto a un'ancora ormai vecchia.
           anchorY.current = y;
           return;
         }

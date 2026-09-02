@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   CardDetail, Listing, PricePoint,
@@ -16,6 +17,12 @@ import PriceChart from "@/components/PriceChart";
 import ConditionBadge from "@/components/ConditionBadge";
 import FilterDropdown from "@/components/FilterDropdown";
 import { countryFlag, formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
+
+// Spike Three.js isolato (PR #6): mai importato/scaricato nel percorso di
+// default (nessun flag ?three=1) - ssr:false + import dinamico tengono
+// three/@react-three/fiber fuori dal bundle server e da quello iniziale
+// del client finche' non serve davvero.
+const ThreeCardHero = dynamic(() => import("@/components/ThreeCardHero"), { ssr: false });
 
 function CardDetailContent() {
   const params = useParams<{ id: string }>();
@@ -33,8 +40,27 @@ function CardDetailContent() {
   const [inWishlist, setInWishlist] = useState(false);
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [onlyZeroListings, setOnlyZeroListings] = useState(false);
+  // Spike Three.js dietro flag esplicito ?three=1 - "off" per default (usa
+  // InteractiveCard CSS come sempre). Passa a "on" solo se il flag e'
+  // presente, prefers-reduced-motion non e' attivo e il browser supporta
+  // davvero WebGL - controllo fatto in un effetto (richiede window/canvas,
+  // non disponibile server-side). onContextLost riporta a "off" se il
+  // contesto si perde dopo il mount (device sotto pressione di memoria):
+  // questo componente non si auto-ripara, torna al fallback CSS.
+  const [threeMode, setThreeMode] = useState<"off" | "on">("off");
+
+  useEffect(() => {
+    if (searchParams.get("three") !== "1") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) return;
+    const frame = requestAnimationFrame(() => setThreeMode("on"));
+    return () => cancelAnimationFrame(frame);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!id) return;
@@ -45,6 +71,12 @@ function CardDetailContent() {
     const frame = requestAnimationFrame(() => {
       setInBinder(getBinderIds().has(id));
       setInWishlist(getWishlistIds().has(id));
+      // Il componente non viene rimontato passando da una carta all'altra
+      // (stessa route dinamica) - senza reset qui, un errore di
+      // caricamento sulla carta precedente resterebbe visibile anche per
+      // la carta nuova finche' l'immagine non finisce di caricare/fallire
+      // di nuovo.
+      setImgError(false);
     });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
   }, [id]);
@@ -156,28 +188,43 @@ function CardDetailContent() {
       </Link>
 
       <div className="grid grid-cols-1 md:grid-cols-[minmax(300px,400px)_1fr] gap-8 lg:gap-12 card-enter">
-        <InteractiveCard
-          level="detail"
-          reveal
-          className="w-full max-w-[400px] mx-auto md:mx-0 bg-base-surface border border-base-border overflow-hidden self-start shadow-card"
-        >
-          <div className="relative aspect-[5/7] bg-base-surface2">
-            {card.image_url ? (
-              <Image
-                src={card.image_url}
+        {threeMode === "on" && card.image_url && !imgError ? (
+          <div className="w-full max-w-[400px] mx-auto md:mx-0 rounded-card border border-base-border bg-base-surface overflow-hidden self-start shadow-card">
+            <div className="relative aspect-[5/7]">
+              <ThreeCardHero
+                imageUrl={card.image_url}
                 alt={card.name}
-                fill
-              sizes="(max-width: 767px) 90vw, 400px"
-                className="object-cover"
-                priority
+                isPremium={card.is_premium === 1}
+                reduceMotion={false}
+                onFallback={() => setThreeMode("off")}
               />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono">
-                nessuna immagine
-              </div>
-            )}
+            </div>
           </div>
-        </InteractiveCard>
+        ) : (
+          <InteractiveCard
+            level="detail"
+            reveal
+            className="w-full max-w-[400px] mx-auto md:mx-0 bg-base-surface border border-base-border overflow-hidden self-start shadow-card"
+          >
+            <div className="relative aspect-[5/7] bg-base-surface2">
+              {card.image_url && !imgError ? (
+                <Image
+                  src={card.image_url}
+                  alt={card.name}
+                  fill
+                  sizes="(max-width: 767px) 90vw, 400px"
+                  className="object-cover"
+                  priority
+                  onError={() => setImgError(true)}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono text-center px-4">
+                  {imgError ? "immagine non disponibile" : "nessuna immagine"}
+                </div>
+              )}
+            </div>
+          </InteractiveCard>
+        )}
 
         <div>
           <div className="font-mono text-xs uppercase tracking-wider text-accent">

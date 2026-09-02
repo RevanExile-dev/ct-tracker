@@ -51,53 +51,106 @@ export default function CardTile({
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
 
   return (
-    <Link
-      href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
-      className="group block card-enter"
+    // I bottoni stella/cuore sono FRATELLI del Link, non annidati al suo
+    // interno: un <button> dentro un <a> e' HTML non valido (contenuto
+    // interattivo dentro contenuto interattivo) e rende ambiguo il
+    // comportamento di tastiera/screen reader indipendentemente da
+    // stopPropagation (che ferma solo la propagazione del click, non
+    // risolve il problema semantico). Posizionati assoluti sullo stesso
+    // wrapper cosi' restano visivamente sopra l'angolo dell'immagine come
+    // prima, ma senza che un tap su di loro possa mai far scattare anche
+    // la navigazione del Link sottostante (non sono suoi discendenti).
+    <div
+      className="group relative card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
     >
-      <InteractiveCard
-        level="tile"
-        className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
+      <Link
+        href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
+        className="block rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
       >
-        <div className="relative aspect-[5/7] bg-base-surface2">
-          {card.image_url ? (
-            <Image
-              src={card.image_url}
-              alt={card.name}
-              fill
-              sizes="(min-width: 1024px) 20vw, 45vw"
-              onLoad={() => setImgLoaded(true)}
-              className={`object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
-                imgLoaded ? "opacity-100" : "opacity-0"
-              }`}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono">
-              nessuna immagine
+        <InteractiveCard
+          level="tile"
+          className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
+        >
+          <div className="relative aspect-[5/7] bg-base-surface2">
+            {card.image_url && !imgError ? (
+              <Image
+                src={card.image_url}
+                alt={card.name}
+                fill
+                sizes="(min-width: 1024px) 20vw, 45vw"
+                onLoad={() => setImgLoaded(true)}
+                onError={() => setImgError(true)}
+                className={`object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
+                  imgLoaded ? "opacity-100" : "opacity-0"
+                }`}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono text-center px-2">
+                {imgError ? "immagine non disponibile" : "nessuna immagine"}
+              </div>
+            )}
+            {card.is_premium === 1 && (
+              <span className="absolute top-2 left-2 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 backdrop-blur border border-white/10 text-accent-bright">
+                premium
+              </span>
+            )}
+          </div>
+
+          <div className="p-3">
+            <div className="text-xs font-mono text-ink-faint truncate">{card.expansion_name}</div>
+            <div className="font-display font-medium text-ink-primary leading-snug mt-0.5 truncate">
+              {card.name}
             </div>
-          )}
-          {card.is_premium === 1 && (
-            <span className="absolute top-2 left-2 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 backdrop-blur border border-white/10 text-accent-bright">
-              premium
-            </span>
-          )}
+
+            <div className="flex items-end justify-between flex-wrap gap-x-2 gap-y-1 mt-2">
+              <div className="font-mono text-lg text-ink-primary flex flex-wrap items-center gap-1.5 min-w-0">
+                {formatCents(priceCents, priceCurrency ?? "EUR")}
+                {priceLanguage && (
+                  <span className="text-xs shrink-0" title={priceLanguage.toUpperCase()}>
+                    {languageFlag(priceLanguage)}
+                  </span>
+                )}
+                {isNmZero && (
+                  <span
+                    className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap shrink-0"
+                    title="Near Mint, CardTrader Zero"
+                  >
+                    NM Zero
+                  </span>
+                )}
+              </div>
+              {delta !== null && (
+                <div
+                  className={`text-xs font-mono whitespace-nowrap shrink-0 ${
+                    delta >= 0 ? "text-signal-up" : "text-signal-down"
+                  }`}
+                >
+                  {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
+                </div>
+              )}
+            </div>
+          </div>
+        </InteractiveCard>
+      </Link>
+
+      {(onToggleBinder || onToggleWishlist) && (
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
           {onToggleBinder && (
             <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
+              type="button"
+              onClick={() => {
                 setPopping(true);
                 onToggleBinder();
               }}
               onAnimationEnd={() => setPopping(false)}
               aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
-              className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
+              className={`w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
                 popping ? "pop-on-toggle" : ""
               } ${
                 inBinder
@@ -110,16 +163,14 @@ export default function CardTile({
           )}
           {onToggleWishlist && (
             <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
+              type="button"
+              onClick={() => {
                 setPoppingWishlist(true);
                 onToggleWishlist();
               }}
               onAnimationEnd={() => setPoppingWishlist(false)}
               aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
-              className={`absolute top-2 ${onToggleBinder ? "right-11" : "right-2"} w-7 h-7 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
+              className={`w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
                 poppingWishlist ? "pop-on-toggle" : ""
               } ${
                 inWishlist
@@ -131,42 +182,7 @@ export default function CardTile({
             </button>
           )}
         </div>
-
-        <div className="p-3">
-          <div className="text-xs font-mono text-ink-faint truncate">{card.expansion_name}</div>
-          <div className="font-display font-medium text-ink-primary leading-snug mt-0.5 truncate">
-            {card.name}
-          </div>
-
-          <div className="flex items-end justify-between flex-wrap gap-x-2 gap-y-1 mt-2">
-            <div className="font-mono text-lg text-ink-primary flex flex-wrap items-center gap-1.5 min-w-0">
-              {formatCents(priceCents, priceCurrency ?? "EUR")}
-              {priceLanguage && (
-                <span className="text-xs shrink-0" title={priceLanguage.toUpperCase()}>
-                  {languageFlag(priceLanguage)}
-                </span>
-              )}
-              {isNmZero && (
-                <span
-                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap shrink-0"
-                  title="Near Mint, CardTrader Zero"
-                >
-                  NM Zero
-                </span>
-              )}
-            </div>
-            {delta !== null && (
-              <div
-                className={`text-xs font-mono whitespace-nowrap shrink-0 ${
-                  delta >= 0 ? "text-signal-up" : "text-signal-down"
-                }`}
-              >
-                {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
-              </div>
-            )}
-          </div>
-        </div>
-      </InteractiveCard>
-    </Link>
+      )}
+    </div>
   );
 }

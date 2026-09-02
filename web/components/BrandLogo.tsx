@@ -14,7 +14,7 @@ export default function BrandLogo({ compact = false }: { compact?: boolean }) {
         <path className="brand-spark" d="m30.8 12.8 1.3 3.6 3.5 1.3-3.5 1.3-1.3 3.6-1.3-3.6-3.5-1.3 3.5-1.3 1.3-3.6Z" fill="#F8E9A3" />
       </svg>
       <span className={`brand-wordmark font-display font-bold leading-none ${compact ? "text-2xl" : "text-3xl sm:text-4xl"}`}>
-        <span>Carta</span><span>Viva</span>
+        <span className="brand-wordmark-holo inline-block">CartaViva</span>
       </span>
     </span>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ExpansionInfo, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
@@ -31,6 +31,8 @@ export default function Toolbar({
   hasActiveFilters,
   onResetAll,
   onApplyPreset,
+  resultCount,
+  onAnyFilterOpenChange,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -53,12 +55,54 @@ export default function Toolbar({
   hasActiveFilters: boolean;
   onResetAll: () => void;
   onApplyPreset: (preset: FilterPreset) => void;
+  /** Conteggio totale (non solo le carte gia' caricate/visibili) - mostrato
+   * come feedback immediato dopo una ricerca/filtro. undefined finche' non
+   * e' ancora arrivato dal DB, non mostra nulla in quel caso. */
+  resultCount?: number;
+  /** Notifica se ALMENO UN pannello filtro e' aperto (espansione inclusa) -
+   * usato dalla pagina per non nascondere la toolbar allo scroll mentre un
+   * filtro e' in uso. Deliberatamente basato sullo stato applicativo, non
+   * sul focus DOM: il pannello espansione e' in portale su document.body
+   * (fuori dal contenitore controllato) e Safari (desktop e iOS) non da'
+   * focus a un <button> al click/tap - un controllo solo di focus manca
+   * entrambi i casi (bug reale, trovato riproducendo lo scroll con un
+   * filtro aperto: la barra si comprimeva a 0px portando con se' il
+   * popover ancorato, che spariva a meta' consultazione). */
+  onAnyFilterOpenChange?: (open: boolean) => void;
 }) {
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
   const [activeFilter, setActiveFilter] = useState<"rarity" | "language" | "condition" | null>(null);
+  const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
+
+  useEffect(() => {
+    onAnyFilterOpenChange?.(activeFilter !== null || expansionFilterOpen);
+  }, [activeFilter, expansionFilterOpen, onAnyFilterOpenChange]);
+
+  // Riepilogo dei filtri attivi come pillole rimovibili singolarmente,
+  // cosi' non serve riaprire ogni pannello solo per vedere/togliere una
+  // selezione. closeButtonClass/chip condivisi per restare coerenti con lo
+  // stile pillola gia' usato altrove nella toolbar.
+  const chips: { key: string; label: React.ReactNode; onRemove: () => void }[] = [];
+  if (search) chips.push({ key: "search", label: `"${search}"`, onRemove: () => onSearch("") });
+  if (selectedExpansion) {
+    chips.push({ key: "exp", label: selectedExpansion.name, onRemove: () => onExpansionChange("") });
+  }
+  for (const r of selectedRarities) chips.push({ key: `r-${r}`, label: r, onRemove: () => onToggleRarity(r) });
+  for (const l of selectedLanguages) {
+    chips.push({ key: `l-${l}`, label: `${languageFlag(l)} ${languageLabel(l)}`, onRemove: () => onToggleLanguage(l) });
+  }
+  for (const c of selectedConditions) {
+    chips.push({ key: `c-${c}`, label: <ConditionBadge condition={c} />, onRemove: () => onToggleCondition(c) });
+  }
+  if (onlyZero) chips.push({ key: "zero", label: "⚡ Solo CardTrader Zero", onRemove: onToggleOnlyZero });
 
   return (
     <div className="flex flex-col gap-3">
+      {resultCount !== undefined && (
+        <div aria-live="polite" className="text-xs font-mono text-ink-faint">
+          {resultCount} {resultCount === 1 ? "carta trovata" : "carte trovate"}
+        </div>
+      )}
       {/* Telefono: controlli impilati a larghezza piena. Tablet md: espansione
           e ordinamento condividono una riga senza essere compressi. Desktop lg:
           ricerca + controlli tornano nel layout orizzontale compatto. */}
@@ -67,6 +111,7 @@ export default function Toolbar({
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Cerca una carta per nome…"
+          aria-label="Cerca una carta per nome"
           className="lg:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
         />
 
@@ -80,6 +125,7 @@ export default function Toolbar({
               searchable
               closeOnSelect
               layout="list"
+              onOpenChange={setExpansionFilterOpen}
               getSearchText={(code) => expansions.find((e) => e.code === code)?.name ?? code}
               renderOption={(code) => {
                 const e = expansions.find((x) => x.code === code);
@@ -192,6 +238,27 @@ export default function Toolbar({
           onApply={onApplyPreset}
         />
       </div>
+
+      {/* Riepilogo dei filtri attivi: rimuovere UNA selezione non deve
+          richiedere di riaprire il pannello che l'ha impostata. Scorrimento
+          orizzontale su mobile invece di andare a capo all'infinito (molte
+          selezioni insieme occuperebbero altrimenti parecchio spazio
+          verticale su schermi stretti). */}
+      {chips.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto sm:flex-wrap sm:overflow-visible -mx-1 px-1 pb-1">
+          {chips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={chip.onRemove}
+              className="shrink-0 inline-flex items-center gap-1.5 min-h-8 text-xs pl-3 pr-2 py-1 rounded-full border border-base-border bg-base-surface2 text-ink-muted hover:text-ink-primary hover:border-signal-down/50 transition-colors active:scale-95"
+            >
+              <span className="whitespace-nowrap">{chip.label}</span>
+              <span aria-hidden className="text-ink-faint">✕</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
