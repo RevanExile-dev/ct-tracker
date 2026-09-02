@@ -293,7 +293,13 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     settleTo(direction, 0, true);
   }
 
-  useEffect(() => { clearFlipTimeout(); cancelRaf(); }, []);
+  // Smontaggio a meta' di uno sfoglio (navigazione via, cambio di
+  // viewPage/schermi che rimonta il componente): senza questo cleanup il
+  // loop rAF di scheduleDragPaint non si ferma mai da solo (esce solo
+  // quando drag.locked torna false) e continuerebbe a girare a vuoto ad
+  // ogni frame, e il timeout di sicurezza chiamerebbe comunque
+  // resolveFlip su un componente ormai smontato.
+  useEffect(() => () => { clearFlipTimeout(); cancelRaf(); }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -305,7 +311,14 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   });
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (flip) return; // uno sfoglio e' gia' in corso, ignora un nuovo gesto
+    // Controlla anche dragRef (non solo lo state React "flip"): un secondo
+    // dito che tocca lo stage puo' generare il suo pointerdown prima che il
+    // re-render innescato dal lock del primo gesto sia gia' stato applicato
+    // (flip resterebbe momentaneamente il valore "vecchio" nella closure di
+    // questo handler) - dragRef e' un ref, sempre aggiornato in modo
+    // sincrono, quindi non soggetto a questo scarto (trovato in review,
+    // scenario multi-touch non coperto dal solo controllo su flip).
+    if (flip || dragRef.current) return;
     const now = performance.now();
     dragRef.current = {
       pointerId: event.pointerId,
