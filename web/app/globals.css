@@ -670,6 +670,7 @@ body::after {
 }
 .binder-page-fade {
   animation: binder-page-fade-in 260ms ease-out;
+  will-change: opacity;
 }
 
 @media (hover: none) {
