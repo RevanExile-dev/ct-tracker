@@ -96,8 +96,13 @@ function computeRangeCents(
 ): { minCents: number | null; maxCents: number | null } {
   const tier = findMoversTier(tierKey);
   if (tier) return { minCents: tier.minCents, maxCents: tier.maxCents };
-  const minEuro = customMin.trim() ? parseFloat(customMin) : NaN;
-  const maxEuro = customMax.trim() ? parseFloat(customMax) : NaN;
+  // I campi sono <input type="number">, che sul desktop gia' scarta una
+  // virgola digitata - ma su alcune tastiere numeriche mobili (locale
+  // italiano) puo' comunque finire nel valore: parseFloat("5,50") si
+  // fermerebbe a 5, silenziosamente dimezzando un prezzo digitato come
+  // "5,50" invece di 5,50€ (trovato in review Gemini).
+  const minEuro = customMin.trim() ? parseFloat(customMin.trim().replace(",", ".")) : NaN;
+  const maxEuro = customMax.trim() ? parseFloat(customMax.trim().replace(",", ".")) : NaN;
   return {
     minCents: Number.isFinite(minEuro) ? Math.round(minEuro * 100) : null,
     maxCents: Number.isFinite(maxEuro) ? Math.round(maxEuro * 100) : null,

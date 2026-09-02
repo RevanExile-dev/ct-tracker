@@ -544,6 +544,16 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     "lp.it_nm_zero_price_cents != 0",
     "lp.prev_it_nm_zero_price_cents IS NOT NULL",
     "lp.prev_it_nm_zero_price_cents != 0",
+    // Senza questo, "direction" influenzava SOLO l'ORDER BY (rialzi e cali
+    // ordinati in verso opposto sulla stessa lista), non quali righe
+    // corrispondono davvero - con poche carte in una direzione, le pagine
+    // successive di quella lista si riempivano silenziosamente con carte
+    // della direzione OPPOSTA, e totalCount/la paginazione contavano
+    // rialzi+cali insieme invece di una sola direzione (bug reale, trovato
+    // in review Gemini).
+    opts.direction === "rise"
+      ? "lp.it_nm_zero_price_cents > lp.prev_it_nm_zero_price_cents"
+      : "lp.it_nm_zero_price_cents < lp.prev_it_nm_zero_price_cents",
   ];
   const params: Record<string, string | number> = {};
 
