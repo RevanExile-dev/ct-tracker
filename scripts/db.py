@@ -85,6 +85,18 @@ CREATE TABLE IF NOT EXISTS latest_prices (
     best_language TEXT,
     best_can_sell_via_hub INTEGER,
     prev_best_price_cents INTEGER,
+    -- Serie ESATTA senza fallback: italiano + Near Mint + CardTrader Zero.
+    -- A differenza di best_price_cents sopra (che allenta i vincoli a
+    -- cascata se non trova un'inserzione che li soddisfa tutti), qui NULL
+    -- significa "nessuna offerta con questo identico profilo", mai un
+    -- prezzo di un profilo diverso spacciato per lo stesso - altrimenti un
+    -- confronto corrente/precedente potrebbe paragonare un NM Zero di ieri
+    -- con uno Slightly Played di oggi (bug segnalato: il vecchio
+    -- best_price_cents non distingueva).
+    it_nm_zero_price_cents INTEGER,
+    it_nm_zero_price_currency TEXT,
+    it_nm_zero_listings_count INTEGER,
+    prev_it_nm_zero_price_cents INTEGER,
     FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
 );
 
@@ -141,7 +153,12 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
     cheapest_condition TEXT,
     cheapest_language TEXT,
     cheapest_foil INTEGER,
-    best_price_cents INTEGER
+    best_price_cents INTEGER,
+    -- Stessa semantica esatta-senza-fallback di latest_prices.
+    -- it_nm_zero_price_cents (vedi commento li'): NULL se quel giorno non
+    -- c'era nessuna offerta italiano+Near Mint+Zero, mai un prezzo di un
+    -- profilo diverso.
+    it_nm_zero_price_cents INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_price_blueprint_date
@@ -181,6 +198,10 @@ def init_db():
     _ensure_column(conn, "latest_prices", "best_language", "TEXT")
     _ensure_column(conn, "latest_prices", "best_can_sell_via_hub", "INTEGER")
     _ensure_column(conn, "latest_prices", "prev_best_price_cents", "INTEGER")
+    _ensure_column(conn, "latest_prices", "it_nm_zero_price_cents", "INTEGER")
+    _ensure_column(conn, "latest_prices", "it_nm_zero_price_currency", "TEXT")
+    _ensure_column(conn, "latest_prices", "it_nm_zero_listings_count", "INTEGER")
+    _ensure_column(conn, "latest_prices", "prev_it_nm_zero_price_cents", "INTEGER")
     _ensure_column(conn, "price_listings", "ships_from_country", "TEXT")
     conn.commit()
     conn.close()
@@ -188,6 +209,7 @@ def init_db():
     history_conn = get_history_connection()
     history_conn.executescript(HISTORY_SCHEMA)
     _ensure_column(history_conn, "price_snapshots", "best_price_cents", "INTEGER")
+    _ensure_column(history_conn, "price_snapshots", "it_nm_zero_price_cents", "INTEGER")
     history_conn.commit()
     history_conn.close()
 
@@ -351,6 +373,21 @@ def _pick_best_listing(products: list):
     )
 
 
+def _exact_it_nm_zero_matches(products: list) -> list:
+    """Serie ESATTA senza fallback: carta italiana + Near Mint + CardTrader
+    Zero. A differenza di _pick_best_listing sopra (allenta i vincoli a
+    cascata), qui un'offerta deve soddisfare tutti e tre i criteri
+    contemporaneamente o non conta - nessun "quasi uguale". Chi chiama
+    decide cosa fare di una lista vuota (tipicamente: NULL, non un
+    fallback)."""
+    return [
+        p for p in products
+        if (_product_language(p) or "").lower() == "it"
+        and (p.get("properties_hash") or {}).get("condition") == "Near Mint"
+        and bool((p.get("user") or {}).get("can_sell_via_hub"))
+    ]
+
+
 def _summarize_products(products: list):
     """Riduce la lista di offerte marketplace ai campi aggregati che salviamo
     (prezzo minimo, medio, condizioni/lingua della piu' economica...)."""
@@ -368,6 +405,8 @@ def _summarize_products(products: list):
     cheapest = min(valid_products, key=lambda p: p["price"]["cents"])
     best = _pick_best_listing(valid_products)
     avg_cents = int(sum(prices) / len(prices)) if prices else None
+    exact_matches = _exact_it_nm_zero_matches(valid_products)
+    exact = min(exact_matches, key=lambda p: p["price"]["cents"]) if exact_matches else None
     # Tutte le lingue con almeno un'inserzione, non solo quella della piu'
     # economica: serve per poter filtrare "disponibile in lingua X" anche
     # quando quella lingua non e' l'offerta piu' economica di questa carta.
@@ -387,6 +426,9 @@ def _summarize_products(products: list):
         "best_condition": best.get("properties_hash", {}).get("condition"),
         "best_language": _product_language(best),
         "best_can_sell_via_hub": int(bool(best.get("user", {}).get("can_sell_via_hub"))),
+        "it_nm_zero_price_cents": exact["price"]["cents"] if exact else None,
+        "it_nm_zero_price_currency": exact["price"].get("currency") if exact else None,
+        "it_nm_zero_listings_count": len(exact_matches),
     }
 
 
@@ -404,8 +446,9 @@ def insert_price_snapshot(history_conn, blueprint_id: int, captured_at: str,
             """INSERT INTO price_snapshots
                (blueprint_id, captured_at, captured_at_ts, min_price_cents,
                 min_price_currency, avg_price_cents, listings_count,
-                cheapest_condition, cheapest_language, cheapest_foil, best_price_cents)
-               VALUES (?, ?, ?, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL)""",
+                cheapest_condition, cheapest_language, cheapest_foil, best_price_cents,
+                it_nm_zero_price_cents)
+               VALUES (?, ?, ?, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL)""",
             (blueprint_id, captured_at, captured_at_ts),
         )
         return
@@ -413,14 +456,16 @@ def insert_price_snapshot(history_conn, blueprint_id: int, captured_at: str,
         """INSERT INTO price_snapshots
            (blueprint_id, captured_at, captured_at_ts, min_price_cents,
             min_price_currency, avg_price_cents, listings_count,
-            cheapest_condition, cheapest_language, cheapest_foil, best_price_cents)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            cheapest_condition, cheapest_language, cheapest_foil, best_price_cents,
+            it_nm_zero_price_cents)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             blueprint_id, captured_at, captured_at_ts,
             summary["min_price_cents"], summary["min_price_currency"],
             summary["avg_price_cents"], summary["listings_count"],
             summary["cheapest_condition"], summary["cheapest_language"],
             summary["cheapest_foil"], summary["best_price_cents"],
+            summary["it_nm_zero_price_cents"],
         ),
     )
 
@@ -441,6 +486,19 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
     prev_captured_at, prev_price_cents, prev_best_price_cents = (
         prev_row if prev_row else (None, None, None)
     )
+    # Query separata, non lo stesso prev_row: il giorno piu' recente con UN
+    # prezzo qualsiasi non e' necessariamente lo stesso giorno piu' recente
+    # con un'offerta italiano+Near Mint+Zero - confrontare "corrente" e
+    # "precedente" di questa serie richiede che ENTRAMBI appartengano alla
+    # stessa serie omogenea, non un valore preso da un giorno con un
+    # profilo diverso.
+    prev_exact_row = history_conn.execute(
+        "SELECT it_nm_zero_price_cents FROM price_snapshots "
+        "WHERE blueprint_id = ? AND captured_at < ? AND it_nm_zero_price_cents IS NOT NULL "
+        "ORDER BY captured_at DESC LIMIT 1",
+        (blueprint_id, captured_at),
+    ).fetchone()
+    prev_it_nm_zero_price_cents = prev_exact_row[0] if prev_exact_row else None
 
     summary = _summarize_products(products) or {
         "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
@@ -448,6 +506,8 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
         "cheapest_foil": None, "languages_available": None,
         "best_price_cents": None, "best_price_currency": None, "best_condition": None,
         "best_language": None, "best_can_sell_via_hub": None,
+        "it_nm_zero_price_cents": None, "it_nm_zero_price_currency": None,
+        "it_nm_zero_listings_count": 0,
     }
 
     conn.execute(
@@ -458,13 +518,17 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
              cheapest_condition, cheapest_language, cheapest_foil,
              languages_available, prev_price_cents, prev_captured_at,
              best_price_cents, best_price_currency, best_condition,
-             best_language, best_can_sell_via_hub, prev_best_price_cents)
+             best_language, best_can_sell_via_hub, prev_best_price_cents,
+             it_nm_zero_price_cents, it_nm_zero_price_currency,
+             it_nm_zero_listings_count, prev_it_nm_zero_price_cents)
         VALUES (:blueprint_id, :captured_at, :captured_at_ts, :min_price_cents,
                 :min_price_currency, :avg_price_cents, :listings_count,
                 :cheapest_condition, :cheapest_language, :cheapest_foil,
                 :languages_available, :prev_price_cents, :prev_captured_at,
                 :best_price_cents, :best_price_currency, :best_condition,
-                :best_language, :best_can_sell_via_hub, :prev_best_price_cents)
+                :best_language, :best_can_sell_via_hub, :prev_best_price_cents,
+                :it_nm_zero_price_cents, :it_nm_zero_price_currency,
+                :it_nm_zero_listings_count, :prev_it_nm_zero_price_cents)
         ON CONFLICT(blueprint_id) DO UPDATE SET
             captured_at=excluded.captured_at, captured_at_ts=excluded.captured_at_ts,
             min_price_cents=excluded.min_price_cents,
@@ -482,7 +546,11 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             best_condition=excluded.best_condition,
             best_language=excluded.best_language,
             best_can_sell_via_hub=excluded.best_can_sell_via_hub,
-            prev_best_price_cents=excluded.prev_best_price_cents
+            prev_best_price_cents=excluded.prev_best_price_cents,
+            it_nm_zero_price_cents=excluded.it_nm_zero_price_cents,
+            it_nm_zero_price_currency=excluded.it_nm_zero_price_currency,
+            it_nm_zero_listings_count=excluded.it_nm_zero_listings_count,
+            prev_it_nm_zero_price_cents=excluded.prev_it_nm_zero_price_cents
         """,
         {
             "blueprint_id": blueprint_id,
@@ -491,6 +559,7 @@ def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
             "prev_price_cents": prev_price_cents,
             "prev_captured_at": prev_captured_at,
             "prev_best_price_cents": prev_best_price_cents,
+            "prev_it_nm_zero_price_cents": prev_it_nm_zero_price_cents,
             **summary,
         },
     )

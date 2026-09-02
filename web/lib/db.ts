@@ -6,6 +6,32 @@ let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 let dbPromise: Promise<Database> | null = null;
 let historyDbPromise: Promise<Database> | null = null;
 
+// Il codice del sito e i database .db serviti da /data/ non si aggiornano
+// mai nello stesso istante: il primo deploy di una colonna nuova (come
+// it_nm_zero_price_cents qui sotto) puo' restare per ore/giorni davanti a
+// un database ancora nella forma precedente, finche' il prossimo sync reale
+// non gira. Una SELECT che nomina una colonna assente fallisce e basta in
+// SQLite - senza questo controllo l'intera griglia (home/movers/binder/
+// wishlist, tutte basate su CARD_ROW_SELECT) sarebbe apparsa vuota, senza
+// alcun errore visibile, per tutta quella finestra (bug reale, trovato
+// testando esplicitamente contro il database CORRENTE non ancora
+// migrato, non solo contro una copia gia' aggiornata a mano). Controllato
+// una sola volta per Database appena aperto, poi le funzioni che
+// costruiscono le SELECT lo leggono in modo sincrono.
+let cardsDbHasExactSeries = false;
+let historyDbHasExactSeries = false;
+
+// Solo tabelle/nomi FISSI decisi qui nel codice, mai input utente: sicuro
+// interpolarli direttamente (PRAGMA non supporta parametri bind per il nome
+// tabella in ogni build di SQLite/sql.js, a differenza di una normale SELECT).
+function hasColumn(db: Database, table: string, column: string): boolean {
+  const result = db.exec(`PRAGMA table_info(${table})`);
+  const columnsResult = result[0];
+  if (!columnsResult) return false;
+  const nameIdx = columnsResult.columns.indexOf("name");
+  return columnsResult.values.some((row) => row[nameIdx] === column);
+}
+
 function getSqlJs(): Promise<SqlJsStatic> {
   if (!sqlJsPromise) {
     sqlJsPromise = initSqlJs({
@@ -39,7 +65,9 @@ export function getDb(): Promise<Database> {
         );
       }
       const buf = await res.arrayBuffer();
-      return new SQL.Database(new Uint8Array(buf));
+      const db = new SQL.Database(new Uint8Array(buf));
+      cardsDbHasExactSeries = hasColumn(db, "latest_prices", "it_nm_zero_price_cents");
+      return db;
     })().catch((err) => {
       // Senza questo, un solo fallimento (rete instabile, file
       // temporaneamente assente) mette in cache per sempre la stessa
@@ -69,7 +97,9 @@ export function getHistoryDb(): Promise<Database> {
         throw new Error("Storico prezzi non trovato in /data/price_history.db.");
       }
       const buf = await res.arrayBuffer();
-      return new SQL.Database(new Uint8Array(buf));
+      const db = new SQL.Database(new Uint8Array(buf));
+      historyDbHasExactSeries = hasColumn(db, "price_snapshots", "it_nm_zero_price_cents");
+      return db;
     })().catch((err) => {
       // Stesso motivo di getDb(): niente Promise rifiutata in cache per
       // sempre dopo un solo errore di rete.
@@ -108,6 +138,16 @@ export type CardRow = {
   best_language: string | null;
   best_can_sell_via_hub: number | null;
   prev_best_price_cents: number | null;
+  // Serie ESATTA senza fallback: carta italiana + Near Mint + CardTrader
+  // Zero, tutte e tre insieme o NULL — a differenza di best_price_cents
+  // sopra (che allenta i vincoli a cascata), qui un valore non-NULL
+  // significa sempre esattamente questo profilo, mai un'offerta simile ma
+  // diversa spacciata per la stessa. Vedi _exact_it_nm_zero_matches in
+  // scripts/db.py.
+  it_nm_zero_price_cents: number | null;
+  it_nm_zero_price_currency: string | null;
+  it_nm_zero_listings_count: number | null;
+  prev_it_nm_zero_price_cents: number | null;
   // Presenti SOLO quando fetchCards() ha almeno un filtro lingua/condizione/
   // Zero attivo (vedi hasListingFilter): la piu' economica tra le inserzioni
   // che rispettano TUTTI quei filtri insieme, cosi' il prezzo mostrato non
@@ -154,7 +194,24 @@ function expandRarityFilters(rarities: string[]): string[] {
   })));
 }
 
-const CARD_ROW_SELECT = `
+// Funzione, non piu' una costante: le 4 colonne it_nm_zero_* esistono solo
+// se il database CORRENTE (che puo' restare indietro rispetto al codice
+// fino al prossimo sync reale, vedi cardsDbHasExactSeries sopra) le ha gia'
+// - nominarle comunque farebbe fallire l'intera query con "no such column",
+// svuotando la griglia ovunque questa select venga usata.
+function cardRowSelect(): string {
+  const exact = cardsDbHasExactSeries
+    ? `
+  lp.it_nm_zero_price_cents AS it_nm_zero_price_cents,
+  lp.it_nm_zero_price_currency AS it_nm_zero_price_currency,
+  lp.it_nm_zero_listings_count AS it_nm_zero_listings_count,
+  lp.prev_it_nm_zero_price_cents AS prev_it_nm_zero_price_cents`
+    : `
+  NULL AS it_nm_zero_price_cents,
+  NULL AS it_nm_zero_price_currency,
+  NULL AS it_nm_zero_listings_count,
+  NULL AS prev_it_nm_zero_price_cents`;
+  return `
   b.id, b.name, b.version, b.expansion_code, b.expansion_name,
   b.image_url, b.rarity, b.is_premium,
   lp.min_price_cents AS latest_price_cents,
@@ -168,8 +225,9 @@ const CARD_ROW_SELECT = `
   lp.best_condition AS best_condition,
   lp.best_language AS best_language,
   lp.best_can_sell_via_hub AS best_can_sell_via_hub,
-  lp.prev_best_price_cents AS prev_best_price_cents
+  lp.prev_best_price_cents AS prev_best_price_cents,${exact}
 `;
+}
 
 type CardsFilterOpts = {
   search?: string;
@@ -365,7 +423,7 @@ export async function fetchCards(opts: CardsFilterOpts & {
     : "";
 
   const sql = `
-    SELECT ${CARD_ROW_SELECT}${filteredSelect}
+    SELECT ${cardRowSelect()}${filteredSelect}
     FROM blueprints b
     LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
     ${filteredJoin}
@@ -452,7 +510,7 @@ export type CardDetail = CardRow & {
 export async function fetchCardDetail(id: number): Promise<CardDetail | null> {
   const db = await getDb();
   const stmt = db.prepare(`
-    SELECT ${CARD_ROW_SELECT}, b.tcg_player_id, b.scryfall_id
+    SELECT ${cardRowSelect()}, b.tcg_player_id, b.scryfall_id
     FROM blueprints b
     LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
     WHERE b.id = $id
@@ -478,14 +536,23 @@ export type PricePoint = {
   // snapshot precedenti all'introduzione di questa colonna: usare sempre
   // con fallback a min_price_cents.
   best_price_cents: number | null;
+  // Serie ESATTA senza fallback per quello snapshot (italiano + Near Mint +
+  // CardTrader Zero) - NULL se quel giorno non c'era un'offerta con questo
+  // identico profilo, mai un prezzo di un profilo diverso. Vedi
+  // it_nm_zero_price_cents in CardRow per la stessa semantica sul "latest".
+  it_nm_zero_price_cents: number | null;
 };
 
 /** Storico completo di una carta: scarica price_history.db solo alla prima
  * chiamata (non serve per navigare il catalogo, solo per il grafico). */
 export async function fetchPriceHistory(blueprintId: number): Promise<PricePoint[]> {
   const db = await getHistoryDb();
+  // Stesso motivo di cardRowSelect() sopra: price_history.db puo' restare
+  // indietro rispetto al codice fino al prossimo sync reale.
+  const exactColumn = historyDbHasExactSeries ? "it_nm_zero_price_cents" : "NULL AS it_nm_zero_price_cents";
   const stmt = db.prepare(`
-    SELECT captured_at, min_price_cents, avg_price_cents, listings_count, best_price_cents
+    SELECT captured_at, min_price_cents, avg_price_cents, listings_count, best_price_cents,
+           ${exactColumn}
     FROM price_snapshots
     WHERE blueprint_id = $id
     ORDER BY captured_at ASC

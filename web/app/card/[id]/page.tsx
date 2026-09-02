@@ -322,6 +322,17 @@ function CardDetailContent() {
                   {listings[0]?.condition ? ` (${listings[0].condition})` : ""}
                 </div>
               )}
+              {/* Profilo esatto italiano+Near Mint+Zero, distinto dal prezzo
+                  in evidenza sopra: quest'ultimo (best_price_cents) allenta i
+                  vincoli a cascata e non garantisce affatto la lingua
+                  italiana, quindi puo' differire davvero da questo valore.
+                  Mostrato sempre, "nessuna offerta" incluso - il criterio lo
+                  chiede esplicitamente, non solo per le carte italiane. */}
+              <div className="text-xs font-mono text-ink-faint mt-1">
+                🇮🇹 NM · Zero: {card.it_nm_zero_price_cents !== null
+                  ? formatCents(card.it_nm_zero_price_cents, card.it_nm_zero_price_currency ?? currency)
+                  : "nessuna offerta rilevata"}
+              </div>
             </div>
             <div className="rounded-card border border-base-border bg-base-surface p-4">
               <div className="text-xs font-mono text-ink-faint uppercase">Inserzioni attive</div>
