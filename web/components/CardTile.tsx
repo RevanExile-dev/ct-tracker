@@ -18,6 +18,7 @@ export default function CardTile({
   inWishlist,
   onToggleWishlist,
   returnTo,
+  priceProfile,
 }: {
   card: CardRow;
   index?: number;
@@ -31,7 +32,15 @@ export default function CardTile({
   inWishlist?: boolean;
   onToggleWishlist?: () => void;
   returnTo?: string;
+  // "exact": mostra sempre la serie it_nm_zero_price_cents (italiano + Near
+  // Mint + CardTrader Zero, senza fallback) invece del prezzo "best" a
+  // cascata - usato da /movers, che ORDINA e FILTRA le carte su quella
+  // stessa serie: se la tile mostrasse un prezzo diverso (best_price_cents)
+  // da quello usato per ordinarla, il numero a schermo non spiegherebbe la
+  // posizione della carta nella lista rialzi/cali.
+  priceProfile?: "best" | "exact";
 }) {
+  const isExact = priceProfile === "exact";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
   // condizione/Zero: e' la piu' economica tra le inserzioni che rispettano
   // TUTTI quei filtri insieme (non best_price_cents, calcolato ignorandoli,
@@ -40,12 +49,20 @@ export default function CardTile({
   // Near Mint + CardTrader Zero quando esiste (vedi _pick_best_listing lato
   // sync); fallback al vecchio prezzo piu' basso in assoluto solo per le
   // carte non ancora ripassate dal sync.
-  const priceCents = card.filtered_price_cents ?? card.best_price_cents ?? card.latest_price_cents;
-  const priceCurrency = card.filtered_price_currency ?? card.best_price_currency ?? card.latest_price_currency;
-  const priceLanguage = card.filtered_language ?? card.best_language ?? card.latest_language;
-  const prevPriceCents = card.prev_best_price_cents ?? card.prev_price_cents;
-  const shownCondition = card.filtered_condition !== undefined ? card.filtered_condition : card.best_condition;
-  const shownZero = card.filtered_can_sell_via_hub !== undefined ? card.filtered_can_sell_via_hub : card.best_can_sell_via_hub;
+  const priceCents = isExact
+    ? card.it_nm_zero_price_cents
+    : card.filtered_price_cents ?? card.best_price_cents ?? card.latest_price_cents;
+  const priceCurrency = isExact
+    ? card.it_nm_zero_price_currency ?? "EUR"
+    : card.filtered_price_currency ?? card.best_price_currency ?? card.latest_price_currency;
+  const priceLanguage = isExact ? "it" : card.filtered_language ?? card.best_language ?? card.latest_language;
+  const prevPriceCents = isExact ? card.prev_it_nm_zero_price_cents : card.prev_best_price_cents ?? card.prev_price_cents;
+  const shownCondition = isExact
+    ? "Near Mint"
+    : card.filtered_condition !== undefined ? card.filtered_condition : card.best_condition;
+  const shownZero = isExact
+    ? 1
+    : card.filtered_can_sell_via_hub !== undefined ? card.filtered_can_sell_via_hub : card.best_can_sell_via_hub;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
   const [popping, setPopping] = useState(false);

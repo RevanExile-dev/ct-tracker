@@ -502,6 +502,115 @@ export async function fetchCardsSummary(
   return { avgPct: row.avgPct, sampleSize: row.sampleSize, totalCards: row.totalCards };
 }
 
+export type MoversDirection = "rise" | "drop";
+export type MoversSort = "pct" | "abs";
+
+export const MOVERS_PAGE_SIZE = 12;
+
+export type MoversPageOpts = {
+  direction: MoversDirection;
+  rarities?: string[];
+  minCents?: number | null;
+  maxCents?: number | null;
+  sort?: MoversSort;
+  page?: number;
+};
+
+export type MoversPageResult = {
+  cards: CardRow[];
+  totalCount: number;
+  // false quando il database corrente non ha ancora la serie esatta
+  // it_nm_zero_* (vedi cardsDbHasExactSeries) - distinto da "0 carte
+  // trovate", cosi' la UI puo' mostrare "in attesa del prossimo sync"
+  // invece di "nessuna carta in questa fascia".
+  available: boolean;
+};
+
+// "Carte in movimento" confronta SOLO la serie esatta italiano+Near Mint+
+// CardTrader Zero (mai best_price_cents, che allenta i vincoli a cascata e
+// puo' mescolare profili diversi tra un giorno e l'altro - la stessa
+// ragione per cui l'item 1 di questa serie di modifiche doveva precedere
+// questo): un valore corrente/precedente qui e' garantito riferirsi sempre
+// allo stesso identico profilo, mai un'offerta simile ma diversa spacciata
+// per la stessa.
+export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageResult> {
+  const db = await getDb();
+  if (!cardsDbHasExactSeries) {
+    return { cards: [], totalCount: 0, available: false };
+  }
+
+  const where: string[] = [
+    "lp.it_nm_zero_price_cents IS NOT NULL",
+    "lp.it_nm_zero_price_cents != 0",
+    "lp.prev_it_nm_zero_price_cents IS NOT NULL",
+    "lp.prev_it_nm_zero_price_cents != 0",
+    // Senza questo, "direction" influenzava SOLO l'ORDER BY (rialzi e cali
+    // ordinati in verso opposto sulla stessa lista), non quali righe
+    // corrispondono davvero - con poche carte in una direzione, le pagine
+    // successive di quella lista si riempivano silenziosamente con carte
+    // della direzione OPPOSTA, e totalCount/la paginazione contavano
+    // rialzi+cali insieme invece di una sola direzione (bug reale, trovato
+    // in review Gemini).
+    opts.direction === "rise"
+      ? "lp.it_nm_zero_price_cents > lp.prev_it_nm_zero_price_cents"
+      : "lp.it_nm_zero_price_cents < lp.prev_it_nm_zero_price_cents",
+  ];
+  const params: Record<string, string | number> = {};
+
+  if (opts.rarities && opts.rarities.length > 0) {
+    const rarityFilters = expandRarityFilters(opts.rarities);
+    const placeholders = rarityFilters.map((_, i) => `$rarity${i}`).join(", ");
+    rarityFilters.forEach((r, i) => (params[`$rarity${i}`] = r));
+    where.push(`b.rarity IN (${placeholders})`);
+  }
+  if (opts.minCents != null) {
+    where.push("lp.it_nm_zero_price_cents >= $minCents");
+    params["$minCents"] = opts.minCents;
+  }
+  if (opts.maxCents != null) {
+    where.push("lp.it_nm_zero_price_cents <= $maxCents");
+    params["$maxCents"] = opts.maxCents;
+  }
+
+  const whereSql = `WHERE ${where.join(" AND ")}`;
+  const countStmt = db.prepare(
+    `SELECT COUNT(*) AS c FROM blueprints b LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id ${whereSql}`
+  );
+  countStmt.bind(params);
+  countStmt.step();
+  const totalCount = (countStmt.getAsObject() as { c: number }).c;
+  countStmt.free();
+
+  const deltaExpr =
+    "(CAST(lp.it_nm_zero_price_cents AS REAL) - lp.prev_it_nm_zero_price_cents) / lp.prev_it_nm_zero_price_cents";
+  const absExpr = "(lp.it_nm_zero_price_cents - lp.prev_it_nm_zero_price_cents)";
+  const sortExpr = opts.sort === "abs" ? absExpr : deltaExpr;
+  const orderDirection = opts.direction === "rise" ? "DESC" : "ASC";
+
+  const page = Math.max(1, opts.page ?? 1);
+  const offset = (page - 1) * MOVERS_PAGE_SIZE;
+  params["$limit"] = MOVERS_PAGE_SIZE;
+  params["$offset"] = offset;
+
+  const stmt = db.prepare(`
+    SELECT ${cardRowSelect()}
+    FROM blueprints b
+    LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
+    ${whereSql}
+    ORDER BY ${sortExpr} ${orderDirection}
+    LIMIT $limit OFFSET $offset
+  `);
+  stmt.bind(params);
+  const cards: CardRow[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as unknown as CardRow;
+    if (row.rarity) row.rarity = normalizeRarity(row.rarity);
+    cards.push(row);
+  }
+  stmt.free();
+  return { cards, totalCount, available: true };
+}
+
 export type CardDetail = CardRow & {
   tcg_player_id: string | null;
   scryfall_id: string | null;
