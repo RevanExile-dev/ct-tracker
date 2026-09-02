@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ExpansionInfo, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
@@ -32,6 +32,7 @@ export default function Toolbar({
   onResetAll,
   onApplyPreset,
   resultCount,
+  onAnyFilterOpenChange,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -58,9 +59,24 @@ export default function Toolbar({
    * come feedback immediato dopo una ricerca/filtro. undefined finche' non
    * e' ancora arrivato dal DB, non mostra nulla in quel caso. */
   resultCount?: number;
+  /** Notifica se ALMENO UN pannello filtro e' aperto (espansione inclusa) -
+   * usato dalla pagina per non nascondere la toolbar allo scroll mentre un
+   * filtro e' in uso. Deliberatamente basato sullo stato applicativo, non
+   * sul focus DOM: il pannello espansione e' in portale su document.body
+   * (fuori dal contenitore controllato) e Safari (desktop e iOS) non da'
+   * focus a un <button> al click/tap - un controllo solo di focus manca
+   * entrambi i casi (bug reale, trovato riproducendo lo scroll con un
+   * filtro aperto: la barra si comprimeva a 0px portando con se' il
+   * popover ancorato, che spariva a meta' consultazione). */
+  onAnyFilterOpenChange?: (open: boolean) => void;
 }) {
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
   const [activeFilter, setActiveFilter] = useState<"rarity" | "language" | "condition" | null>(null);
+  const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
+
+  useEffect(() => {
+    onAnyFilterOpenChange?.(activeFilter !== null || expansionFilterOpen);
+  }, [activeFilter, expansionFilterOpen, onAnyFilterOpenChange]);
 
   // Riepilogo dei filtri attivi come pillole rimovibili singolarmente,
   // cosi' non serve riaprire ogni pannello solo per vedere/togliere una
@@ -109,6 +125,7 @@ export default function Toolbar({
               searchable
               closeOnSelect
               layout="list"
+              onOpenChange={setExpansionFilterOpen}
               getSearchText={(code) => expansions.find((e) => e.code === code)?.name ?? code}
               renderOption={(code) => {
                 const e = expansions.find((x) => x.code === code);

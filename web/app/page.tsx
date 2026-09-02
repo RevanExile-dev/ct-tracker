@@ -91,7 +91,15 @@ function HomeContent() {
   // Anche una maniglia manuale (sotto) puo' aprirla/chiuderla in qualunque
   // momento, indipendentemente dallo scroll.
   const toolbarWrapRef = useRef<HTMLDivElement>(null);
-  const [toolbarVisible, setToolbarVisible] = useHideOnScrollDown(toolbarWrapRef);
+  // Stato applicativo "e' aperto un pannello filtro", non desunto dal
+  // focus DOM: il pannello mobile e' in portale fuori da toolbarWrapRef e
+  // Safari (desktop/iOS) non da' focus a un <button> al click/tap - il
+  // solo controllo di focus in useHideOnScrollDown mancava entrambi i
+  // casi, comprimendo la barra (e il popover ancorato a essa) mentre un
+  // filtro era ancora visibilmente aperto (bug reale segnalato su iOS e
+  // desktop, riprodotto con uno scroll reale a filtro aperto).
+  const [anyFilterOpen, setAnyFilterOpen] = useState(false);
+  const [toolbarVisible, setToolbarVisible] = useHideOnScrollDown(toolbarWrapRef, undefined, undefined, anyFilterOpen);
 
   // Specchia i filtri nella URL (senza aggiungere una entry nella cronologia
   // ad ogni singola modifica: solo la navigazione verso una carta la crea).
@@ -285,6 +293,7 @@ function HomeContent() {
                 onResetAll={resetAllFilters}
                 onApplyPreset={applyPreset}
                 resultCount={resultCount}
+                onAnyFilterOpenChange={setAnyFilterOpen}
               />
             </div>
           </div>
