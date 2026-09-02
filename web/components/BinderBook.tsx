@@ -104,7 +104,63 @@ function ScreenView({ screen, returnTo, fade = false }: { screen: Screen | undef
   );
 }
 
-type Flip = { direction: "next" | "prev"; started: boolean };
+// Fase dello sfoglio in corso:
+// - "live": trascinamento attivo, il transform e' scritto ad ogni frame via
+//   ref (segue dito/cursore 1:1), nessuna transizione CSS.
+// - "completing"/"cancelling": la transizione CSS e' riabilitata e anima
+//   verso il traguardo (rispettivamente pagina girata del tutto o tornata
+//   a piatta) - usata sia al rilascio di un drag sia da un turn() discreto
+//   (bottone/tastiera, che salta direttamente qui con progress=0).
+type FlipPhase = "live" | "completing" | "cancelling";
+type Flip = { direction: "next" | "prev"; phase: FlipPhase };
+
+// Soglia oltre la quale un movimento orizzontale diventa "drag" (blocca il
+// click sulla carta sottostante) invece di restare un tap o uno scroll
+// verticale che deve continuare a scorrere normalmente.
+const LOCK_THRESHOLD_PX = 9;
+// Oltre questa frazione di pagina trascinata, il rilascio completa lo
+// sfoglio invece di tornare indietro.
+const COMPLETE_PROGRESS = 0.35;
+// Un rilascio abbastanza veloce (px/ms) completa lo sfoglio anche se il
+// trascinamento non ha superato COMPLETE_PROGRESS - un "flick" deciso.
+const FLICK_VELOCITY_PX_MS = 0.55;
+// Durata dell'animazione di uno sfoglio completo (bottone/tastiera, o un
+// drag che parte da progress=0) - durata dell'assestamento per un drag
+// e' invece proporzionale alla distanza restante, con questo come tetto.
+const SETTLE_BASE_MS = 680;
+const SETTLE_MIN_MS = 140;
+// Margine oltre la durata attesa prima che la rete di sicurezza (nel caso
+// transitionend non arrivi mai - tab in background, frame drop) concluda
+// comunque lo sfoglio.
+const SETTLE_SAFETY_MARGIN_MS = 220;
+
+type DragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  locked: boolean;
+  direction: "next" | "prev" | null;
+  pageWidth: number;
+  progress: number;
+  // Ultimi due campioni (posizione, istante) del gesto, usati a rilascio
+  // per stimare la velocita' istantanea - due soli campioni bastano per un
+  // rilascio ("cosa stava succedendo nell'ultimo tratto") senza dover
+  // accumulare una storia intera del gesto.
+  sampleX: number;
+  sampleT: number;
+  prevSampleX: number;
+  prevSampleT: number;
+};
+
+// Velocita' istantanea (px/ms) nella direzione che fa AVANZARE il progress
+// (non il segno grezzo di dx) - stimata dagli ultimi due campioni di
+// pointermove registrati durante il trascinamento.
+function dragVelocity(drag: DragState): number {
+  const dt = drag.sampleT - drag.prevSampleT;
+  if (dt <= 0 || !drag.direction) return 0;
+  const dxDelta = drag.sampleX - drag.prevSampleX;
+  return drag.direction === "next" ? -dxDelta / dt : dxDelta / dt;
+}
 
 export default function BinderBook({ cards, initialPage = 0, onPageChange, returnTo }: {
   cards: CardRow[];
@@ -115,7 +171,10 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const [singlePage, setSinglePage] = useState(false);
   const [page, setPage] = useState(Math.max(0, initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
-  const gestureStart = useRef<{ x: number; y: number } | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const flipElRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const rafRef = useRef<number | null>(null);
   const didSwipe = useRef(false);
   const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screens = useMemo(() => buildScreens(cards, singlePage ? 4 : 9), [cards, singlePage]);
@@ -141,34 +200,100 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     }
   }
 
-  function turn(direction: "next" | "prev") {
-    if ((direction === "next" && !canNext) || (direction === "prev" && !canPrev)) return;
-    setFlip({ direction, started: false });
-    requestAnimationFrame(() => requestAnimationFrame(() => setFlip({ direction, started: true })));
-    // Rete di sicurezza: onTransitionEnd non e' garantito al 100% (tab in
-    // background, frame drop, dispositivi lenti) - senza un fallback un solo
-    // evento perso blocca la pagina per sempre, perche' canNext/canPrev
-    // richiedono flip===null. Il timeout completa comunque il turn dopo la
-    // durata della transizione CSS (680ms, vedi globals.css) + margine.
-    clearFlipTimeout();
-    flipTimeoutRef.current = setTimeout(finishFlip, 900);
+  function cancelRaf() {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
   }
 
-  function finishFlip() {
+  // Applica al nodo del flip il transform/ombra corrispondenti al progress
+  // corrente (0-1) - unico punto che scrive sul DOM durante il trascinamento,
+  // cosi' i pointermove restano leggeri (aggiornano solo dragRef) e il ritmo
+  // reale delle scritture e' quello dei frame, non degli eventi di input.
+  function paintProgress(direction: "next" | "prev", progress: number) {
+    const el = flipElRef.current;
+    if (!el) return;
+    const deg = direction === "next" ? -progress * 180 : progress * 180;
+    // Leggera compressione al centro del gesto (la pagina "si stacca" un
+    // filo dal piano quando e' di taglio, come una pagina vera) - puramente
+    // estetico, nessun impatto sulla logica di sfoglio.
+    const dip = 1 - 0.03 * Math.sin(progress * Math.PI);
+    el.style.transform = `rotateY(${deg}deg) scale(${dip})`;
+    el.style.setProperty("--flip-shadow", String(Math.sin(progress * Math.PI)));
+  }
+
+  // Coda un aggiornamento continuo: legge il progress corrente da dragRef
+  // ad ogni frame finche' il drag resta "locked", invece di dipingere
+  // direttamente dentro l'handler di pointermove (che puo' ricevere eventi
+  // piu' spesso di quanto il browser dipinga davvero).
+  function scheduleDragPaint() {
+    cancelRaf();
+    function tick() {
+      const drag = dragRef.current;
+      if (!drag || !drag.locked || !drag.direction) { rafRef.current = null; return; }
+      paintProgress(drag.direction, drag.progress);
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+  }
+
+  // Risolve definitivamente lo sfoglio in corso (chiamata sia da
+  // onTransitionEnd sia dalla rete di sicurezza a timeout): se completing
+  // avanza la pagina, altrimenti la lascia invariata. Ripulisce sempre gli
+  // stili imperativi cosi' il prossimo sfoglio riparte da uno stato pulito.
+  function resolveFlip(completing: boolean) {
     clearFlipTimeout();
-    // Aggiornamento funzionale: finishFlip puo' arrivare sia da
-    // onTransitionEnd sia dal timeout di sicurezza sopra, con closure creata
-    // in render diversi - leggere flip da state (non dalla closure esterna)
-    // evita di agire su un valore stantio o di eseguire il turn due volte.
     setFlip((current) => {
       if (!current) return null;
-      const direction = current.direction;
-      setPage((page) => Math.max(0, Math.min(screens.length - 1, page + (direction === "next" ? step : -step))));
+      if (completing) {
+        const direction = current.direction;
+        setPage((page) => Math.max(0, Math.min(screens.length - 1, page + (direction === "next" ? step : -step))));
+      }
       return null;
     });
+    const el = flipElRef.current;
+    if (el) {
+      el.style.transform = "";
+      el.style.transitionDuration = "";
+      el.style.removeProperty("--flip-shadow");
+    }
   }
 
-  useEffect(() => clearFlipTimeout, []);
+  function armSettleTimeout(durationMs: number, completing: boolean) {
+    clearFlipTimeout();
+    flipTimeoutRef.current = setTimeout(() => resolveFlip(completing), durationMs + SETTLE_SAFETY_MARGIN_MS);
+  }
+
+  // Anima dallo stato corrente (che sia in mezzo a un drag o a riposo) fino
+  // al traguardo (girata del tutto o tornata piatta), riabilitando la
+  // transizione CSS - usata sia al rilascio di un drag sia da turn().
+  function settleTo(direction: "next" | "prev", fromProgress: number, completing: boolean) {
+    const remaining = completing ? 1 - fromProgress : fromProgress;
+    const duration = Math.max(SETTLE_MIN_MS, remaining * SETTLE_BASE_MS);
+    setFlip({ direction, phase: completing ? "completing" : "cancelling" });
+    // Doppio rAF: il primo lascia che la rimozione della classe
+    // "binder-flip-live" (che disattiva transition:none) sia dipinta, il
+    // secondo cambia davvero il target - altrimenti browser puo' fondere
+    // le due modifiche in un solo frame e saltare la transizione.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = flipElRef.current;
+        if (!el) return;
+        el.style.transitionDuration = `${duration}ms`;
+        const targetProgress = completing ? 1 : 0;
+        paintProgress(direction, targetProgress);
+      });
+    });
+    armSettleTimeout(duration, completing);
+  }
+
+  function turn(direction: "next" | "prev") {
+    if (flip || (direction === "next" ? !canNext : !canPrev)) return;
+    settleTo(direction, 0, true);
+  }
+
+  useEffect(() => { clearFlipTimeout(); cancelRaf(); }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -178,6 +303,89 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   });
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (flip) return; // uno sfoglio e' gia' in corso, ignora un nuovo gesto
+    const now = performance.now();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      locked: false,
+      direction: null,
+      pageWidth: 1,
+      progress: 0,
+      sampleX: event.clientX,
+      sampleT: now,
+      prevSampleX: event.clientX,
+      prevSampleT: now,
+    };
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+
+    if (!drag.locked) {
+      if (Math.abs(dx) < LOCK_THRESHOLD_PX && Math.abs(dy) < LOCK_THRESHOLD_PX) return; // ancora indeciso
+      if (Math.abs(dy) >= Math.abs(dx)) { dragRef.current = null; return; } // verticale: lascia scorrere la pagina
+      const direction = dx < 0 ? "next" : "prev";
+      if (direction === "next" ? !canNext : !canPrev) { dragRef.current = null; return; } // non c'e' una pagina in quella direzione
+      const stageRect = stageRef.current?.getBoundingClientRect();
+      const pageWidth = stageRect ? (singlePage ? stageRect.width : stageRect.width / 2) : 1;
+      drag.locked = true;
+      drag.direction = direction;
+      drag.pageWidth = Math.max(1, pageWidth);
+      didSwipe.current = true; // sopprime il click sintetico che seguira' il rilascio
+      // Solo per il mouse: serve a continuare a ricevere pointermove/up anche
+      // se il cursore esce dai bordi dello stage durante il trascinamento.
+      // Il touch ha gia' una "cattura implicita" nativa (verificato: senza
+      // chiamare setPointerCapture i pointermove/up continuano ad arrivare
+      // regolarmente) - chiamarla comunque su un pointer touch ha innescato
+      // in pratica un lostpointercapture spurio quasi subito dopo l'inizio
+      // del gesto (isolato con log mirati: il drag veniva annullato dopo un
+      // solo pointermove, con gli eventi successivi che continuavano ad
+      // arrivare regolarmente ma ormai ignorati perche' il nostro stato
+      // interno era gia' stato azzerato).
+      if (event.pointerType === "mouse") event.currentTarget.setPointerCapture(event.pointerId);
+      setFlip({ direction, phase: "live" });
+      scheduleDragPaint();
+    }
+
+    if (!drag.locked || !drag.direction) return;
+    const raw = drag.direction === "next" ? -dx / drag.pageWidth : dx / drag.pageWidth;
+    drag.progress = Math.min(1, Math.max(0, raw));
+    drag.prevSampleX = drag.sampleX;
+    drag.prevSampleT = drag.sampleT;
+    drag.sampleX = event.clientX;
+    drag.sampleT = performance.now();
+  }
+
+  function endDrag(cancel: boolean) {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    cancelRaf();
+    if (!drag || !drag.locked || !drag.direction) return;
+    window.setTimeout(() => { didSwipe.current = false; }, 0);
+    if (cancel) {
+      // pointercancel: mai completare su un gesto interrotto dal sistema
+      // (es. una notifica, un cambio di scroll) - torna sempre indietro.
+      settleTo(drag.direction, drag.progress, false);
+      return;
+    }
+    const completing = drag.progress >= COMPLETE_PROGRESS || Math.abs(dragVelocity(drag)) >= FLICK_VELOCITY_PX_MS;
+    settleTo(drag.direction, drag.progress, completing);
+  }
+
+  function handlePointerUp() {
+    endDrag(false);
+  }
+
+  function handlePointerCancel() {
+    endDrag(true);
+  }
 
   const nextStart = viewPage + step;
   const prevStart = Math.max(0, viewPage - step);
@@ -191,23 +399,21 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   return (
     <div className="w-full">
       <div
-        className={`binder-stage ${singlePage ? "binder-stage-single" : "binder-stage-spread"}`}
+        ref={stageRef}
+        className={`binder-stage ${singlePage ? "binder-stage-single" : "binder-stage-spread"} ${flip?.phase === "live" ? "binder-stage-dragging" : ""}`}
         aria-label="Binder sfogliabile"
-        onPointerDown={(event) => {
-          if (event.pointerType !== "mouse") gestureStart.current = { x: event.clientX, y: event.clientY };
-        }}
-        onPointerUp={(event) => {
-          const start = gestureStart.current;
-          gestureStart.current = null;
-          if (!start) return;
-          const dx = event.clientX - start.x;
-          const dy = event.clientY - start.y;
-          if (Math.abs(dx) >= 52 && Math.abs(dx) > Math.abs(dy) * 1.25) {
-            didSwipe.current = true;
-            turn(dx < 0 ? "next" : "prev");
-            window.setTimeout(() => { didSwipe.current = false; }, 0);
-          }
-        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handlePointerCancel}
+        // Le immagini delle carte e i link <a> sono trascinabili nativamente
+        // di default: senza questo, un mousedown+move su una carta avvia il
+        // drag-and-drop HTML5 del browser invece del nostro sfoglio,
+        // interrompendolo con un pointercancel quasi immediato (bug reale,
+        // isolato loggando gli eventi - il pointercancel arrivava a
+        // progress ~0.08, appena iniziato il gesto).
+        onDragStart={(event) => event.preventDefault()}
         onClickCapture={(event) => {
           if (didSwipe.current) { event.preventDefault(); event.stopPropagation(); }
         }}
@@ -223,9 +429,13 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
 
           {flip && (
             <div
-              className={`binder-flip ${singlePage ? "binder-flip-single" : flip.direction === "next" ? "binder-flip-right" : "binder-flip-left"} ${flip.started ? "is-turning" : ""}`}
+              ref={flipElRef}
+              className={`binder-flip ${singlePage ? "binder-flip-single" : flip.direction === "next" ? "binder-flip-right" : "binder-flip-left"} ${flip.phase === "live" ? "binder-flip-live" : ""}`}
               data-direction={flip.direction}
-              onTransitionEnd={(event) => { if (event.target === event.currentTarget) finishFlip(); }}
+              onTransitionEnd={(event) => {
+                if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
+                resolveFlip(flip.phase === "completing");
+              }}
             >
               <div className="binder-flip-face binder-flip-front">
                 <ScreenView screen={singlePage ? left : flip.direction === "next" ? right : left} returnTo={returnTo} />
@@ -245,7 +455,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
         </span>
         <button onClick={() => turn("next")} disabled={!canNext} className="btn-lift min-h-11 text-sm px-4 sm:px-5 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 active:scale-95 disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"><span className="hidden sm:inline">Pagina succ.</span><span className="sm:hidden">Avanti</span> →</button>
       </div>
-      <p className="mt-3 text-center text-[11px] font-mono text-ink-faint">Swipe su touch · frecce ← → su tastiera</p>
+      <p className="mt-3 text-center text-[11px] font-mono text-ink-faint">Trascina o swipe · frecce ← → su tastiera</p>
     </div>
   );
 }

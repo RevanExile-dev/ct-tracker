@@ -547,6 +547,10 @@ body::after {
   padding: 8px 0 20px;
   touch-action: pan-y;
   user-select: none;
+  cursor: grab;
+}
+.binder-stage-dragging {
+  cursor: grabbing;
 }
 .binder-stage-spread .binder-spread {
   width: min(100%, calc((100dvh - 250px) * 10 / 7), 1320px);
@@ -635,7 +639,10 @@ body::after {
   bottom: 0;
   width: calc(50% - clamp(7px, .8vw, 12px));
   transition: transform 680ms cubic-bezier(.45,.05,.18,1);
-  box-shadow: none;
+  /* L'intensita' dell'ombra di piega segue --flip-shadow (0-1), scritta a
+     ogni frame dal trascinamento in BinderBook.tsx (picco a meta' del
+     gesto) - a riposo/0 non produce alcuna ombra visibile. */
+  box-shadow: 0 0 calc(var(--flip-shadow, 0) * 40px) calc(var(--flip-shadow, 0) * 6px) rgba(0, 0, 0, calc(var(--flip-shadow, 0) * 0.5));
 }
 .binder-flip-single {
   left: 0;
@@ -649,11 +656,13 @@ body::after {
   left: 0;
   transform-origin: right center;
 }
-.binder-flip.is-turning[data-direction="next"] {
-  transform: rotateY(-180deg);
-}
-.binder-flip.is-turning[data-direction="prev"] {
-  transform: rotateY(180deg);
+/* Durante il trascinamento attivo il transform e' scritto ad ogni frame
+   via ref (segue il dito/cursore 1:1) - nessuna transizione CSS deve
+   interpolare quei valori, altrimenti la pagina "insegue" il gesto con
+   un ritardo percepibile invece di aderirvi. Rimossa al rilascio, cosi'
+   la transizione torna attiva per la fase di assestamento. */
+.binder-flip-live {
+  transition: none;
 }
 .binder-flip-face {
   position: absolute;
@@ -663,6 +672,9 @@ body::after {
 }
 .binder-flip-back {
   transform: rotateY(180deg);
+  /* Leggera differenza di luce fronte/retro, come una pagina reale vista
+     dal verso: il retro (rivelato a meta' del giro) e' appena piu' scuro. */
+  filter: brightness(0.92);
 }
 @keyframes binder-page-fade-in {
   from { opacity: 0; }
