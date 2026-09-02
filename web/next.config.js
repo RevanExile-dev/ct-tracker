@@ -19,6 +19,14 @@ const nextConfig = {
   webpack: (config) => {
     // sql.js carica un file .wasm a runtime: lo trattiamo come asset statico
     config.resolve.fallback = { ...config.resolve.fallback, fs: false, path: false, crypto: false };
+    // Lo showcase /cosmos usa shader WGSL come moduli. Il loader risolve e
+    // minimizza lo shader a build-time; l'esecuzione resta confinata alla
+    // route sperimentale, quindi il percorso principale non scarica vgpu.
+    config.module.rules.push({
+      test: /\.wgsl$/,
+      loader: "@vgpu/wgsl/loader-webpack",
+      options: { minify: process.env.NODE_ENV === "production" },
+    });
     return config;
   },
 };
