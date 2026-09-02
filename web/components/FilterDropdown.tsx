@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const TRANSITION_MS = 220;
@@ -62,6 +62,19 @@ export default function FilterDropdown({
   // una segnalazione di filtri "buggati" su piu' browser/device).
   const desktopSearchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+  const desktopPanelRef = useRef<HTMLDivElement>(null);
+  // Il popover desktop e' ancorato con left-0 al trigger, ma alcuni
+  // pannelli (es. "Tutte le espansioni", layout list con date) sono larghi
+  // fino a 34rem - se il trigger non e' abbastanza vicino al bordo
+  // sinistro, il pannello esce dal viewport a destra e la parte tagliata
+  // (compreso il bordo destro della casella di ricerca) resta invisibile
+  // (body ha overflow-x:hidden). Corretto misurando la posizione reale del
+  // trigger dopo il mount e traslando il pannello a sinistra solo quanto
+  // serve per restare dentro al viewport, mai oltre quanto serve per non
+  // uscire anche a sinistra. Scrive direttamente la custom property CSS sul
+  // nodo (non uno state React): serve un useLayoutEffect per correggere
+  // PRIMA del paint, ed è deliberatamente imperativo per evitare un giro di
+  // render in più solo per applicare uno shift visivo.
   // Il bottom sheet mobile e' in portale su document.body, quindi NON e' un
   // discendente DOM di rootRef: senza questo ref, il listener "fuori dal
   // pannello chiudi" (pensato per il popover desktop) scambierebbe ogni tap
@@ -107,6 +120,28 @@ export default function FilterDropdown({
     }
   }, [open, mounted]);
 
+  useLayoutEffect(() => {
+    if (!open || !mounted) return;
+    const panel = desktopPanelRef.current;
+    if (!panel) return;
+    function reposition() {
+      const root = rootRef.current;
+      if (!panel || !root || window.innerWidth < 640) return; // sotto sm il popover desktop non e' nemmeno renderizzato
+      const rootRect = root.getBoundingClientRect();
+      const margin = 20;
+      const naturalRight = rootRect.left + panel.offsetWidth; // posizione senza correzioni (left-0)
+      let shift = naturalRight > window.innerWidth - margin ? window.innerWidth - margin - naturalRight : 0;
+      shift = Math.max(shift, margin - rootRect.left); // mai cosi' a sinistra da uscire anche li'
+      panel.style.setProperty("--tw-translate-x", shift ? `${shift}px` : "0px");
+    }
+    reposition();
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      panel.style.removeProperty("--tw-translate-x");
+    };
+  }, [open, mounted]);
+
   const setOpen = useCallback((next: boolean) => {
     if (controlledOpen === undefined) setInternalOpen(next);
     onOpenChange?.(next);
@@ -118,7 +153,7 @@ export default function FilterDropdown({
   }, [setOpen]);
 
   const focusTrigger = useCallback(() => {
-    rootRef.current?.querySelector<HTMLButtonElement>("[aria-expanded]")?.focus();
+    rootRef.current?.querySelector<HTMLButtonElement>("[aria-expanded]")?.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {
@@ -129,10 +164,19 @@ export default function FilterDropdown({
     // Sceglie l'istanza REALMENTE visibile in base al breakpoint (stesso
     // "sm" di Tailwind, 640px, non personalizzato in questo progetto):
     // chiamare .focus() sull'istanza nascosta via CSS e' un no-op silenzioso.
+    // preventScroll:true e' essenziale su desktop: il pannello (w-max, fino
+    // a 34rem) puo' estendersi oltre il contenitore overflow-hidden che
+    // anima l'apertura/chiusura della barra filtri, allargandone l'area di
+    // scroll interna - senza preventScroll il browser porta l'input appena
+    // messo a fuoco in vista scrollando QUEL contenitore (invisibile,
+    // niente scrollbar perche' overflow-hidden), spostando l'intera barra
+    // filtri a sinistra senza alcun modo per l'utente di tornare indietro
+    // (bug reale segnalato dall'utente con screenshot, riprodotto e
+    // confermato: scrollLeft del contenitore passava a 126px al focus).
     if (open && mounted && searchable) {
       const raf = requestAnimationFrame(() => {
         const isDesktop = window.matchMedia("(min-width: 640px)").matches;
-        (isDesktop ? desktopSearchInputRef : mobileSearchInputRef).current?.focus();
+        (isDesktop ? desktopSearchInputRef : mobileSearchInputRef).current?.focus({ preventScroll: true });
       });
       return () => cancelAnimationFrame(raf);
     }
@@ -257,10 +301,21 @@ export default function FilterDropdown({
           conta per la larghezza del genitore, ne' da aperto ne' da chiuso. */}
       {mounted && (
         <div
+          ref={desktopPanelRef}
           id={panelId}
           role="dialog"
           aria-modal="false"
           aria-hidden={!open}
+          // Il useLayoutEffect qui sopra scrive --tw-translate-x
+          // direttamente sul nodo (stessa variabile che Tailwind usa per
+          // translate-y-*, cosi' si combinano in un solo transform invece
+          // di scavalcarsi) per tenere il pannello dentro al viewport
+          // quando il trigger e' abbastanza a destra da farlo uscire - es.
+          // "Tutte le espansioni" (fino a 34rem di larghezza) su schermi
+          // desktop non larghissimi (bug reale, trovato verificando il fix
+          // dello scroll qui sopra: la casella di ricerca finiva con il
+          // bordo destro fuori dal viewport, invisibile per via di
+          // overflow-x:hidden su body).
           className={`filter-panel-anim hidden sm:block absolute left-0 top-[calc(100%+0.5rem)] z-40 w-max max-w-[min(34rem,calc(100vw-2.5rem))] rounded-card border border-base-border bg-base-surface shadow-card transition-[opacity,transform] duration-200 ease-out ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 pointer-events-none"
           }`}
