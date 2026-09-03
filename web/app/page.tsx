@@ -268,7 +268,22 @@ function HomeContent() {
             toolbarVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
           }`}
         >
-          <div className="overflow-hidden">
+          {/* overflow-hidden SOLO mentre la barra e' compressa o si sta
+              comprimendo (necessario perche' grid-template-rows a 0fr
+              collassi visivamente) - overflow-visible a barra aperta,
+              altrimenti questo stesso contenitore taglia il popover
+              desktop di FilterDropdown (position:absolute, si estende
+              sotto l'altezza naturale della barra) ogni volta che un
+              pannello filtro e' aperto, anche a barra pienamente visibile
+              (bug reale segnalato dall'utente: "i filtri sono nascosti
+              sotto" su desktop - su mobile FilterDropdown non ne soffre
+              perche' il suo pannello e' in portale su document.body,
+              fuori da questo contenitore). Sicuro cambiare la classe in
+              sincrono con toolbarVisible: un filtro aperto forza sempre
+              toolbarVisible a true PRIMA che l'utente possa vedere un
+              pannello (vedi keepVisible in useHideOnScrollDown), quindi
+              overflow-visible e' gia' attivo in quell'istante. */}
+          <div className={toolbarVisible ? "overflow-visible" : "overflow-hidden"}>
             <div className="py-3">
               <Toolbar
                 search={search}
