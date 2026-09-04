@@ -59,11 +59,15 @@ export default function CardTile({
     : isBest
       ? card.best_price_currency ?? card.latest_price_currency
       : card.it_nm_zero_price_currency ?? "EUR";
+  // "!= null" (non "!== null"): intercetta anche un eventuale undefined,
+  // non solo null - altrimenti "IT/Near Mint/Zero" comparirebbero come
+  // badge anche con un prezzo mancante (segnalato in review, "undefined
+  // !== null" e' true in JS/TS).
   const priceLanguage = hasFilter
     ? card.filtered_language
     : isBest
       ? card.best_language ?? card.latest_language
-      : priceCents !== null ? "it" : undefined;
+      : priceCents != null ? "it" : undefined;
   const prevPriceCents = isBest
     ? card.prev_best_price_cents ?? card.prev_price_cents
     : card.prev_it_nm_zero_price_cents;
@@ -71,12 +75,12 @@ export default function CardTile({
     ? card.filtered_condition
     : isBest
       ? card.best_condition
-      : priceCents !== null ? "Near Mint" : undefined;
+      : priceCents != null ? "Near Mint" : undefined;
   const shownZero = hasFilter
     ? card.filtered_can_sell_via_hub
     : isBest
       ? card.best_can_sell_via_hub
-      : priceCents !== null ? 1 : undefined;
+      : priceCents != null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
   const [popping, setPopping] = useState(false);
