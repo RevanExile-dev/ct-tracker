@@ -14,6 +14,11 @@ const nextConfig = {
         protocol: "https",
         hostname: "d2rq8wty021h6h.cloudfront.net",
       },
+      {
+        // Foto profilo Google mostrata nel menu account dopo il login.
+        protocol: "https",
+        hostname: "lh3.googleusercontent.com",
+      },
     ],
   },
   webpack: (config) => {
