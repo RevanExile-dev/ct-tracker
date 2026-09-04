@@ -171,7 +171,16 @@ export default function CardTile({
           </div>
 
           {hasActions && (
-            <div className="flex items-center gap-1.5 shrink-0">
+            // In colonna (uno sopra l'altro) sotto ai 640px: affiancati
+            // occupano ~78px fissi che su una tile da 2 colonne (mobile,
+            // ~150-170px di larghezza utile) lasciano troppo poco spazio al
+            // prezzo/badge/percentuale, causando sovrapposizioni con testo
+            // vero (con un'immagine reale il prezzo va a capo diversamente
+            // da come appariva nel placeholder di test) - segnalato
+            // dall'utente su schermata reale. In riga da sm: in su, dove le
+            // tile sono piu' larghe (3+ colonne) e c'e' spazio per entrambi
+            // affiancati senza stringere il prezzo.
+            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
               {onToggleWishlist && (
                 <button
                   type="button"
