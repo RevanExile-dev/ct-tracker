@@ -97,7 +97,14 @@ function BinderContent() {
       {cards && cards.length > 0 && view === "collection" && (
         layout === "table" ? <BinderTable cards={cards} returnTo={returnTo} /> : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-            {cards.map((card, index) => <CardTile key={card.id} card={card} index={index} inBinder onToggleBinder={() => removeFromBinder(card.id)} returnTo={returnTo} />)}
+            {cards.map((card, index) => (
+              // priceProfile="best" (non il default "esatto" IT+NM+Zero):
+              // qui la domanda e' "quanto vale la mia collezione", serve
+              // sempre un numero anche per le carte senza una inserzione
+              // IT+NM+Zero disponibile - coerente con "valore stimato" qui
+              // sopra, calcolato sullo stesso campo (best_price_cents).
+              <CardTile key={card.id} card={card} index={index} inBinder onToggleBinder={() => removeFromBinder(card.id)} returnTo={returnTo} priceProfile="best" />
+            ))}
           </div>
         )
       )}

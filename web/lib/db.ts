@@ -330,10 +330,27 @@ function buildCardsFilter(opts: CardsFilterOpts): {
 // SELECT aggregata che non li definisce affatto (fetchCardsSummary) -
 // un'espressione basata su alias funzionerebbe solo nel primo caso.
 function buildPriceExprs(hasListingFilter: boolean): { priceExpr: string; prevPriceExpr: string } {
+  // Prezzo di riferimento SENZA filtro attivo: SOLO Italiano + Near Mint +
+  // CardTrader Zero, nessun fallback su un'altra combinazione - richiesto
+  // esplicitamente dall'utente per ordinamento e andamento medio (non solo
+  // per il numero sulla tile, vedi CardTile.tsx: stessa logica). Se il
+  // database caricato e' precedente all'introduzione di queste colonne
+  // (cardsDbHasExactSeries=false) la colonna non esiste affatto nello
+  // schema: referenziarla comunque romperebbe l'intera query invece di
+  // degradare - qui il vecchio fallback a cascata e' l'unica alternativa
+  // possibile, non una scelta di design.
+  const exactPriceExpr = cardsDbHasExactSeries
+    ? "lp.it_nm_zero_price_cents"
+    : "COALESCE(lp.best_price_cents, lp.min_price_cents)";
+  const exactPrevExpr = cardsDbHasExactSeries
+    ? "lp.prev_it_nm_zero_price_cents"
+    : "COALESCE(lp.prev_best_price_cents, lp.prev_price_cents)";
+  // Un filtro lingua/condizione/Zero scelto dall'utente vince sempre sul
+  // profilo di default, stessa precedenza usata in CardTile.tsx.
   const priceExpr = hasListingFilter
     ? "COALESCE(fl.price_cents, lp.best_price_cents, lp.min_price_cents)"
-    : "COALESCE(lp.best_price_cents, lp.min_price_cents)";
-  const prevPriceExpr = "COALESCE(lp.prev_best_price_cents, lp.prev_price_cents)";
+    : exactPriceExpr;
+  const prevPriceExpr = exactPrevExpr;
   return { priceExpr, prevPriceExpr };
 }
 
