@@ -25,6 +25,11 @@ const resendEmailProvider: EmailConfig = {
     if (!apiKey) {
       throw new Error("AUTH_RESEND_KEY non impostata: impossibile inviare l'email di accesso.");
     }
+    // L'URL generato da Auth.js ha piu' parametri in query string separati
+    // da "&" (callbackUrl/token/email) - un "&" grezzo dentro un attributo
+    // HTML href="..." non e' HTML valido (andrebbe "&amp;") e puo' confondere
+    // client email/filtri antispam che si aspettano entita' codificate.
+    const escapedUrl = url.replace(/&/g, "&amp;");
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -37,7 +42,7 @@ const resendEmailProvider: EmailConfig = {
         subject: "Accedi a CartaViva",
         html: `
           <p>Clicca sul link qui sotto per accedere a CartaViva:</p>
-          <p><a href="${url}">${url}</a></p>
+          <p><a href="${escapedUrl}">${escapedUrl}</a></p>
           <p style="color:#888;font-size:13px">Il link scade tra 15 minuti. Se non hai richiesto questo accesso, ignora pure questa email — non e' stato creato nessun account.</p>
         `,
       }),

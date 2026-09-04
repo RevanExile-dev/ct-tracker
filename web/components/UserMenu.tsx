@@ -14,20 +14,32 @@ export default function UserMenu() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     function handleOutside(event: PointerEvent) {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     }
+    // Esc chiude e riporta il focus sul trigger - stesso pattern di
+    // FilterDropdown, per non lasciare il focus "nel vuoto" su un menu
+    // appena scomparso quando si naviga da tastiera.
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
     // Un tick dopo, non subito: stesso motivo di FilterDropdown - il
     // pointerdown che ha aperto il menu non deve richiuderlo all'istante.
     const timer = window.setTimeout(() => {
       document.addEventListener("pointerdown", handleOutside);
     }, 0);
+    document.addEventListener("keydown", handleKey);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("pointerdown", handleOutside);
+      document.removeEventListener("keydown", handleKey);
     };
   }, [open]);
 
@@ -52,6 +64,7 @@ export default function UserMenu() {
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}

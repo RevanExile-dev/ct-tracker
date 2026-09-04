@@ -5,10 +5,11 @@ import SiteHeader from "@/components/SiteHeader";
 
 // Nota su "next-auth/lib/actions.js" (letto direttamente, non a memoria):
 // signIn() senza redirectTo esplicito usa l'header Referer come pagina di
-// arrivo dopo il login completato - qui sara' sempre "/login" (l'origine
-// del form), che pero' va bene: il controllo "if (session) redirect('/')"
-// qui sotto fa gia' il salto finale verso la home al render successivo,
-// senza bisogno di passare redirectTo a mano per ciascun provider.
+// arrivo dopo il login completato - senza specificarlo sarebbe sempre
+// "/login" (l'origine del form), che poi rimbalza verso "/" al render
+// successivo grazie al controllo "if (session) redirect('/')" qui sotto -
+// funzionerebbe comunque, ma passare redirectTo="/" esplicito (sotto)
+// evita quel passaggio intermedio via /login (segnalato in review).
 export default async function LoginPage({
   searchParams,
 }: {
@@ -32,11 +33,16 @@ export default async function LoginPage({
 
   async function signInWithGoogle() {
     "use server";
-    await signIn("google");
+    await signIn("google", { redirectTo: "/" });
   }
 
   async function signInWithEmail(formData: FormData) {
     "use server";
+    // redirectTo per il provider email va dentro lo stesso FormData (vedi
+    // il campo nascosto piu' sotto nel form): quando le opzioni passate a
+    // signIn() sono un FormData, next-auth le converte con
+    // Object.fromEntries() e legge redirectTo da li' - un secondo
+    // argomento {redirectTo} separato verrebbe ignorato.
     await signIn("resend", formData);
   }
 
@@ -79,6 +85,7 @@ export default async function LoginPage({
       </div>
 
       <form action={signInWithEmail} className="space-y-3">
+        <input type="hidden" name="redirectTo" value="/" />
         <label className="sr-only" htmlFor="login-email">Indirizzo email</label>
         <input
           id="login-email"
