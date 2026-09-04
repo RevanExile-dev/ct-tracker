@@ -98,10 +98,33 @@ def _review_pathspecs() -> list[str]:
     return paths or ["."]
 
 
+def _resolve_ref(ref: str) -> str:
+    """actions/checkout@v4 (anche con fetch-depth:0, che porta la storia
+    COMPLETA) crea un branch locale SOLO per il ref effettivamente estratto
+    nel workflow - gli altri branch esistono nel clone solo come
+    remote-tracking (origin/<nome>), mai come nome nudo. Se base_ref/
+    head_ref e' un branch diverso da quello estratto (il caso comune: si
+    revisiona sempre un diff verso 'main' da un altro branch), il nome nudo
+    non risolve affatto e 'git diff' fallisce con "unknown revision" (bug
+    reale, osservato: exit 128 su un base_ref="main" mentre il branch
+    estratto era un altro). Prova prima il nome esatto (funziona per SHA,
+    tag, o il branch gia' estratto), poi origin/<nome>."""
+    for candidate in (ref, f"origin/{ref}"):
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", candidate],
+            capture_output=True, text=True,
+        )
+        if check.returncode == 0:
+            return candidate
+    return ref  # nessuno risolve: lascia fallire piu' sotto con l'errore originale
+
+
 def _git_diff(base_ref: str, head_ref: str) -> str:
     include_paths = _review_pathspecs()
+    base = _resolve_ref(base_ref)
+    head = _resolve_ref(head_ref)
     result = subprocess.run(
-        ["git", "diff", f"{base_ref}...{head_ref}", "--", *include_paths, *DIFF_EXCLUDE_PATHSPECS],
+        ["git", "diff", f"{base}...{head}", "--", *include_paths, *DIFF_EXCLUDE_PATHSPECS],
         check=True, capture_output=True, text=True,
     )
     diff = result.stdout
