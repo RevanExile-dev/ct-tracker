@@ -156,49 +156,52 @@ export default function CardTile({
         </InteractiveCard>
       </Link>
 
-      {(onToggleBinder || onToggleWishlist) && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
-          {onToggleBinder && (
-            <button
-              type="button"
-              onClick={() => {
-                setPopping(true);
-                onToggleBinder();
-              }}
-              onAnimationEnd={() => setPopping(false)}
-              aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
-              className={`w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
-                popping ? "pop-on-toggle" : ""
-              } ${
-                inBinder
-                  ? "bg-accent/20 border-accent/60 text-accent-bright"
-                  : "bg-black/60 border-white/10 text-white/70 hover:text-white"
-              }`}
-            >
-              {inBinder ? "★" : "☆"}
-            </button>
-          )}
-          {onToggleWishlist && (
-            <button
-              type="button"
-              onClick={() => {
-                setPoppingWishlist(true);
-                onToggleWishlist();
-              }}
-              onAnimationEnd={() => setPoppingWishlist(false)}
-              aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
-              className={`w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
-                poppingWishlist ? "pop-on-toggle" : ""
-              } ${
-                inWishlist
-                  ? "bg-accent/20 border-accent/60 text-accent-bright"
-                  : "bg-black/60 border-white/10 text-white/70 hover:text-white"
-              }`}
-            >
-              {inWishlist ? "♥" : "♡"}
-            </button>
-          )}
-        </div>
+      {/* Cuore (desideri) in alto a sinistra e stella (binder) in alto a
+          destra - angoli opposti, non impilati nello stesso angolo: cosi'
+          quando una tile mostra entrambi (griglia principale, carte in
+          movimento) restano due bersagli di tocco ben separati invece di
+          affollarsi in un unico angolo, e si puo' aggiungere una carta ai
+          desideri direttamente dalla griglia senza aprirla (richiesto
+          esplicitamente dall'utente). */}
+      {onToggleWishlist && (
+        <button
+          type="button"
+          onClick={() => {
+            setPoppingWishlist(true);
+            onToggleWishlist();
+          }}
+          onAnimationEnd={() => setPoppingWishlist(false)}
+          aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
+          className={`absolute top-2 left-2 z-10 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
+            poppingWishlist ? "pop-on-toggle" : ""
+          } ${
+            inWishlist
+              ? "bg-accent/20 border-accent/60 text-accent-bright"
+              : "bg-black/60 border-white/10 text-white/70 hover:text-white"
+          }`}
+        >
+          {inWishlist ? "♥" : "♡"}
+        </button>
+      )}
+      {onToggleBinder && (
+        <button
+          type="button"
+          onClick={() => {
+            setPopping(true);
+            onToggleBinder();
+          }}
+          onAnimationEnd={() => setPopping(false)}
+          aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
+          className={`absolute top-2 right-2 z-10 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
+            popping ? "pop-on-toggle" : ""
+          } ${
+            inBinder
+              ? "bg-accent/20 border-accent/60 text-accent-bright"
+              : "bg-black/60 border-white/10 text-white/70 hover:text-white"
+          }`}
+        >
+          {inBinder ? "★" : "☆"}
+        </button>
       )}
     </div>
   );

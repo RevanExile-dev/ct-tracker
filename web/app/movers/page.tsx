@@ -13,6 +13,7 @@ import {
 } from "@/lib/db";
 import { MOVERS_TIERS, findMoversTier } from "@/lib/moversTiers";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
@@ -117,6 +118,7 @@ function MoversContent() {
   const [drops, setDrops] = useState<MoversPageResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
+  const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
   const [rarities, setRarities] = useState<string[]>([]);
   const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
     splitCsv(searchParams.get("rarity")).map(normalizeRarity)
@@ -151,7 +153,10 @@ function MoversContent() {
   }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage, pathname, router]);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setBinderIds(getBinderIds()));
+    const frame = requestAnimationFrame(() => {
+      setBinderIds(getBinderIds());
+      setWishlistIds(getWishlistIds());
+    });
     fetchRarities().then(setRarities).catch(() => {});
     return () => cancelAnimationFrame(frame);
   }, []);
@@ -180,6 +185,10 @@ function MoversContent() {
 
   function handleToggleBinderCard(id: number) {
     setBinderIds(new Set(toggleBinder(id)));
+  }
+
+  function handleToggleWishlistCard(id: number) {
+    setWishlistIds(new Set(toggleWishlist(id)));
   }
 
   // Ogni handler di filtro riparte esplicitamente dalla prima pagina di
@@ -426,6 +435,8 @@ function MoversContent() {
                         priceProfile="exact"
                         inBinder={binderIds.has(card.id)}
                         onToggleBinder={() => handleToggleBinderCard(card.id)}
+                        inWishlist={wishlistIds.has(card.id)}
+                        onToggleWishlist={() => handleToggleWishlistCard(card.id)}
                         returnTo={returnTo}
                       />
                     ))}
@@ -457,6 +468,8 @@ function MoversContent() {
                         priceProfile="exact"
                         inBinder={binderIds.has(card.id)}
                         onToggleBinder={() => handleToggleBinderCard(card.id)}
+                        inWishlist={wishlistIds.has(card.id)}
+                        onToggleWishlist={() => handleToggleWishlistCard(card.id)}
                         returnTo={returnTo}
                       />
                     ))}
