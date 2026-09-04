@@ -71,28 +71,34 @@ export default function CardTile({
   const [imgError, setImgError] = useState(false);
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
+  const hasActions = Boolean(onToggleBinder || onToggleWishlist);
 
   return (
-    // I bottoni stella/cuore sono FRATELLI del Link, non annidati al suo
-    // interno: un <button> dentro un <a> e' HTML non valido (contenuto
-    // interattivo dentro contenuto interattivo) e rende ambiguo il
-    // comportamento di tastiera/screen reader indipendentemente da
-    // stopPropagation (che ferma solo la propagazione del click, non
-    // risolve il problema semantico). Per questo vivono in una riga a se'
-    // SOTTO l'intera tile (immagine incluso), invece che sovrapposti
-    // all'artwork - richiesto esplicitamente dall'utente perche' i due
-    // cerchi scuri sopra l'immagine risultavano invadenti.
     <div
       className="group relative card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
     >
-      <Link
-        href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
-        className="block rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+      {/* InteractiveCard avvolge l'INTERA tile (immagine+nome+prezzo+
+          bottoni), non solo la parte cliccabile: e' lei a portare bordo,
+          sfondo, angoli arrotondati e il bagliore/tilt al passaggio del
+          mouse (vedi .interactive-card::before/::after in globals.css,
+          border-radius:inherit - se si fermasse a meta' carta, come in un
+          tentativo precedente, il bagliore avrebbe tracciato un contorno
+          intorno a immagine+nome lasciando prezzo e bottoni "staccati" e
+          statici, una cucitura visibile passandoci sopra col mouse). Il
+          Link naviga SOLO su immagine+nome; i bottoni stella/cuore restano
+          FRATELLI del Link (non annidati al suo interno: un <button>
+          dentro un <a> e' HTML non valido, contenuto interattivo dentro
+          contenuto interattivo) ma dentro lo stesso InteractiveCard, cosi'
+          la riga prezzo puo' uscire dal Link pur restando parte della
+          stessa carta interattiva. */}
+      <InteractiveCard
+        level="tile"
+        className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
       >
-        <InteractiveCard
-          level="tile"
-          className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
+        <Link
+          href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
+          className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-inset"
         >
           <div className="relative aspect-[5/7] bg-base-surface2">
             {card.image_url && !imgError ? (
@@ -119,93 +125,97 @@ export default function CardTile({
             )}
           </div>
 
-          <div className="p-3">
+          <div className="px-3 pt-3">
             <div className="text-xs font-mono text-ink-faint truncate">{card.expansion_name}</div>
             <div className="font-display font-medium text-ink-primary leading-snug mt-0.5 truncate">
               {card.name}
             </div>
+          </div>
+        </Link>
 
-            <div className="flex items-end justify-between flex-wrap gap-x-2 gap-y-1 mt-2">
-              <div className="font-mono text-lg text-ink-primary flex flex-wrap items-center gap-1.5 min-w-0">
-                {formatCents(priceCents, priceCurrency ?? "EUR")}
-                {priceLanguage && (
-                  <span className="text-xs shrink-0" title={priceLanguage.toUpperCase()}>
-                    {languageFlag(priceLanguage)}
-                  </span>
-                )}
-                {isNmZero && (
-                  <span
-                    className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap shrink-0"
-                    title="Near Mint, CardTrader Zero"
-                  >
-                    NM Zero
-                  </span>
-                )}
-              </div>
-              {delta !== null && (
-                <div
-                  className={`text-xs font-mono whitespace-nowrap shrink-0 ${
-                    delta >= 0 ? "text-signal-up" : "text-signal-down"
-                  }`}
+        {/* Prezzo + bottoni stella/cuore nella STESSA riga in vero
+            flexbox - non un overlay assoluto sopra il testo: colonna
+            prezzo a sinistra (si restringe/va a capo da sola quando
+            serve, es. badge "NM Zero" su schermi stretti), colonna
+            bottoni a destra a larghezza fissa, mai sovrapposte
+            indipendentemente da quante righe occupa il prezzo. Richiesto
+            esplicitamente dall'utente: accanto al prezzo, non sotto la
+            carta ne' sopra l'artwork. */}
+        <div className="px-3 pb-3 pt-2 flex items-end justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="font-mono text-lg text-ink-primary flex flex-wrap items-center gap-1.5">
+              {formatCents(priceCents, priceCurrency ?? "EUR")}
+              {priceLanguage && (
+                <span className="text-xs shrink-0" title={priceLanguage.toUpperCase()}>
+                  {languageFlag(priceLanguage)}
+                </span>
+              )}
+              {isNmZero && (
+                <span
+                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
+                  title="Near Mint, CardTrader Zero"
                 >
-                  {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
-                </div>
+                  NM Zero
+                </span>
               )}
             </div>
+            {delta !== null && (
+              <div
+                className={`text-xs font-mono whitespace-nowrap mt-0.5 ${
+                  delta >= 0 ? "text-signal-up" : "text-signal-down"
+                }`}
+              >
+                {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
+              </div>
+            )}
           </div>
-        </InteractiveCard>
-      </Link>
 
-      {/* Riga azioni sotto la carta, allineata a destra come una piccola
-          appendice della tile (non sovrapposta all'immagine) - cuore prima,
-          stella dopo, stesso stile "chip" gia' usato per i filtri (bordo +
-          superficie2, accento quando attivo) invece dei cerchi scuri
-          semi-trasparenti di prima, pensati per contrastare su un'immagine
-          arbitraria mentre qui poggiano sullo sfondo piatto della card. */}
-      {(onToggleBinder || onToggleWishlist) && (
-        <div className="flex items-center justify-end gap-2 mt-2">
-          {onToggleWishlist && (
-            <button
-              type="button"
-              onClick={() => {
-                setPoppingWishlist(true);
-                onToggleWishlist();
-              }}
-              onAnimationEnd={() => setPoppingWishlist(false)}
-              aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
-              className={`w-11 h-11 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
-                poppingWishlist ? "pop-on-toggle" : ""
-              } ${
-                inWishlist
-                  ? "bg-accent/15 border-accent/50 text-accent-bright"
-                  : "bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40"
-              }`}
-            >
-              {inWishlist ? "♥" : "♡"}
-            </button>
-          )}
-          {onToggleBinder && (
-            <button
-              type="button"
-              onClick={() => {
-                setPopping(true);
-                onToggleBinder();
-              }}
-              onAnimationEnd={() => setPopping(false)}
-              aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
-              className={`w-11 h-11 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
-                popping ? "pop-on-toggle" : ""
-              } ${
-                inBinder
-                  ? "bg-accent/15 border-accent/50 text-accent-bright"
-                  : "bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40"
-              }`}
-            >
-              {inBinder ? "★" : "☆"}
-            </button>
+          {hasActions && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onToggleWishlist && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPoppingWishlist(true);
+                    onToggleWishlist();
+                  }}
+                  onAnimationEnd={() => setPoppingWishlist(false)}
+                  aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
+                    poppingWishlist ? "pop-on-toggle" : ""
+                  } ${
+                    inWishlist
+                      ? "bg-accent/15 border-accent/50 text-accent-bright"
+                      : "bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40"
+                  }`}
+                >
+                  {inWishlist ? "♥" : "♡"}
+                </button>
+              )}
+              {onToggleBinder && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPopping(true);
+                    onToggleBinder();
+                  }}
+                  onAnimationEnd={() => setPopping(false)}
+                  aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
+                    popping ? "pop-on-toggle" : ""
+                  } ${
+                    inBinder
+                      ? "bg-accent/15 border-accent/50 text-accent-bright"
+                      : "bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40"
+                  }`}
+                >
+                  {inBinder ? "★" : "☆"}
+                </button>
+              )}
+            </div>
           )}
         </div>
-      )}
+      </InteractiveCard>
     </div>
   );
 }
