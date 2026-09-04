@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { formatDateLong } from "@/lib/format";
 import CountUp from "./CountUp";
 import BrandLogo from "./BrandLogo";
+import UserMenu from "./UserMenu";
 
 /** compact: usato nelle pagine secondarie (carte in movimento, dettaglio
  * carta) dove il sottotitolo lungo e' solo rumore ripetuto — qui si vede
@@ -99,6 +100,7 @@ export default function SiteHeader({
               ♡ Desideri
             </Link>
           )}
+          <UserMenu />
         </div>
       </div>
     </header>

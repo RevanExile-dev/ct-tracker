@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import BackToTop from "@/components/BackToTop";
+import AuthSessionProvider from "@/components/AuthSessionProvider";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -46,8 +47,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="it" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <body className="font-body antialiased min-h-screen">
-        {children}
-        <BackToTop />
+        <AuthSessionProvider>
+          {children}
+          <BackToTop />
+        </AuthSessionProvider>
       </body>
     </html>
   );
