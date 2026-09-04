@@ -78,10 +78,10 @@ export default function CardTile({
     // interattivo dentro contenuto interattivo) e rende ambiguo il
     // comportamento di tastiera/screen reader indipendentemente da
     // stopPropagation (che ferma solo la propagazione del click, non
-    // risolve il problema semantico). Posizionati assoluti sullo stesso
-    // wrapper cosi' restano visivamente sopra l'angolo dell'immagine come
-    // prima, ma senza che un tap su di loro possa mai far scattare anche
-    // la navigazione del Link sottostante (non sono suoi discendenti).
+    // risolve il problema semantico). Per questo vivono in una riga a se'
+    // SOTTO l'intera tile (immagine incluso), invece che sovrapposti
+    // all'artwork - richiesto esplicitamente dall'utente perche' i due
+    // cerchi scuri sopra l'immagine risultavano invadenti.
     <div
       className="group relative card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
@@ -156,52 +156,55 @@ export default function CardTile({
         </InteractiveCard>
       </Link>
 
-      {/* Cuore (desideri) in alto a sinistra e stella (binder) in alto a
-          destra - angoli opposti, non impilati nello stesso angolo: cosi'
-          quando una tile mostra entrambi (griglia principale, carte in
-          movimento) restano due bersagli di tocco ben separati invece di
-          affollarsi in un unico angolo, e si puo' aggiungere una carta ai
-          desideri direttamente dalla griglia senza aprirla (richiesto
-          esplicitamente dall'utente). */}
-      {onToggleWishlist && (
-        <button
-          type="button"
-          onClick={() => {
-            setPoppingWishlist(true);
-            onToggleWishlist();
-          }}
-          onAnimationEnd={() => setPoppingWishlist(false)}
-          aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
-          className={`absolute top-2 left-2 z-10 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
-            poppingWishlist ? "pop-on-toggle" : ""
-          } ${
-            inWishlist
-              ? "bg-accent/20 border-accent/60 text-accent-bright"
-              : "bg-black/60 border-white/10 text-white/70 hover:text-white"
-          }`}
-        >
-          {inWishlist ? "♥" : "♡"}
-        </button>
-      )}
-      {onToggleBinder && (
-        <button
-          type="button"
-          onClick={() => {
-            setPopping(true);
-            onToggleBinder();
-          }}
-          onAnimationEnd={() => setPopping(false)}
-          aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
-          className={`absolute top-2 right-2 z-10 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur border transition-colors active:scale-90 ${
-            popping ? "pop-on-toggle" : ""
-          } ${
-            inBinder
-              ? "bg-accent/20 border-accent/60 text-accent-bright"
-              : "bg-black/60 border-white/10 text-white/70 hover:text-white"
-          }`}
-        >
-          {inBinder ? "★" : "☆"}
-        </button>
+      {/* Riga azioni sotto la carta, allineata a destra come una piccola
+          appendice della tile (non sovrapposta all'immagine) - cuore prima,
+          stella dopo, stesso stile "chip" gia' usato per i filtri (bordo +
+          superficie2, accento quando attivo) invece dei cerchi scuri
+          semi-trasparenti di prima, pensati per contrastare su un'immagine
+          arbitraria mentre qui poggiano sullo sfondo piatto della card. */}
+      {(onToggleBinder || onToggleWishlist) && (
+        <div className="flex items-center justify-end gap-2 mt-2">
+          {onToggleWishlist && (
+            <button
+              type="button"
+              onClick={() => {
+                setPoppingWishlist(true);
+                onToggleWishlist();
+              }}
+              onAnimationEnd={() => setPoppingWishlist(false)}
+              aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
+              className={`w-11 h-11 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
+                poppingWishlist ? "pop-on-toggle" : ""
+              } ${
+                inWishlist
+                  ? "bg-accent/15 border-accent/50 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40"
+              }`}
+            >
+              {inWishlist ? "♥" : "♡"}
+            </button>
+          )}
+          {onToggleBinder && (
+            <button
+              type="button"
+              onClick={() => {
+                setPopping(true);
+                onToggleBinder();
+              }}
+              onAnimationEnd={() => setPopping(false)}
+              aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
+              className={`w-11 h-11 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
+                popping ? "pop-on-toggle" : ""
+              } ${
+                inBinder
+                  ? "bg-accent/15 border-accent/50 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40"
+              }`}
+            >
+              {inBinder ? "★" : "☆"}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
