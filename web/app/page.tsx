@@ -8,6 +8,7 @@ import {
   fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
 import { FilterPreset } from "@/lib/filterPreset";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
@@ -78,6 +79,7 @@ function HomeContent() {
     () => (searchParams.get("sort") as SortOption) || "expansion"
   );
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
+  const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
   const [visibleCount, setVisibleCount] = useState(() => {
     const shown = Number(searchParams.get("shown"));
     return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
@@ -118,7 +120,10 @@ function HomeContent() {
   }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router]);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setBinderIds(getBinderIds()));
+    const frame = requestAnimationFrame(() => {
+      setBinderIds(getBinderIds());
+      setWishlistIds(getWishlistIds());
+    });
     fetchExpansions().then(setExpansions).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
     fetchLanguages().then(setLanguages).catch(() => {});
@@ -219,6 +224,10 @@ function HomeContent() {
 
   function handleToggleBinderCard(id: number) {
     setBinderIds(new Set(toggleBinder(id)));
+  }
+
+  function handleToggleWishlistCard(id: number) {
+    setWishlistIds(new Set(toggleWishlist(id)));
   }
 
   const hasActiveFilters = Boolean(
@@ -419,6 +428,8 @@ function HomeContent() {
                   index={i}
                   inBinder={binderIds.has(card.id)}
                   onToggleBinder={() => handleToggleBinderCard(card.id)}
+                  inWishlist={wishlistIds.has(card.id)}
+                  onToggleWishlist={() => handleToggleWishlistCard(card.id)}
                   returnTo={returnTo}
                 />
               ))}
