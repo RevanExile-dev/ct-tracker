@@ -32,37 +32,51 @@ export default function CardTile({
   inWishlist?: boolean;
   onToggleWishlist?: () => void;
   returnTo?: string;
-  // "exact": mostra sempre la serie it_nm_zero_price_cents (italiano + Near
-  // Mint + CardTrader Zero, senza fallback) invece del prezzo "best" a
-  // cascata - usato da /movers, che ORDINA e FILTRA le carte su quella
-  // stessa serie: se la tile mostrasse un prezzo diverso (best_price_cents)
-  // da quello usato per ordinarla, il numero a schermo non spiegherebbe la
-  // posizione della carta nella lista rialzi/cali.
+  // "best": prezzo a cascata (Near Mint + CardTrader Zero quando esiste,
+  // qualunque lingua, altrimenti il piu' economico salvato) - usato SOLO dal
+  // binder, dove la domanda e' "quanto vale la mia collezione" e serve
+  // sempre un numero anche quando non esiste una inserzione IT+NM+Zero.
+  // Il default (nessun valore passato) e' invece "esatto": SOLO Italiano +
+  // Near Mint + CardTrader Zero, senza alcun fallback - richiesto
+  // esplicitamente dall'utente ("quel dato interessa principalmente", non
+  // vuole un prezzo/andamento che in realta' e' un'altra combinazione
+  // spacciata per quella. Vale per catalogo, desideri e carte in movimento.
   priceProfile?: "best" | "exact";
 }) {
-  const isExact = priceProfile === "exact";
+  const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
-  // condizione/Zero: e' la piu' economica tra le inserzioni che rispettano
-  // TUTTI quei filtri insieme (non best_price_cents, calcolato ignorandoli,
-  // che altrimenti mostrerebbe una lingua/condizione diversa da quella
-  // appena filtrata). Senza filtri attivi, best_price_cents preferisce
-  // Near Mint + CardTrader Zero quando esiste (vedi _pick_best_listing lato
-  // sync); fallback al vecchio prezzo piu' basso in assoluto solo per le
-  // carte non ancora ripassate dal sync.
-  const priceCents = isExact
-    ? card.it_nm_zero_price_cents
-    : card.filtered_price_cents ?? card.best_price_cents ?? card.latest_price_cents;
-  const priceCurrency = isExact
-    ? card.it_nm_zero_price_currency ?? "EUR"
-    : card.filtered_price_currency ?? card.best_price_currency ?? card.latest_price_currency;
-  const priceLanguage = isExact ? "it" : card.filtered_language ?? card.best_language ?? card.latest_language;
-  const prevPriceCents = isExact ? card.prev_it_nm_zero_price_cents : card.prev_best_price_cents ?? card.prev_price_cents;
-  const shownCondition = isExact
-    ? "Near Mint"
-    : card.filtered_condition !== undefined ? card.filtered_condition : card.best_condition;
-  const shownZero = isExact
-    ? 1
-    : card.filtered_can_sell_via_hub !== undefined ? card.filtered_can_sell_via_hub : card.best_can_sell_via_hub;
+  // condizione/Zero scelto dall'utente: ha sempre la precedenza, in
+  // entrambi i profili - se hai scelto tu un filtro, il prezzo mostrato
+  // deve rispettarlo indipendentemente dal profilo di default.
+  const hasFilter = card.filtered_price_cents !== undefined;
+  const priceCents: number | null = hasFilter
+    ? card.filtered_price_cents ?? null
+    : isBest
+      ? card.best_price_cents ?? card.latest_price_cents
+      : card.it_nm_zero_price_cents;
+  const priceCurrency = hasFilter
+    ? card.filtered_price_currency
+    : isBest
+      ? card.best_price_currency ?? card.latest_price_currency
+      : card.it_nm_zero_price_currency ?? "EUR";
+  const priceLanguage = hasFilter
+    ? card.filtered_language
+    : isBest
+      ? card.best_language ?? card.latest_language
+      : priceCents !== null ? "it" : undefined;
+  const prevPriceCents = isBest
+    ? card.prev_best_price_cents ?? card.prev_price_cents
+    : card.prev_it_nm_zero_price_cents;
+  const shownCondition = hasFilter
+    ? card.filtered_condition
+    : isBest
+      ? card.best_condition
+      : priceCents !== null ? "Near Mint" : undefined;
+  const shownZero = hasFilter
+    ? card.filtered_can_sell_via_hub
+    : isBest
+      ? card.best_can_sell_via_hub
+      : priceCents !== null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
   const [popping, setPopping] = useState(false);
