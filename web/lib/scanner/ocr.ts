@@ -44,10 +44,8 @@ async function getWorker(): Promise<TesseractWorker> {
     workerPromise = (async () => {
       const api = await loadTesseract();
       try {
-        // Un solo worker, caricato soltanto dentro /scan. Il modello inglese
-        // legge bene nomi/collector number anche su molte carte non inglesi;
-        // per JP/KR tentiamo i modelli dedicati ma torniamo a eng se il CDN
-        // non li rende disponibili sul device.
+        // Un solo worker riutilizzato per il batch: evita picchi di RAM su
+        // mobile e segue il pattern raccomandato da Tesseract per piu' immagini.
         return await api.createWorker(["eng", "ita", "jpn", "kor"]);
       } catch {
         return api.createWorker("eng");
@@ -67,6 +65,18 @@ export async function recognizeText(image: string): Promise<OcrResult> {
     text: result.data.text.trim(),
     confidence: Number.isFinite(result.data.confidence) ? result.data.confidence : 0,
   };
+}
+
+export async function terminateOcr(): Promise<void> {
+  const pending = workerPromise;
+  workerPromise = null;
+  if (!pending) return;
+  try {
+    const worker = await pending;
+    await worker.terminate();
+  } catch {
+    // Cleanup best-effort: non deve trasformare una navigazione in errore UI.
+  }
 }
 
 const LANGUAGE_RULES: Array<{ code: string; label: string; words: string[] }> = [
