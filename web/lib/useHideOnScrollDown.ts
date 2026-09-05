@@ -8,11 +8,11 @@ import { useEffect, useRef, useState } from "react";
  * piccola soglia e mostrata di nuovo scrollando verso l'alto o tornando
  * vicino alla cima della pagina.
  *
- * Su mobile (< 640px) lo scroll NON modifica mai lo stato: la barra resta
- * esattamente come l'utente l'ha lasciata e si apre/chiude solo tramite la
- * maniglia manuale. Evita il comportamento fastidioso in cui un normale
- * gesto verticale faceva riapparire i filtri mentre si consultavano le
- * carte. `setVisible` resta esposto per il toggle manuale.
+ * Su telefono uno swipe verticale NON deve decidere lo stato della barra:
+ * dopo un'interazione touch lo scroll (compresa l'inerzia) viene ignorato
+ * e i filtri restano esattamente come l'utente li ha lasciati. La maniglia
+ * manuale resta l'unico gesto che apre/chiude la toolbar durante l'uso
+ * touch. `setVisible` e' esposto proprio per quel toggle manuale.
  *
  * containerRef (opzionale): se l'utente ha il focus dentro il
  * contenitore (es. sta scrivendo nella ricerca), lo scroll non lo
@@ -30,19 +30,13 @@ import { useEffect, useRef, useState } from "react";
  * desktop ancorato al trigger risultava "senza focus dentro" pur essendo
  * visibilmente aperto. In entrambi i casi lo scroll comprimeva la barra
  * (grid-template-rows a 0), portando con se' il popover ancorato che
- * spariva a meta' consultazione - non un difetto visivo minore, il
- * pannello diventava introvabile. Passare qui lo stato "e' aperto un
+ * spariva a meta' consultazione. Passare qui lo stato "e' aperto un
  * filtro" gia' tracciato dal chiamante evita di dover indovinare dal DOM.
  *
  * Confronta lo scroll corrente con un "ancora" (l'ultima posizione in cui
  * la direzione e' stata confermata), non con l'evento immediatamente
- * precedente: un vero gesto di scroll (touch/trackpad, anche simulato da
- * Playwright con mouse.wheel) genera tanti eventi con delta piccoli e
- * rumorosi, spesso con qualche inversione di segno dovuta a inerzia/
- * decelerazione - confrontare frame per frame faceva sfarfallare lo stato
- * a meta' della transizione (bug reale, osservato: l'altezza restava a un
- * valore intermedio invece di assestarsi). Serve un movimento NETTO
- * (soglia) dall'ultima posizione confermata prima di cambiare stato.
+ * precedente: un vero gesto di scroll genera tanti eventi piccoli e
+ * rumorosi, spesso con qualche inversione di segno dovuta all'inerzia.
  */
 export function useHideOnScrollDown(
   containerRef?: React.RefObject<HTMLElement | null>,
@@ -54,15 +48,14 @@ export function useHideOnScrollDown(
   const anchorY = useRef(0);
   const ticking = useRef(false);
   const keepVisibleRef = useRef(keepVisible);
+  const lastTouchScrollAt = useRef(0);
 
   useEffect(() => {
     keepVisibleRef.current = keepVisible;
   }, [keepVisible]);
 
   // Forza la barra visibile appena keepVisible passa a true (es. un
-  // filtro si e' appena aperto) - non aspetta il prossimo evento scroll,
-  // altrimenti resterebbe nascosta finche' l'utente non scrolla verso
-  // l'alto per conto suo.
+  // filtro si e' appena aperto) - non aspetta il prossimo evento scroll.
   useEffect(() => {
     if (!keepVisible) return;
     const raf = requestAnimationFrame(() => setVisible(true));
@@ -70,20 +63,77 @@ export function useHideOnScrollDown(
     return () => cancelAnimationFrame(raf);
   }, [keepVisible]);
 
+  // La maniglia originale e' volutamente minimale su desktop. Su mobile
+  // aumentiamo area touch e contrasto senza introdurre un secondo controllo:
+  // resta lo stesso button/aria-label gia' usato dalla pagina.
+  useEffect(() => {
+    const root = containerRef?.current;
+    if (!root || root.dataset.testid !== "toolbar-collapse") return;
+    const handle = root.querySelector<HTMLButtonElement>(":scope > button[aria-expanded]");
+    const arrow = handle?.querySelector<HTMLElement>("span[aria-hidden]");
+    if (!handle) return;
+
+    const media = window.matchMedia("(max-width: 639px)");
+    const apply = () => {
+      if (media.matches) {
+        handle.style.minHeight = "38px";
+        handle.style.marginBottom = "6px";
+        handle.style.border = "1px solid rgba(255,255,255,0.13)";
+        handle.style.borderRadius = "9999px";
+        handle.style.background = "rgba(255,255,255,0.055)";
+        handle.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
+        if (arrow) {
+          arrow.style.fontSize = "14px";
+          arrow.style.opacity = "0.95";
+        }
+      } else {
+        handle.style.removeProperty("min-height");
+        handle.style.removeProperty("margin-bottom");
+        handle.style.removeProperty("border");
+        handle.style.removeProperty("border-radius");
+        handle.style.removeProperty("background");
+        handle.style.removeProperty("box-shadow");
+        arrow?.style.removeProperty("font-size");
+        arrow?.style.removeProperty("opacity");
+      }
+    };
+
+    apply();
+    media.addEventListener("change", apply);
+    return () => {
+      media.removeEventListener("change", apply);
+      handle.style.removeProperty("min-height");
+      handle.style.removeProperty("margin-bottom");
+      handle.style.removeProperty("border");
+      handle.style.removeProperty("border-radius");
+      handle.style.removeProperty("background");
+      handle.style.removeProperty("box-shadow");
+      arrow?.style.removeProperty("font-size");
+      arrow?.style.removeProperty("opacity");
+    };
+  }, [containerRef]);
+
   useEffect(() => {
     anchorY.current = window.scrollY;
+
+    function markTouchScroll() {
+      lastTouchScrollAt.current = performance.now();
+    }
+
     function onScroll() {
       if (ticking.current) return;
       ticking.current = true;
       requestAnimationFrame(() => {
         ticking.current = false;
         const y = window.scrollY;
+        const mobile = window.matchMedia("(max-width: 639px)").matches;
+        const now = performance.now();
 
-        // Mobile: manual-only. Uno swipe verticale non deve mai decidere se
-        // mostrare o nascondere i filtri. Aggiorniamo soltanto l'ancora per
-        // evitare salti se il viewport passa poi a desktop (rotazione/
-        // resize), lasciando intatto lo stato scelto dalla maniglia.
-        if (window.matchMedia("(max-width: 639px)").matches) {
+        // Se lo scroll e' nato da un gesto touch su telefono, non modifica
+        // mai visible. Ogni evento di inerzia rinnova la finestra, quindi
+        // la toolbar non puo' riapparire a meta' dello stesso swipe.
+        if (mobile && now - lastTouchScrollAt.current < 1200) {
+          lastTouchScrollAt.current = now;
           anchorY.current = y;
           return;
         }
@@ -94,9 +144,6 @@ export function useHideOnScrollDown(
           return;
         }
         if (keepVisibleRef.current) {
-          // Ancora aggiornata anche mentre e' "tenuta" visibile, cosi'
-          // quando keepVisible torna false non scatta un salto di stato
-          // dovuto a un'ancora ormai vecchia.
           anchorY.current = y;
           return;
         }
@@ -112,8 +159,17 @@ export function useHideOnScrollDown(
         }
       });
     }
+
+    window.addEventListener("touchstart", markTouchScroll, { passive: true });
+    window.addEventListener("touchmove", markTouchScroll, { passive: true });
+    window.addEventListener("touchend", markTouchScroll, { passive: true });
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("touchstart", markTouchScroll);
+      window.removeEventListener("touchmove", markTouchScroll);
+      window.removeEventListener("touchend", markTouchScroll);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, [containerRef, revealThresholdPx, directionThresholdPx]);
 
   return [visible, setVisible] as const;
