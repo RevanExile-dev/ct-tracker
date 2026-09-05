@@ -14,14 +14,35 @@ function normalize(value: string) {
     .trim();
 }
 
+function normalizeOcrDigits(value: string) {
+  return value
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il|]/g, "1")
+    .replace(/\\/g, "/");
+}
+
+export function extractCollectorNumber(text: string): string | null {
+  const repaired = normalizeOcrDigits(text);
+  const matches = [...repaired.matchAll(/(?:^|\D)(\d{1,4})\s*[\/-]\s*(\d{1,4})(?=\D|$)/g)];
+  if (!matches.length) return null;
+
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const numerator = Number(matches[i][1]);
+    const denominator = Number(matches[i][2]);
+    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
+      return `${matches[i][1]}/${matches[i][2]}`;
+    }
+  }
+  return null;
+}
+
 function normalizeCatalogName(value: string) {
-  // CardTrader puo' esprimere la variante sia tra parentesi sia come suffix
-  // libero (es. "Blitzle (Illustration Rare)" / "Blitzle Illustration Rare").
-  // Queste parole NON sono stampate nel nome della carta fisica e non devono
-  // diluire il match OCR. Rimuoviamo solo qualifier di prodotto conosciuti,
-  // non parole Pokemon generiche.
+  // CardTrader puo' includere nel blueprint sia qualifier commerciali sia
+  // il collector number. Nessuno dei due fa parte del nome stampato in alto
+  // sulla carta, quindi non deve diluire il confronto con l'OCR del nome.
   const withoutParens = value.replace(/\([^)]*\)/g, " ");
-  return normalize(withoutParens)
+  const withoutCollector = withoutParens.replace(/\b\d{1,4}\s*[\/-]\s*\d{1,4}\b/g, " ");
+  return normalize(withoutCollector)
     .replace(/\b(?:special illustration rare|illustration rare|ultra rare|secret rare|full art|trainer gallery|galarian gallery|alternate art|alt art|promo)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -52,30 +73,6 @@ function wordSimilarity(a: string, b: string) {
   return Math.max(0, 1 - editDistance(a, b) / longest);
 }
 
-function normalizeOcrDigits(value: string) {
-  return value
-    .replace(/[Oo]/g, "0")
-    .replace(/[Il|]/g, "1")
-    .replace(/\\/g, "/");
-}
-
-export function extractCollectorNumber(text: string): string | null {
-  const repaired = normalizeOcrDigits(text);
-  const matches = [...repaired.matchAll(/(?:^|\D)(\d{1,4})\s*[\/-]\s*(\d{1,4})(?=\D|$)/g)];
-  if (!matches.length) return null;
-
-  // Il crop in basso puo' contenere HP/danni o anno copyright: preferiamo
-  // l'ultima coppia plausibile, normalmente quella stampata accanto al set.
-  for (let i = matches.length - 1; i >= 0; i -= 1) {
-    const numerator = Number(matches[i][1]);
-    const denominator = Number(matches[i][2]);
-    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
-      return `${matches[i][1]}/${matches[i][2]}`;
-    }
-  }
-  return null;
-}
-
 export function collectorNumberFromImageUrl(imageUrl: string | null): string | null {
   if (!imageUrl) return null;
   let filename = imageUrl.split("/").pop()?.split("?")[0] ?? "";
@@ -85,9 +82,6 @@ export function collectorNumberFromImageUrl(imageUrl: string | null): string | n
     // Un URL malformato non deve rompere l'intero catalogo.
   }
 
-  // I filename CardTrader delle carte Pokémon includono normalmente il
-  // collector number in forma slug, es. ...-147-128-30th-celebration.jpg.
-  // Il blueprint id iniziale ha 5/6 cifre e non entra in questa regex.
   const matches = [...filename.matchAll(/(?:^|-)(\d{1,4})-(\d{1,4})(?=-|\.|$)/g)];
   for (let i = matches.length - 1; i >= 0; i -= 1) {
     const numerator = Number(matches[i][1]);
@@ -121,8 +115,12 @@ function collectorSimilarity(observed: string | null, expected: string | null) {
 }
 
 function entryCollectorNumber(entry: ScannerCatalogEntry) {
+  // Alcuni blueprint CardTrader hanno version=null e/o URL immagine non
+  // canonico, ma riportano il numero nel nome del prodotto. Il nome e'
+  // quindi una sorgente di metadata valida prima del fallback all'URL.
   return (
     extractCollectorNumber(entry.version ?? "") ??
+    extractCollectorNumber(entry.name) ??
     collectorNumberFromImageUrl(entry.image_url)
   );
 }
@@ -169,8 +167,6 @@ export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   return catalogPromise;
 }
 
-/** Optional hook per l'indice visivo. Il nuovo ranking non dipende da esso:
- * numero collezione + nome funzionano gia' con il DB attuale. */
 export async function loadVisualIndex(): Promise<Map<number, string>> {
   if (!visualIndexPromise) {
     visualIndexPromise = fetch("/data/scanner_index.json", { cache: "no-cache" })
@@ -251,14 +247,10 @@ export function rankScannerCandidates(
     let score: number;
 
     if (hasNumberEvidence) {
-      // Il collector number e' il miglior disambiguatore tra ristampe/variant:
-      // un match esatto vale piu' di un OCR del nome perfetto da solo.
       score = nameScore * 0.34 + numberScore * 0.56 + (hasVisual ? visualScore * 0.1 : 0);
       if (numberScore === 1) {
         score = Math.max(score, 0.58 + nameScore * 0.36 + (hasVisual ? visualScore * 0.06 : 0));
       } else if (numberScore === 0) {
-        // Se leggiamo chiaramente un numero diverso, non lasciamo che una
-        // ristampa omonima vinca solo per il nome.
         score *= 0.34;
       }
     } else if (hasVisual) {
