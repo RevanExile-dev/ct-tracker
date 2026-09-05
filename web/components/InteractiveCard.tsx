@@ -82,6 +82,20 @@ export default function InteractiveCard({ children, className = "", level = "til
       data-level={level}
       onPointerDown={(event) => {
         if (event.pointerType === "mouse" && event.button !== 0) return;
+        // Bug reale trovato eseguendo davvero il sito (non solo letto):
+        // setPointerCapture() sul contenitore fa si' che TUTTI gli eventi
+        // successivi per questo pointerId (compreso "click", sotto mouse -
+        // il touch si comporta diversamente e non ne risente) vengano
+        // ritargettati al contenitore stesso, anche se il puntatore e'
+        // rilasciato fisicamente sopra un bottone annidato (stella binder,
+        // cuore desideri). Risultato: click del mouse su quei bottoni
+        // silenziosamente ignorato. Attenzione: SOLO "button", non "a" -
+        // il link principale della carta (CardTile, BinderBook) e' proprio
+        // cio' che ha bisogno della cattura/soppressione-click per
+        // distinguere un tap (naviga) da un trascinamento (sfoglio Binder);
+        // escluderlo romperebbe quel meccanismo, verificato dal vivo.
+        const interactive = (event.target as HTMLElement).closest?.("button, input, select, textarea");
+        if (interactive) return;
         pointerActiveRef.current = true;
         pointerIdRef.current = event.pointerId;
         dragStartRef.current = { x: event.clientX, y: event.clientY };

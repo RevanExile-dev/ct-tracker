@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCents, languageFlag } from "@/lib/format";
-import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
 import { assessQuality, cropRegion, detectCardRegions, dhash } from "@/lib/scanner/image";
 import {
   hydrateScannerCard,
@@ -338,20 +338,24 @@ export default function ScannerStudio() {
     }
   }
 
-  function addToBinder(id: number) {
+  function addToBinder(id: number, language?: string | null) {
     if (binderIds.has(id)) return;
-    const next = toggleBinder(id);
-    setBinderIds(new Set(next));
+    // upsertBinderEntry (non toggleBinder): registra la lingua rilevata
+    // dallo scanner sulla copia fisica - e' l'unico punto del sito che la
+    // conosce davvero, il bottone stella nel catalogo non ha questo dato.
+    const entries = upsertBinderEntry(id, { language: language ?? null });
+    setBinderIds(new Set(entries.map((entry) => entry.blueprintId)));
   }
 
   function addAllToBinder() {
-    let next = new Set(binderIds);
+    let ids = new Set(binderIds);
     for (const item of items) {
       const id = item.card?.id;
-      if (!id || next.has(id)) continue;
-      next = toggleBinder(id);
+      if (!id || ids.has(id)) continue;
+      const updated = upsertBinderEntry(id, { language: item.language.code ?? null });
+      ids = new Set(updated.map((entry) => entry.blueprintId));
     }
-    setBinderIds(new Set(next));
+    setBinderIds(ids);
   }
 
   function reset() {
@@ -599,7 +603,7 @@ export default function ScannerStudio() {
                       {selected && (
                         <div className="flex sm:col-start-2 lg:col-start-auto lg:flex-col gap-2 lg:min-w-[156px]">
                           <Link href={`/card/${selected.id}?from=${encodeURIComponent("/scan")}`} className="flex-1 min-h-11 inline-flex items-center justify-center rounded-xl border border-base-border bg-base-surface px-4 text-xs text-ink-muted hover:text-ink-primary hover:border-accent/40 transition-colors">Apri carta</Link>
-                          <button type="button" disabled={inBinder} onClick={() => addToBinder(selected.id)} className={`${styles.actionPrimary} flex-1 min-h-11 rounded-xl bg-accent px-4 text-xs font-semibold text-black disabled:opacity-55 disabled:cursor-default`}>{inBinder ? "Nel Binder ✓" : "＋ Binder"}</button>
+                          <button type="button" disabled={inBinder} onClick={() => addToBinder(selected.id, item.language.code)} className={`${styles.actionPrimary} flex-1 min-h-11 rounded-xl bg-accent px-4 text-xs font-semibold text-black disabled:opacity-55 disabled:cursor-default`}>{inBinder ? "Nel Binder ✓" : "＋ Binder"}</button>
                         </div>
                       )}
                     </div>
