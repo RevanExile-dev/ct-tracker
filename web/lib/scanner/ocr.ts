@@ -12,6 +12,7 @@ type TesseractApi = {
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
 let loaderPromise: Promise<TesseractApi> | null = null;
 let workerPromise: Promise<TesseractWorker> | null = null;
+let recognitionTail: Promise<void> = Promise.resolve();
 
 function loadTesseract(): Promise<TesseractApi> {
   if (loaderPromise) return loaderPromise;
@@ -58,16 +59,25 @@ async function getWorker(): Promise<TesseractWorker> {
   return workerPromise;
 }
 
-export async function recognizeText(image: string): Promise<OcrResult> {
-  const worker = await getWorker();
-  const result = await worker.recognize(image);
-  return {
-    text: result.data.text.trim(),
-    confidence: Number.isFinite(result.data.confidence) ? result.data.confidence : 0,
-  };
+export function recognizeText(image: string): Promise<OcrResult> {
+  // ScannerStudio puo' preparare due regioni in parallelo, ma un singolo
+  // Tesseract worker non va usato con recognize concorrenti. Questa coda
+  // serializza solo l'OCR; crop, hash, matching e query possono comunque
+  // procedere in parallelo intorno ad esso.
+  const job = recognitionTail.then(async () => {
+    const worker = await getWorker();
+    const result = await worker.recognize(image);
+    return {
+      text: result.data.text.trim(),
+      confidence: Number.isFinite(result.data.confidence) ? result.data.confidence : 0,
+    };
+  });
+  recognitionTail = job.then(() => undefined, () => undefined);
+  return job;
 }
 
 export async function terminateOcr(): Promise<void> {
+  await recognitionTail.catch(() => undefined);
   const pending = workerPromise;
   workerPromise = null;
   if (!pending) return;
