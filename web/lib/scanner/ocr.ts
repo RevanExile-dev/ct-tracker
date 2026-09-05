@@ -24,10 +24,15 @@ const OCR_CROPS: Record<"name" | "number" | "body", CropSpec> = {
   // che foil, illustrazione e testo degli attacchi competano con una singola
   // riga che e' il segnale piu' utile per l'identita'.
   name: { x: 0.035, y: 0.018, width: 0.76, height: 0.145, targetWidth: 1100, contrast: 1.55 },
-  // Numero collezione: in basso a sinistra sui layout moderni. Il crop e'
-  // volutamente largo per includere anche set code/simboli: Tesseract ha piu'
-  // contesto per separare caratteri piccoli e riflessi olografici.
-  number: { x: 0.018, y: 0.825, width: 0.58, height: 0.165, targetWidth: 1150, contrast: 1.9 },
+  // Numero collezione: in basso a SINISTRA sui layout moderni (SWSH/SV in
+  // poi), ma in basso a DESTRA su tutti i layout piu' vecchi (Base Set fino
+  // a EX/Diamond & Pearl/HGSS) - la larghezza precedente (0.018-0.598, solo
+  // meta' sinistra) tagliava fuori il numero su ogni carta vintage. Il
+  // fallback OCR sull'intera carta non lo salva: scatta solo se ANCHE il
+  // nome non viene letto (vedi sotto), il che quasi sempre non e' il caso.
+  // Copre quindi l'intera larghezza inferiore (rilievo review Gemini su PR
+  // #25, verificato: la logica del layout carte e' corretta).
+  number: { x: 0.018, y: 0.80, width: 0.964, height: 0.185, targetWidth: 1400, contrast: 1.9 },
   // Fascia testo/weakness/retreat: serve soprattutto alla lingua; non deve
   // dominare il match del nome.
   body: { x: 0.025, y: 0.48, width: 0.95, height: 0.47, targetWidth: 1250, contrast: 1.35 },

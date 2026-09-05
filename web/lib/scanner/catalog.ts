@@ -81,10 +81,26 @@ function wordSimilarity(a: string, b: string) {
 // batteva Blitzle 195/182 (nome VERO nome esatto) perche' otteneva comunque
 // nameScore=1. Richiede che il nome compaia come parola/frase intera,
 // delimitata da inizio/fine stringa o spazi.
+// Ricerca a confini di parola senza RegExp: rankScannerCandidates() chiama
+// questa funzione una volta per ciascuna delle ~30mila carte del catalogo
+// PER OGNI scansione - costruire/compilare una RegExp in ogni iterazione
+// (rilievo review Gemini su PR #25) e' allocazione GC inutile ripetuta
+// migliaia di volte su un dispositivo mobile. haystack e needle sono gia'
+// passati da normalize()/normalizeCatalogName(), quindi i separatori di
+// parola sono sempre spazi singoli - un controllo sui caratteri adiacenti
+// basta, non serve un motore regex.
 function containsWholeWord(haystack: string, needle: string) {
   if (!needle) return false;
-  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(haystack);
+  let start = 0;
+  for (;;) {
+    const idx = haystack.indexOf(needle, start);
+    if (idx === -1) return false;
+    const before = idx === 0 ? " " : haystack[idx - 1];
+    const afterIdx = idx + needle.length;
+    const after = afterIdx >= haystack.length ? " " : haystack[afterIdx];
+    if (before === " " && after === " ") return true;
+    start = idx + 1;
+  }
 }
 
 export function collectorNumberFromImageUrl(imageUrl: string | null): string | null {
