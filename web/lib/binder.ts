@@ -133,7 +133,13 @@ export function upsertBinderEntry(blueprintId: number, patch: Partial<Omit<Binde
   let next: BinderEntry[];
   if (idx >= 0) {
     next = entries.slice();
-    next[idx] = { ...next[idx], ...patch };
+    // Filtra le chiavi undefined dalla patch: senza, {...current, ...patch}
+    // sovrascriverebbe un valore gia' impostato con undefined per qualunque
+    // chiamante futuro che passi un campo non valorizzato invece di
+    // ometterlo del tutto - non capita con le chiamate attuali (rilievo
+    // review Gemini, difesa preventiva).
+    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    next[idx] = { ...next[idx], ...cleanPatch };
   } else {
     next = entries.concat([{
       blueprintId,
