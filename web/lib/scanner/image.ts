@@ -226,14 +226,14 @@ export async function dhash(src: string): Promise<string> {
   if (!ctx) throw new Error("Canvas non disponibile.");
   ctx.drawImage(image, 0, 0, 9, 8);
   const data = ctx.getImageData(0, 0, 9, 8).data;
-  let bits = 0n;
+  let bits = BigInt(0);
   for (let y = 0; y < 8; y += 1) {
     for (let x = 0; x < 8; x += 1) {
       const a = (y * 9 + x) * 4;
       const b = (y * 9 + x + 1) * 4;
       const ga = data[a] * 0.299 + data[a + 1] * 0.587 + data[a + 2] * 0.114;
       const gb = data[b] * 0.299 + data[b + 1] * 0.587 + data[b + 2] * 0.114;
-      bits = (bits << 1n) | (ga > gb ? 1n : 0n);
+      bits = (bits << BigInt(1)) | (ga > gb ? BigInt(1) : BigInt(0));
     }
   }
   return bits.toString(16).padStart(16, "0");
