@@ -9,7 +9,9 @@ type TesseractApi = {
   createWorker: (langs?: string | string[]) => Promise<TesseractWorker>;
 };
 
-const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+// Pin esplicito: niente "latest" non deterministico. v7 riduce memoria/runtime
+// rispetto alle release precedenti e mantiene la stessa API createWorker usata qui.
+const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js";
 let loaderPromise: Promise<TesseractApi> | null = null;
 let workerPromise: Promise<TesseractWorker> | null = null;
 let recognitionTail: Promise<void> = Promise.resolve();
@@ -26,12 +28,16 @@ function loadTesseract(): Promise<TesseractApi> {
     script.src = TESSERACT_CDN;
     script.async = true;
     script.crossOrigin = "anonymous";
+    script.dataset.cartaVivaScannerOcr = "true";
     script.onload = () => {
       const api = (window as Window & { Tesseract?: TesseractApi }).Tesseract;
       if (api) resolve(api);
       else reject(new Error("Motore OCR caricato ma non inizializzato."));
     };
-    script.onerror = () => reject(new Error("Motore OCR non raggiungibile. Puoi comunque correggere il match manualmente."));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("Motore OCR non raggiungibile. Puoi comunque correggere il match manualmente."));
+    };
     document.head.appendChild(script);
   }).catch((error) => {
     loaderPromise = null;
@@ -49,6 +55,7 @@ async function getWorker(): Promise<TesseractWorker> {
         // mobile e segue il pattern raccomandato da Tesseract per piu' immagini.
         return await api.createWorker(["eng", "ita", "jpn", "kor"]);
       } catch {
+        // Fallback leggero se uno dei language pack non e' raggiungibile.
         return api.createWorker("eng");
       }
     })().catch((error) => {
@@ -62,8 +69,8 @@ async function getWorker(): Promise<TesseractWorker> {
 export function recognizeText(image: string): Promise<OcrResult> {
   // ScannerStudio puo' preparare due regioni in parallelo, ma un singolo
   // Tesseract worker non va usato con recognize concorrenti. Questa coda
-  // serializza solo l'OCR; crop, hash, matching e query possono comunque
-  // procedere in parallelo intorno ad esso.
+  // serializza solo l'OCR; crop, hash, matching e query possono procedere
+  // in parallelo intorno ad esso.
   const job = recognitionTail.then(async () => {
     const worker = await getWorker();
     const result = await worker.recognize(image);
