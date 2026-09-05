@@ -28,72 +28,18 @@ import json
 import random
 import sqlite3
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-import requests
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+
+from scanner_common import HASH_SIZE, artwork_crop, dhash, fetch_image, hamming
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cardtrader.db"
 REPORT_PATH = Path(__file__).resolve().parent.parent / "scanner_m1_report.json"
 
-HASH_SIZE = 8  # dHash 8x8 -> hash a 64 bit, misura di partenza piu' semplice
-                # (sezione 8.1: "non bloccare l'algoritmo prima di misurarlo")
-# Crop artwork approssimato: percentuali fisse sull'immagine intera della
-# carta. Le immagini CardTrader sono gia' inquadrate sul bordo carta (non
-# fotografie grezze), quindi un crop fisso e' un'approssimazione ragionevole
-# per QUESTO spike -- la sezione 8.1 del documento nota esplicitamente che
-# un crop per era/layout va introdotto solo se le misure lo giustificano.
-ARTWORK_BOX = (0.09, 0.10, 0.91, 0.58)  # (left, top, right, bottom) frazioni
-
-REQUEST_TIMEOUT = 20
-REQUEST_RETRIES = 3
-
 RNG_SEED = 20260920  # riproducibilita' tra run
-
-
-def fetch_image(url: str) -> Image.Image:
-    last_err: Exception | None = None
-    for attempt in range(REQUEST_RETRIES):
-        try:
-            resp = requests.get(url, timeout=REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            return Image.open(io.BytesIO(resp.content)).convert("RGB")
-        except Exception as exc:  # rete instabile sul runner, non e' l'oggetto della misura
-            last_err = exc
-            time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"Download fallito per {url}: {last_err}")
-
-
-def dhash(img: Image.Image, hash_size: int = HASH_SIZE) -> int:
-    """Difference hash classico: confronta pixel adiacenti dopo resize+grayscale.
-
-    Scelto invece di un pHash basato su DCT per restare senza dipendenze
-    oltre a Pillow (vedi sezione 23 del documento -- non aggiungere
-    dipendenze prima che uno spike ne dimostri la necessita').
-    """
-    small = img.convert("L").resize((hash_size + 1, hash_size), Image.LANCZOS)
-    pixels = list(small.getdata())
-    bits = 0
-    for row in range(hash_size):
-        row_start = row * (hash_size + 1)
-        for col in range(hash_size):
-            bits <<= 1
-            if pixels[row_start + col] > pixels[row_start + col + 1]:
-                bits |= 1
-    return bits
-
-
-def hamming(a: int, b: int) -> int:
-    return bin(a ^ b).count("1")
-
-
-def artwork_crop(img: Image.Image) -> Image.Image:
-    w, h = img.size
-    left, top, right, bottom = ARTWORK_BOX
-    return img.crop((int(w * left), int(h * top), int(w * right), int(h * bottom)))
 
 
 @dataclass
@@ -341,7 +287,7 @@ def main() -> None:
             for method_name, ranked in (
                 ("full_hash", ranked_full),
                 ("artwork_hash", ranked_art),
-                ("weighted_full_plus_artwool" if False else "weighted_full_plus_artwork", combined),
+                ("weighted_full_plus_artwork", combined),
             ):
                 r = rank_of(bid, ranked)
                 margin = (ranked[1][1] - ranked[0][1]) if len(ranked) > 1 else 0

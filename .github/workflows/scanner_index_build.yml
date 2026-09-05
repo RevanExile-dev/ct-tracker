@@ -1,0 +1,44 @@
+name: Build indice fingerprint scanner
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Solo le prime N carte da elaborare (debug/test, vuoto = tutte)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+# Stesso gruppo di sync_prices.yml/sync_catalog.yml/sync_prices_full.yml: lo
+# script fa checkpoint-commit+push su data/ e web/public/data/, non deve
+# correre in parallelo con gli altri sync che scrivono sugli stessi DB.
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
+jobs:
+  build-scanner-index:
+    runs-on: ubuntu-latest
+    # ~29mila blueprint con immagine, download+hash uno per uno: run lungo
+    # per natura, i checkpoint periodici permettono di riprendere da dove si
+    # era arrivati se il job viene interrotto dal timeout.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Configura identita' git per i checkpoint
+        run: |
+          git config user.name "ct-tracker-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Genera indice fingerprint visivo
+        run: python scripts/build_scanner_index.py ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
