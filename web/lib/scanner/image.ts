@@ -457,14 +457,12 @@ export async function assessQuality(src: string): Promise<ScanQuality> {
   };
 }
 
-export async function dhash(src: string): Promise<string> {
-  const image = await loadImage(src);
-  const canvas = document.createElement("canvas");
-  canvas.width = 9;
-  canvas.height = 8;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Canvas non disponibile.");
-  ctx.drawImage(image, 0, 0, 9, 8);
+// Stesso crop artwork approssimato usato build-time in scripts/scanner_common.py
+// (ARTWORK_BOX) - deve restare identico sui due lati o gli hash non sono piu'
+// confrontabili. Percentuali (left, top, right, bottom) sull'immagine intera.
+const ARTWORK_BOX = { left: 0.09, top: 0.10, right: 0.91, bottom: 0.58 } as const;
+
+function dhashFromContext(ctx: CanvasRenderingContext2D): string {
   const data = ctx.getImageData(0, 0, 9, 8).data;
   let bits = BigInt(0);
   for (let y = 0; y < 8; y += 1) {
@@ -477,4 +475,45 @@ export async function dhash(src: string): Promise<string> {
     }
   }
   return bits.toString(16).padStart(16, "0");
+}
+
+function dhashCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 9;
+  canvas.height = 8;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas non disponibile.");
+  return { canvas, ctx };
+}
+
+function artDhashFromImage(image: HTMLImageElement): string {
+  const sx = Math.round(image.naturalWidth * ARTWORK_BOX.left);
+  const sy = Math.round(image.naturalHeight * ARTWORK_BOX.top);
+  const sw = Math.max(1, Math.round(image.naturalWidth * (ARTWORK_BOX.right - ARTWORK_BOX.left)));
+  const sh = Math.max(1, Math.round(image.naturalHeight * (ARTWORK_BOX.bottom - ARTWORK_BOX.top)));
+  const { ctx } = dhashCanvas();
+  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, 9, 8);
+  return dhashFromContext(ctx);
+}
+
+/** Calcola dHash immagine-intera + dHash del solo crop artwork (stesso crop
+ * build-time, combinato lato catalog.ts - la coppia full+art validata nello
+ * spike M1a, top-1 100% su distorsioni sintetiche, vedi issue #20) con una
+ * sola loadImage()/decodifica invece di due in parallelo com'era prima
+ * (rilievo review Gemini: due chiamate separate decodificavano la stessa
+ * immagine due volte per ogni scatto dello scanner). Se il solo crop
+ * artwork fallisce (edge case geometrico, non un problema dell'immagine in
+ * se'), degrada ad art assente invece di perdere anche full - un altro
+ * rilievo della stessa review: un Promise.all "tutto o niente" buttava via
+ * un hash valido per un fallimento del secondo. */
+export async function cardHashes(src: string): Promise<{ full: string; art?: string }> {
+  const image = await loadImage(src);
+  const fullCtx = dhashCanvas().ctx;
+  fullCtx.drawImage(image, 0, 0, 9, 8);
+  const full = dhashFromContext(fullCtx);
+  try {
+    return { full, art: artDhashFromImage(image) };
+  } catch {
+    return { full };
+  }
 }
