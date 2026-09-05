@@ -30,6 +30,7 @@ export default function SiteHeader({
   const onHome = pathname === "/";
   const onBinder = pathname.startsWith("/binder");
   const onWishlist = pathname === "/wishlist";
+  const onScanner = pathname === "/scan";
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
@@ -76,6 +77,14 @@ export default function SiteHeader({
         </div>
 
         <div className="flex gap-2 flex-wrap">
+          {!onScanner && (
+            <Link
+              href="/scan"
+              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 hover:bg-accent/15 transition-colors active:scale-95"
+            >
+              ✦ Scanner
+            </Link>
+          )}
           {!onMovers && (
             <Link
               href="/movers"

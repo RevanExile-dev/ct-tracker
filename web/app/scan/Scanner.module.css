@@ -1,0 +1,287 @@
+.studio {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 72vh;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(95, 232, 204, .12), transparent 34%),
+    radial-gradient(circle at 88% 14%, rgba(118, 125, 255, .16), transparent 38%),
+    linear-gradient(145deg, rgba(15, 20, 25, .96), rgba(10, 12, 16, .98));
+  box-shadow: 0 40px 120px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.04);
+}
+
+.gridGlow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: .22;
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(circle at 50% 35%, black, transparent 78%);
+  animation: gridDrift 14s linear infinite;
+}
+
+.orbA,
+.orbB {
+  position: absolute;
+  z-index: -1;
+  width: 320px;
+  height: 320px;
+  border-radius: 999px;
+  filter: blur(70px);
+  opacity: .16;
+  pointer-events: none;
+}
+
+.orbA {
+  top: -140px;
+  left: -90px;
+  background: #5fe8cc;
+  animation: orbFloat 10s ease-in-out infinite alternate;
+}
+
+.orbB {
+  top: 26%;
+  right: -160px;
+  background: #7880ff;
+  animation: orbFloat 12s ease-in-out -3s infinite alternate-reverse;
+}
+
+.heroBadge {
+  position: relative;
+  overflow: hidden;
+}
+
+.heroBadge::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(110deg, transparent 25%, rgba(255,255,255,.45) 43%, transparent 62%);
+  transform: translateX(-120%);
+  animation: sheen 4.8s ease-in-out infinite;
+}
+
+.captureCard {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+  border: 1px solid rgba(255,255,255,.09);
+  background: linear-gradient(155deg, rgba(255,255,255,.055), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 20px 60px rgba(0,0,0,.18);
+}
+
+.captureCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 12%, rgba(95,232,204,.08) 45%, transparent 64%);
+  transform: translateX(-100%);
+  transition: transform .8s cubic-bezier(.2,.7,.2,1);
+}
+
+.captureCard:hover::before {
+  transform: translateX(100%);
+}
+
+.dropActive {
+  border-color: rgba(95, 232, 204, .7) !important;
+  box-shadow: 0 0 0 1px rgba(95,232,204,.24), 0 0 48px rgba(95,232,204,.14);
+}
+
+.cameraFrame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  background: #05070a;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 24px 80px rgba(0,0,0,.28);
+}
+
+.cameraFrame::before,
+.cameraFrame::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 20px;
+}
+
+.cameraFrame::before {
+  border: 1px solid rgba(95,232,204,.35);
+  box-shadow: inset 0 0 30px rgba(95,232,204,.08);
+}
+
+.cameraFrame::after {
+  height: 2px;
+  top: 16%;
+  bottom: auto;
+  background: linear-gradient(90deg, transparent, rgba(95,232,204,.95), transparent);
+  box-shadow: 0 0 16px rgba(95,232,204,.9);
+  animation: scanBeam 2.8s cubic-bezier(.45,0,.55,1) infinite;
+}
+
+.corner {
+  position: absolute;
+  z-index: 3;
+  width: 36px;
+  height: 36px;
+  border-color: rgba(220,255,247,.92);
+  filter: drop-shadow(0 0 8px rgba(95,232,204,.6));
+}
+
+.cornerTL { top: 30px; left: 30px; border-top: 2px solid; border-left: 2px solid; border-radius: 10px 0 0 0; }
+.cornerTR { top: 30px; right: 30px; border-top: 2px solid; border-right: 2px solid; border-radius: 0 10px 0 0; }
+.cornerBL { bottom: 30px; left: 30px; border-bottom: 2px solid; border-left: 2px solid; border-radius: 0 0 0 10px; }
+.cornerBR { bottom: 30px; right: 30px; border-bottom: 2px solid; border-right: 2px solid; border-radius: 0 0 10px 0; }
+
+.previewWrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  background: rgba(0,0,0,.24);
+}
+
+.region {
+  position: absolute;
+  border: 1px solid rgba(95,232,204,.9);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(95,232,204,.18), 0 0 28px rgba(95,232,204,.24), inset 0 0 18px rgba(95,232,204,.05);
+  animation: regionLock .55s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.region::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(95,232,204,.09), transparent 24%, transparent 74%, rgba(95,232,204,.08));
+}
+
+.resultCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.09);
+  background: linear-gradient(155deg, rgba(255,255,255,.05), rgba(255,255,255,.018));
+  box-shadow: 0 18px 55px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.04);
+  animation: resultIn .65s cubic-bezier(.16,1,.3,1) both;
+}
+
+.resultCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--mx, 80%) var(--my, 10%), rgba(120,128,255,.12), transparent 38%);
+}
+
+.imageShell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  transform-style: preserve-3d;
+  transition: transform .4s cubic-bezier(.2,.8,.2,1), box-shadow .4s ease;
+  box-shadow: 0 18px 45px rgba(0,0,0,.25);
+}
+
+.resultCard:hover .imageShell {
+  transform: perspective(900px) rotateY(-3deg) rotateX(2deg) translateY(-3px);
+  box-shadow: 14px 24px 60px rgba(0,0,0,.34), -8px -6px 28px rgba(95,232,204,.05);
+}
+
+.progressRail {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255,255,255,.06);
+}
+
+.progressRail::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(95,232,204,.78), rgba(120,128,255,.72), transparent);
+  animation: progressSweep 1.15s ease-in-out infinite;
+}
+
+.pulseDot {
+  box-shadow: 0 0 0 rgba(95,232,204,.55);
+  animation: pulse 1.8s ease-out infinite;
+}
+
+.actionPrimary {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 12px 30px rgba(95,232,204,.13);
+}
+
+.actionPrimary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,.3) 45%, transparent 70%);
+  transform: translateX(-140%);
+  transition: transform .7s cubic-bezier(.2,.7,.2,1);
+}
+
+.actionPrimary:hover::after { transform: translateX(140%); }
+
+@keyframes scanBeam {
+  0%, 100% { top: 14%; opacity: .45; }
+  50% { top: 84%; opacity: 1; }
+}
+
+@keyframes resultIn {
+  from { opacity: 0; transform: translateY(20px) scale(.975); filter: blur(6px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes regionLock {
+  from { opacity: 0; transform: scale(1.08); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(95,232,204,.5); }
+  70% { box-shadow: 0 0 0 10px rgba(95,232,204,0); }
+  100% { box-shadow: 0 0 0 0 rgba(95,232,204,0); }
+}
+
+@keyframes sheen {
+  0%, 58% { transform: translateX(-130%); }
+  78%, 100% { transform: translateX(130%); }
+}
+
+@keyframes progressSweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(300%); }
+}
+
+@keyframes orbFloat {
+  from { transform: translate3d(0, 0, 0) scale(.94); }
+  to { transform: translate3d(45px, 30px, 0) scale(1.1); }
+}
+
+@keyframes gridDrift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 34px 34px, 34px 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gridGlow,
+  .orbA,
+  .orbB,
+  .heroBadge::after,
+  .cameraFrame::after,
+  .resultCard,
+  .region,
+  .progressRail::after,
+  .pulseDot {
+    animation: none !important;
+  }
+  .resultCard:hover .imageShell { transform: none; }
+}

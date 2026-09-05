@@ -49,10 +49,10 @@ jobs:
           cat /tmp/ct-tracker-next.log
           exit 1
 
-      - name: Test responsive + mobile manual filters
+      - name: Test responsive + mobile manual filters + scanner
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
-        run: npx playwright test tests/mobile-toolbar.spec.mjs tests/mobile-filter-manual.spec.mjs --reporter=line
+        run: npx playwright test tests/mobile-toolbar.spec.mjs tests/mobile-filter-manual.spec.mjs tests/scanner.spec.mjs --reporter=line
 
       - name: Log server in caso di errore
         if: failure()
