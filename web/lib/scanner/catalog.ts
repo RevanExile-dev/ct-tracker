@@ -15,10 +15,16 @@ function normalize(value: string) {
 }
 
 function normalizeCatalogName(value: string) {
-  // CardTrader aggiunge spesso qualifier tra parentesi, es.
-  // "Blitzle (Illustration Rare)". Sulla carta fisica quel suffix non esiste
-  // e non deve abbassare il punteggio OCR del nome vero.
-  return normalize(value.replace(/\([^)]*\)/g, " "));
+  // CardTrader puo' esprimere la variante sia tra parentesi sia come suffix
+  // libero (es. "Blitzle (Illustration Rare)" / "Blitzle Illustration Rare").
+  // Queste parole NON sono stampate nel nome della carta fisica e non devono
+  // diluire il match OCR. Rimuoviamo solo qualifier di prodotto conosciuti,
+  // non parole Pokemon generiche.
+  const withoutParens = value.replace(/\([^)]*\)/g, " ");
+  return normalize(withoutParens)
+    .replace(/\b(?:special illustration rare|illustration rare|ultra rare|secret rare|full art|trainer gallery|galarian gallery|alternate art|alt art|promo)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function editDistance(a: string, b: string) {
