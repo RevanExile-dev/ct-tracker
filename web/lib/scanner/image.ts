@@ -486,18 +486,7 @@ function dhashCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext
   return { canvas, ctx };
 }
 
-export async function dhash(src: string): Promise<string> {
-  const image = await loadImage(src);
-  const { ctx } = dhashCanvas();
-  ctx.drawImage(image, 0, 0, 9, 8);
-  return dhashFromContext(ctx);
-}
-
-/** Hash percettivo sulla sola area artwork (stesso crop del build-time) -
- * combinato con dhash() lato catalog.ts, e' la coppia full+art validata
- * nello spike M1a (top-1 100% su distorsioni sintetiche, vedi issue #20). */
-export async function artDhash(src: string): Promise<string> {
-  const image = await loadImage(src);
+function artDhashFromImage(image: HTMLImageElement): string {
   const sx = Math.round(image.naturalWidth * ARTWORK_BOX.left);
   const sy = Math.round(image.naturalHeight * ARTWORK_BOX.top);
   const sw = Math.max(1, Math.round(image.naturalWidth * (ARTWORK_BOX.right - ARTWORK_BOX.left)));
@@ -505,4 +494,26 @@ export async function artDhash(src: string): Promise<string> {
   const { ctx } = dhashCanvas();
   ctx.drawImage(image, sx, sy, sw, sh, 0, 0, 9, 8);
   return dhashFromContext(ctx);
+}
+
+/** Calcola dHash immagine-intera + dHash del solo crop artwork (stesso crop
+ * build-time, combinato lato catalog.ts - la coppia full+art validata nello
+ * spike M1a, top-1 100% su distorsioni sintetiche, vedi issue #20) con una
+ * sola loadImage()/decodifica invece di due in parallelo com'era prima
+ * (rilievo review Gemini: due chiamate separate decodificavano la stessa
+ * immagine due volte per ogni scatto dello scanner). Se il solo crop
+ * artwork fallisce (edge case geometrico, non un problema dell'immagine in
+ * se'), degrada ad art assente invece di perdere anche full - un altro
+ * rilievo della stessa review: un Promise.all "tutto o niente" buttava via
+ * un hash valido per un fallimento del secondo. */
+export async function cardHashes(src: string): Promise<{ full: string; art?: string }> {
+  const image = await loadImage(src);
+  const fullCtx = dhashCanvas().ctx;
+  fullCtx.drawImage(image, 0, 0, 9, 8);
+  const full = dhashFromContext(fullCtx);
+  try {
+    return { full, art: artDhashFromImage(image) };
+  } catch {
+    return { full };
+  }
 }

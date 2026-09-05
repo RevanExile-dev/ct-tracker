@@ -1,7 +1,15 @@
 import { fetchCards, getDb, type CardRow } from "@/lib/db";
 import type { ScannerCandidate, ScannerCatalogEntry } from "./types";
 
-type VisualHashes = { full: string; art: string };
+// art e' opzionale: un indice generato prima che art_hash esistesse ha solo
+// full. Il fallback originale (art = full quando mancante) era un bug reale
+// trovato dalla review Gemini su questa PR - confrontare l'hash di un crop
+// artwork con l'hash dell'immagine INTERA produce una distanza di Hamming
+// alta per definizione (aree visivamente diverse), quindi il fallback
+// faceva CROLLARE visualScore anche per un match full-image perfetto
+// (fullScore=1 ma artScore~0 -> media ~0.5, sotto la soglia 0.62), invece di
+// limitarsi a "meno segnale" come da intento originale.
+type VisualHashes = { full: string; art?: string };
 
 let catalogPromise: Promise<ScannerCatalogEntry[]> | null = null;
 let visualIndexPromise: Promise<Map<number, VisualHashes>> | null = null;
@@ -222,9 +230,11 @@ export async function loadVisualIndex(): Promise<Map<number, VisualHashes>> {
           const art = String(row.art_hash ?? row.art_dhash ?? "");
           // full e' richiesto; art e' un bonus - un indice generato prima
           // che l'art hash esistesse resta comunque utilizzabile (solo con
-          // meno segnale), invece di scartare l'intera entry.
+          // meno segnale, art omesso invece di un fallback su full: vedi
+          // il commento su VisualHashes sopra), invece di scartare l'intera
+          // entry.
           if (Number.isFinite(id) && HASH_RE.test(full)) {
-            map.set(id, { full, art: HASH_RE.test(art) ? art : full });
+            map.set(id, HASH_RE.test(art) ? { full, art } : { full });
           }
         }
         return map;
@@ -237,7 +247,7 @@ export async function loadVisualIndex(): Promise<Map<number, VisualHashes>> {
 export function rankScannerCandidates(
   text: string,
   catalog: ScannerCatalogEntry[],
-  scanHash?: VisualHashes | null,
+  scanHash?: { full: string; art?: string } | null,
   visualIndex: Map<number, VisualHashes> = new Map(),
   limit = 5,
 ): ScannerCandidate[] {
@@ -279,10 +289,21 @@ export function rankScannerCandidates(
       const entryHashes = visualIndex.get(entry.id);
       if (entryHashes) {
         const fullDistance = hammingHex(scanHash.full, entryHashes.full);
-        const artDistance = hammingHex(scanHash.art, entryHashes.art);
         const fullScore = Math.max(0, 1 - fullDistance / 32);
-        const artScore = Math.max(0, 1 - artDistance / 32);
-        visualScore = (fullScore + artScore) / 2;
+        // art e' opzionale su entrambi i lati (scanHash.art puo' mancare se
+        // artDhash() e' fallito lato client, entryHashes.art se l'indice e'
+        // stato generato prima che art_hash esistesse) - senza un art_hash
+        // valido su ENTRAMBI i lati il punteggio resta solo su full, non
+        // confrontiamo mai un crop artwork con un hash immagine-intera
+        // (vedi commento su VisualHashes: quel confronto e' rumore, non
+        // "meno segnale").
+        if (scanHash.art && entryHashes.art) {
+          const artDistance = hammingHex(scanHash.art, entryHashes.art);
+          const artScore = Math.max(0, 1 - artDistance / 32);
+          visualScore = (fullScore + artScore) / 2;
+        } else {
+          visualScore = fullScore;
+        }
       }
     }
 

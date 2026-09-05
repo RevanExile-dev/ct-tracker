@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCents, languageFlag } from "@/lib/format";
 import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
-import { artDhash, assessQuality, cropRegion, detectCardRegions, dhash } from "@/lib/scanner/image";
+import { assessQuality, cardHashes, cropRegion, detectCardRegions } from "@/lib/scanner/image";
 import {
   hydrateScannerCard,
   loadScannerCatalog,
@@ -186,9 +186,7 @@ export default function ScannerStudio() {
 
             updateItem(item.id, { status: "matching", ocrText: text, ocrConfidence });
             const [scanHash, language] = await Promise.all([
-              Promise.all([dhash(item.cropUrl), artDhash(item.cropUrl)])
-                .then(([full, art]) => ({ full, art }))
-                .catch(() => null),
+              cardHashes(item.cropUrl).catch(() => null),
               Promise.resolve(detectLanguage(text)),
             ]);
             const candidates = rankScannerCandidates(text, catalog, scanHash, visualIndex, 5);
