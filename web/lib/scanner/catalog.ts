@@ -49,8 +49,8 @@ function hammingHex(a: string, b: string) {
     let value = BigInt(`0x${a}`) ^ BigInt(`0x${b}`);
     let count = 0;
     while (value) {
-      count += Number(value & 1n);
-      value >>= 1n;
+      count += Number(value & BigInt(1));
+      value >>= BigInt(1);
     }
     return count;
   } catch {
