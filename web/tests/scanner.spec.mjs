@@ -10,8 +10,6 @@ const ONE_PIXEL_PNG = Buffer.from(
 
 test.describe("scanner CartaViva", () => {
   test("route visibile, upload e fallback manuale funzionano anche senza OCR CDN", async ({ page }) => {
-    // Il motore OCR e' una dipendenza opzionale/lazy: se rete/CDN falliscono,
-    // lo scanner deve restare usabile tramite ricerca manuale nel catalogo.
     await page.route("https://cdn.jsdelivr.net/**", (route) => route.abort());
 
     await page.goto(`${BASE_URL}/scan`, { waitUntil: "domcontentloaded" });
@@ -38,6 +36,42 @@ test.describe("scanner CartaViva", () => {
     await expect(binder).toBeEnabled();
     await binder.click();
     await expect(page.getByRole("button", { name: "Nel Binder ✓", exact: true })).toBeVisible();
+  });
+
+  test("OCR zonale + collector number corregge O/1 e sceglie la ristampa esatta", async ({ page }) => {
+    // Stub locale del worker: esercita il vero pipeline UI/catalogo senza rete
+    // Tesseract. Il numero contiene apposta I al posto di 1, errore tipico OCR.
+    await page.addInitScript(() => {
+      window.Tesseract = {
+        createWorker: async () => {
+          let params = {};
+          return {
+            setParameters: async (next) => { params = next; },
+            recognize: async () => {
+              if (String(params.tessedit_char_whitelist ?? "").includes("0123456789")) {
+                return { data: { text: "I95/I82", confidence: 96 } };
+              }
+              if (String(params.tessedit_pageseg_mode ?? "") === "7") {
+                return { data: { text: "Blitzle", confidence: 97 } };
+              }
+              return { data: { text: "debolezza resistenza ritirata", confidence: 94 } };
+            },
+            terminate: async () => {},
+          };
+        },
+      };
+    });
+
+    await page.goto(`${BASE_URL}/scan`, { waitUntil: "domcontentloaded" });
+    const input = page.locator('input[type="file"]').first();
+    await input.setInputFiles({ name: "blitzle-test.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG });
+
+    await expect(page.getByRole("heading", { name: /Blitzle/i }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Italiano/i).first()).toBeVisible({ timeout: 30_000 });
+
+    const cardImage = page.locator('img[alt*="Blitzle" i]').first();
+    await expect(cardImage).toBeVisible();
+    await expect(cardImage).toHaveAttribute("src", /195-182/i);
   });
 
   test("la home espone un ingresso Scanner navigabile", async ({ page }) => {

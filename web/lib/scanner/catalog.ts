@@ -14,6 +14,13 @@ function normalize(value: string) {
     .trim();
 }
 
+function normalizeCatalogName(value: string) {
+  // CardTrader aggiunge spesso qualifier tra parentesi, es.
+  // "Blitzle (Illustration Rare)". Sulla carta fisica quel suffix non esiste
+  // e non deve abbassare il punteggio OCR del nome vero.
+  return normalize(value.replace(/\([^)]*\)/g, " "));
+}
+
 function editDistance(a: string, b: string) {
   if (a === b) return 0;
   if (!a.length) return b.length;
@@ -36,12 +43,82 @@ function editDistance(a: string, b: string) {
 
 function wordSimilarity(a: string, b: string) {
   const longest = Math.max(a.length, b.length, 1);
-  return 1 - editDistance(a, b) / longest;
+  return Math.max(0, 1 - editDistance(a, b) / longest);
 }
 
-function collectorNumber(text: string) {
-  const match = text.match(/\b(\d{1,4})\s*[\/-]\s*(\d{1,4})\b/);
-  return match ? `${match[1]}/${match[2]}` : null;
+function normalizeOcrDigits(value: string) {
+  return value
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il|]/g, "1")
+    .replace(/\\/g, "/");
+}
+
+export function extractCollectorNumber(text: string): string | null {
+  const repaired = normalizeOcrDigits(text);
+  const matches = [...repaired.matchAll(/(?:^|\D)(\d{1,4})\s*[\/-]\s*(\d{1,4})(?=\D|$)/g)];
+  if (!matches.length) return null;
+
+  // Il crop in basso puo' contenere HP/danni o anno copyright: preferiamo
+  // l'ultima coppia plausibile, normalmente quella stampata accanto al set.
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const numerator = Number(matches[i][1]);
+    const denominator = Number(matches[i][2]);
+    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
+      return `${matches[i][1]}/${matches[i][2]}`;
+    }
+  }
+  return null;
+}
+
+export function collectorNumberFromImageUrl(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  let filename = imageUrl.split("/").pop()?.split("?")[0] ?? "";
+  try {
+    filename = decodeURIComponent(filename);
+  } catch {
+    // Un URL malformato non deve rompere l'intero catalogo.
+  }
+
+  // I filename CardTrader delle carte Pokémon includono normalmente il
+  // collector number in forma slug, es. ...-147-128-30th-celebration.jpg.
+  // Il blueprint id iniziale ha 5/6 cifre e non entra in questa regex.
+  const matches = [...filename.matchAll(/(?:^|-)(\d{1,4})-(\d{1,4})(?=-|\.|$)/g)];
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const numerator = Number(matches[i][1]);
+    const denominator = Number(matches[i][2]);
+    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
+      return `${matches[i][1]}/${matches[i][2]}`;
+    }
+  }
+  return null;
+}
+
+function collectorParts(value: string | null) {
+  if (!value) return null;
+  const match = value.match(/^(\d{1,4})\/(\d{1,4})$/);
+  if (!match) return null;
+  return { numerator: match[1], denominator: match[2] };
+}
+
+function collectorSimilarity(observed: string | null, expected: string | null) {
+  const a = collectorParts(observed);
+  const b = collectorParts(expected);
+  if (!a || !b) return 0;
+  if (a.numerator === b.numerator && a.denominator === b.denominator) return 1;
+
+  const numeratorDistance = editDistance(a.numerator, b.numerator);
+  const denominatorDistance = editDistance(a.denominator, b.denominator);
+  if (a.denominator === b.denominator && numeratorDistance === 1) return 0.68;
+  if (a.numerator === b.numerator && denominatorDistance === 1) return 0.58;
+  if (a.denominator === b.denominator) return 0.34;
+  return 0;
+}
+
+function entryCollectorNumber(entry: ScannerCatalogEntry) {
+  return (
+    extractCollectorNumber(entry.version ?? "") ??
+    collectorNumberFromImageUrl(entry.image_url)
+  );
 }
 
 function hammingHex(a: string, b: string) {
@@ -86,11 +163,8 @@ export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   return catalogPromise;
 }
 
-/**
- * Optional hook for the M1 dHash pipeline. The UI works with OCR alone;
- * when a generated scanner_index.json becomes available, visual distance
- * automatically contributes to ranking without changing the page.
- */
+/** Optional hook per l'indice visivo. Il nuovo ranking non dipende da esso:
+ * numero collezione + nome funzionano gia' con il DB attuale. */
 export async function loadVisualIndex(): Promise<Map<number, string>> {
   if (!visualIndexPromise) {
     visualIndexPromise = fetch("/data/scanner_index.json", { cache: "no-cache" })
@@ -127,11 +201,11 @@ export function rankScannerCandidates(
 ): ScannerCandidate[] {
   const normalizedText = normalize(text);
   const ocrWords = normalizedText.split(" ").filter((word) => word.length >= 2);
-  const number = collectorNumber(normalizedText);
+  const observedNumber = extractCollectorNumber(text);
   const ranked: ScannerCandidate[] = [];
 
   for (const entry of catalog) {
-    const name = normalize(entry.name);
+    const name = normalizeCatalogName(entry.name);
     if (!name) continue;
     const nameWords = name.split(" ").filter(Boolean);
     let nameScore = normalizedText.includes(name) ? 1 : 0;
@@ -141,34 +215,53 @@ export function rankScannerCandidates(
       for (const word of nameWords) {
         let best = 0;
         for (const observed of ocrWords) {
-          if (Math.abs(word.length - observed.length) > 2) continue;
+          if (Math.abs(word.length - observed.length) > 3) continue;
           if (word === observed) {
             best = 1;
             break;
           }
-          if (word.length >= 4 && observed.length >= 4) best = Math.max(best, wordSimilarity(word, observed));
+          if (word.length >= 4 && observed.length >= 4) {
+            best = Math.max(best, wordSimilarity(word, observed));
+          }
         }
         total += best;
       }
       nameScore = total / Math.max(1, nameWords.length);
     }
 
-    const version = normalize(entry.version ?? "");
-    const entryText = `${name} ${version}`;
-    const numberScore = number && entryText.includes(number) ? 1 : 0;
+    const expectedNumber = entryCollectorNumber(entry);
+    const numberScore = collectorSimilarity(observedNumber, expectedNumber);
+
     let visualScore = 0;
     if (scanHash && visualIndex.has(entry.id)) {
       const distance = hammingHex(scanHash, visualIndex.get(entry.id)!);
       visualScore = Math.max(0, 1 - distance / 32);
     }
 
-    // Evita di materializzare migliaia di candidati palesemente irrilevanti.
-    if (nameScore < 0.42 && numberScore === 0 && visualScore < 0.62) continue;
-    const hasVisual = scanHash && visualIndex.size > 0;
-    const score = hasVisual
-      ? nameScore * 0.58 + numberScore * 0.22 + visualScore * 0.2
-      : nameScore * 0.76 + numberScore * 0.24;
-    ranked.push({ ...entry, score, nameScore, numberScore, visualScore });
+    if (nameScore < 0.38 && numberScore < 0.55 && visualScore < 0.62) continue;
+
+    const hasNumberEvidence = Boolean(observedNumber && expectedNumber);
+    const hasVisual = Boolean(scanHash && visualIndex.size > 0);
+    let score: number;
+
+    if (hasNumberEvidence) {
+      // Il collector number e' il miglior disambiguatore tra ristampe/variant:
+      // un match esatto vale piu' di un OCR del nome perfetto da solo.
+      score = nameScore * 0.34 + numberScore * 0.56 + (hasVisual ? visualScore * 0.1 : 0);
+      if (numberScore === 1) {
+        score = Math.max(score, 0.58 + nameScore * 0.36 + (hasVisual ? visualScore * 0.06 : 0));
+      } else if (numberScore === 0) {
+        // Se leggiamo chiaramente un numero diverso, non lasciamo che una
+        // ristampa omonima vinca solo per il nome.
+        score *= 0.34;
+      }
+    } else if (hasVisual) {
+      score = nameScore * 0.72 + visualScore * 0.28;
+    } else {
+      score = nameScore;
+    }
+
+    ranked.push({ ...entry, score: Math.min(1, score), nameScore, numberScore, visualScore });
   }
 
   return ranked.sort((a, b) => b.score - a.score).slice(0, limit);
