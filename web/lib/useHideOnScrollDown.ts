@@ -8,11 +8,11 @@ import { useEffect, useRef, useState } from "react";
  * piccola soglia e mostrata di nuovo scrollando verso l'alto o tornando
  * vicino alla cima della pagina.
  *
- * Su telefono uno swipe verticale NON deve decidere lo stato della barra:
- * dopo un'interazione touch lo scroll (compresa l'inerzia) viene ignorato
- * e i filtri restano esattamente come l'utente li ha lasciati. La maniglia
- * manuale resta l'unico gesto che apre/chiude la toolbar durante l'uso
- * touch. `setVisible` e' esposto proprio per quel toggle manuale.
+ * Su telefono, appena viene rilevata un'interazione touch, la toolbar passa
+ * in modalita' manuale per il resto della pagina: lo scroll non modifica
+ * piu' lo stato. Chiusa resta chiusa, aperta resta aperta, e solo la
+ * maniglia decide. Questo evita che un normale swipe faccia riapparire i
+ * filtri mentre si stanno consultando le carte.
  *
  * containerRef (opzionale): se l'utente ha il focus dentro il
  * contenitore (es. sta scrivendo nella ricerca), lo scroll non lo
@@ -35,8 +35,8 @@ import { useEffect, useRef, useState } from "react";
  *
  * Confronta lo scroll corrente con un "ancora" (l'ultima posizione in cui
  * la direzione e' stata confermata), non con l'evento immediatamente
- * precedente: un vero gesto di scroll genera tanti eventi piccoli e
- * rumorosi, spesso con qualche inversione di segno dovuta all'inerzia.
+ * precedente: un vero gesto di scroll desktop genera tanti eventi piccoli
+ * e rumorosi, spesso con qualche inversione di segno dovuta all'inerzia.
  */
 export function useHideOnScrollDown(
   containerRef?: React.RefObject<HTMLElement | null>,
@@ -48,7 +48,7 @@ export function useHideOnScrollDown(
   const anchorY = useRef(0);
   const ticking = useRef(false);
   const keepVisibleRef = useRef(keepVisible);
-  const lastTouchScrollAt = useRef(0);
+  const touchManualModeRef = useRef(false);
 
   useEffect(() => {
     keepVisibleRef.current = keepVisible;
@@ -116,8 +116,11 @@ export function useHideOnScrollDown(
   useEffect(() => {
     anchorY.current = window.scrollY;
 
-    function markTouchScroll() {
-      lastTouchScrollAt.current = performance.now();
+    function enterTouchManualMode() {
+      if (window.matchMedia("(max-width: 639px)").matches) {
+        touchManualModeRef.current = true;
+        anchorY.current = window.scrollY;
+      }
     }
 
     function onScroll() {
@@ -127,13 +130,11 @@ export function useHideOnScrollDown(
         ticking.current = false;
         const y = window.scrollY;
         const mobile = window.matchMedia("(max-width: 639px)").matches;
-        const now = performance.now();
 
-        // Se lo scroll e' nato da un gesto touch su telefono, non modifica
-        // mai visible. Ogni evento di inerzia rinnova la finestra, quindi
-        // la toolbar non puo' riapparire a meta' dello stesso swipe.
-        if (mobile && now - lastTouchScrollAt.current < 1200) {
-          lastTouchScrollAt.current = now;
+        // Dopo il primo tocco su mobile, lo scroll non ha piu' autorita'
+        // sullo stato dei filtri. Aggiorniamo solo l'ancora cosi' un
+        // eventuale resize verso desktop riparte senza salti.
+        if (mobile && touchManualModeRef.current) {
           anchorY.current = y;
           return;
         }
@@ -160,14 +161,10 @@ export function useHideOnScrollDown(
       });
     }
 
-    window.addEventListener("touchstart", markTouchScroll, { passive: true });
-    window.addEventListener("touchmove", markTouchScroll, { passive: true });
-    window.addEventListener("touchend", markTouchScroll, { passive: true });
+    window.addEventListener("touchstart", enterTouchManualMode, { passive: true });
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      window.removeEventListener("touchstart", markTouchScroll);
-      window.removeEventListener("touchmove", markTouchScroll);
-      window.removeEventListener("touchend", markTouchScroll);
+      window.removeEventListener("touchstart", enterTouchManualMode);
       window.removeEventListener("scroll", onScroll);
     };
   }, [containerRef, revealThresholdPx, directionThresholdPx]);
