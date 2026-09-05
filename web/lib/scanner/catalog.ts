@@ -14,6 +14,40 @@ function normalize(value: string) {
     .trim();
 }
 
+function normalizeOcrDigits(value: string) {
+  return value
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il|]/g, "1")
+    .replace(/\\/g, "/");
+}
+
+export function extractCollectorNumber(text: string): string | null {
+  const repaired = normalizeOcrDigits(text);
+  const matches = [...repaired.matchAll(/(?:^|\D)(\d{1,4})\s*[\/-]\s*(\d{1,4})(?=\D|$)/g)];
+  if (!matches.length) return null;
+
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const numerator = Number(matches[i][1]);
+    const denominator = Number(matches[i][2]);
+    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
+      return `${matches[i][1]}/${matches[i][2]}`;
+    }
+  }
+  return null;
+}
+
+function normalizeCatalogName(value: string) {
+  // CardTrader puo' includere nel blueprint sia qualifier commerciali sia
+  // il collector number. Nessuno dei due fa parte del nome stampato in alto
+  // sulla carta, quindi non deve diluire il confronto con l'OCR del nome.
+  const withoutParens = value.replace(/\([^)]*\)/g, " ");
+  const withoutCollector = withoutParens.replace(/\b\d{1,4}\s*[\/-]\s*\d{1,4}\b/g, " ");
+  return normalize(withoutCollector)
+    .replace(/\b(?:special illustration rare|illustration rare|ultra rare|secret rare|full art|trainer gallery|galarian gallery|alternate art|alt art|promo)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function editDistance(a: string, b: string) {
   if (a === b) return 0;
   if (!a.length) return b.length;
@@ -36,12 +70,89 @@ function editDistance(a: string, b: string) {
 
 function wordSimilarity(a: string, b: string) {
   const longest = Math.max(a.length, b.length, 1);
-  return 1 - editDistance(a, b) / longest;
+  return Math.max(0, 1 - editDistance(a, b) / longest);
 }
 
-function collectorNumber(text: string) {
-  const match = text.match(/\b(\d{1,4})\s*[\/-]\s*(\d{1,4})\b/);
-  return match ? `${match[1]}/${match[2]}` : null;
+// ".includes(name)" grezzo dava punteggio pieno a nomi di 1-2 lettere (es.
+// "N", carta reale in piu' espansioni) ogni volta che quella sequenza
+// compariva DENTRO un'altra parola dell'OCR (es. "n" e' contenuto in
+// "resistenza") - bug reale trovato facendo girare il test Blitzle 195/182
+// di questa stessa PR: "N" (BW Black Star Promos, nessun numero estraibile)
+// batteva Blitzle 195/182 (nome VERO nome esatto) perche' otteneva comunque
+// nameScore=1. Richiede che il nome compaia come parola/frase intera,
+// delimitata da inizio/fine stringa o spazi.
+// Ricerca a confini di parola senza RegExp: rankScannerCandidates() chiama
+// questa funzione una volta per ciascuna delle ~30mila carte del catalogo
+// PER OGNI scansione - costruire/compilare una RegExp in ogni iterazione
+// (rilievo review Gemini su PR #25) e' allocazione GC inutile ripetuta
+// migliaia di volte su un dispositivo mobile. haystack e needle sono gia'
+// passati da normalize()/normalizeCatalogName(), quindi i separatori di
+// parola sono sempre spazi singoli - un controllo sui caratteri adiacenti
+// basta, non serve un motore regex.
+function containsWholeWord(haystack: string, needle: string) {
+  if (!needle) return false;
+  let start = 0;
+  for (;;) {
+    const idx = haystack.indexOf(needle, start);
+    if (idx === -1) return false;
+    const before = idx === 0 ? " " : haystack[idx - 1];
+    const afterIdx = idx + needle.length;
+    const after = afterIdx >= haystack.length ? " " : haystack[afterIdx];
+    if (before === " " && after === " ") return true;
+    start = idx + 1;
+  }
+}
+
+export function collectorNumberFromImageUrl(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  let filename = imageUrl.split("/").pop()?.split("?")[0] ?? "";
+  try {
+    filename = decodeURIComponent(filename);
+  } catch {
+    // Un URL malformato non deve rompere l'intero catalogo.
+  }
+
+  const matches = [...filename.matchAll(/(?:^|-)(\d{1,4})-(\d{1,4})(?=-|\.|$)/g)];
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const numerator = Number(matches[i][1]);
+    const denominator = Number(matches[i][2]);
+    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
+      return `${matches[i][1]}/${matches[i][2]}`;
+    }
+  }
+  return null;
+}
+
+function collectorParts(value: string | null) {
+  if (!value) return null;
+  const match = value.match(/^(\d{1,4})\/(\d{1,4})$/);
+  if (!match) return null;
+  return { numerator: match[1], denominator: match[2] };
+}
+
+function collectorSimilarity(observed: string | null, expected: string | null) {
+  const a = collectorParts(observed);
+  const b = collectorParts(expected);
+  if (!a || !b) return 0;
+  if (a.numerator === b.numerator && a.denominator === b.denominator) return 1;
+
+  const numeratorDistance = editDistance(a.numerator, b.numerator);
+  const denominatorDistance = editDistance(a.denominator, b.denominator);
+  if (a.denominator === b.denominator && numeratorDistance === 1) return 0.68;
+  if (a.numerator === b.numerator && denominatorDistance === 1) return 0.58;
+  if (a.denominator === b.denominator) return 0.34;
+  return 0;
+}
+
+function entryCollectorNumber(entry: ScannerCatalogEntry) {
+  // Alcuni blueprint CardTrader hanno version=null e/o URL immagine non
+  // canonico, ma riportano il numero nel nome del prodotto. Il nome e'
+  // quindi una sorgente di metadata valida prima del fallback all'URL.
+  return (
+    extractCollectorNumber(entry.version ?? "") ??
+    extractCollectorNumber(entry.name) ??
+    collectorNumberFromImageUrl(entry.image_url)
+  );
 }
 
 function hammingHex(a: string, b: string) {
@@ -86,11 +197,6 @@ export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   return catalogPromise;
 }
 
-/**
- * Optional hook for the M1 dHash pipeline. The UI works with OCR alone;
- * when a generated scanner_index.json becomes available, visual distance
- * automatically contributes to ranking without changing the page.
- */
 export async function loadVisualIndex(): Promise<Map<number, string>> {
   if (!visualIndexPromise) {
     visualIndexPromise = fetch("/data/scanner_index.json", { cache: "no-cache" })
@@ -127,48 +233,67 @@ export function rankScannerCandidates(
 ): ScannerCandidate[] {
   const normalizedText = normalize(text);
   const ocrWords = normalizedText.split(" ").filter((word) => word.length >= 2);
-  const number = collectorNumber(normalizedText);
+  const observedNumber = extractCollectorNumber(text);
   const ranked: ScannerCandidate[] = [];
 
   for (const entry of catalog) {
-    const name = normalize(entry.name);
+    const name = normalizeCatalogName(entry.name);
     if (!name) continue;
     const nameWords = name.split(" ").filter(Boolean);
-    let nameScore = normalizedText.includes(name) ? 1 : 0;
+    let nameScore = containsWholeWord(normalizedText, name) ? 1 : 0;
 
     if (nameScore < 1) {
       let total = 0;
       for (const word of nameWords) {
         let best = 0;
         for (const observed of ocrWords) {
-          if (Math.abs(word.length - observed.length) > 2) continue;
+          if (Math.abs(word.length - observed.length) > 3) continue;
           if (word === observed) {
             best = 1;
             break;
           }
-          if (word.length >= 4 && observed.length >= 4) best = Math.max(best, wordSimilarity(word, observed));
+          if (word.length >= 4 && observed.length >= 4) {
+            best = Math.max(best, wordSimilarity(word, observed));
+          }
         }
         total += best;
       }
       nameScore = total / Math.max(1, nameWords.length);
     }
 
-    const version = normalize(entry.version ?? "");
-    const entryText = `${name} ${version}`;
-    const numberScore = number && entryText.includes(number) ? 1 : 0;
+    const expectedNumber = entryCollectorNumber(entry);
+    const numberScore = collectorSimilarity(observedNumber, expectedNumber);
+
     let visualScore = 0;
     if (scanHash && visualIndex.has(entry.id)) {
       const distance = hammingHex(scanHash, visualIndex.get(entry.id)!);
       visualScore = Math.max(0, 1 - distance / 32);
     }
 
-    // Evita di materializzare migliaia di candidati palesemente irrilevanti.
-    if (nameScore < 0.42 && numberScore === 0 && visualScore < 0.62) continue;
-    const hasVisual = scanHash && visualIndex.size > 0;
-    const score = hasVisual
-      ? nameScore * 0.58 + numberScore * 0.22 + visualScore * 0.2
-      : nameScore * 0.76 + numberScore * 0.24;
-    ranked.push({ ...entry, score, nameScore, numberScore, visualScore });
+    if (nameScore < 0.38 && numberScore < 0.55 && visualScore < 0.62) continue;
+
+    const hasNumberEvidence = Boolean(observedNumber && expectedNumber);
+    const hasVisual = Boolean(scanHash && visualIndex.size > 0);
+    let score: number;
+
+    if (hasNumberEvidence) {
+      score = nameScore * 0.34 + numberScore * 0.56 + (hasVisual ? visualScore * 0.1 : 0);
+      if (numberScore === 1) {
+        score = Math.max(score, 0.58 + nameScore * 0.36 + (hasVisual ? visualScore * 0.06 : 0));
+      } else if (numberScore === 0) {
+        score *= 0.34;
+      }
+    } else if (hasVisual) {
+      // *0.92: un candidato senza alcuna evidenza sul numero di collezione
+      // non deve MAI poter superare un altro candidato il cui numero e'
+      // stato verificato (branch hasNumberEvidence sopra, tetto ~0.94 con
+      // numberScore=1) - l'assenza di un dato non e' evidenza a favore.
+      score = (nameScore * 0.72 + visualScore * 0.28) * 0.92;
+    } else {
+      score = nameScore * 0.92;
+    }
+
+    ranked.push({ ...entry, score: Math.min(1, score), nameScore, numberScore, visualScore });
   }
 
   return ranked.sort((a, b) => b.score - a.score).slice(0, limit);
