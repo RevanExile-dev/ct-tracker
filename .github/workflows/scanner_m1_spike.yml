@@ -1,0 +1,33 @@
+name: Scanner M1 - spike riconoscimento (solo misura)
+
+# Spike di sola misura per issue #20 / docs/card_scanner_architecture.md:
+# nessun codice di produzione, nessuna UI. Scarica un piccolo corpus di
+# immagini di riferimento dal catalogo (cardtrader.com, bloccato dal
+# sandbox di sviluppo locale ma raggiungibile da questo runner), genera
+# distorsioni sintetiche e misura quanto un hash percettivo semplice
+# riesce a ritrovare il blueprint_id giusto. Sola lettura sul DB, nessun
+# push: non serve il gruppo di concorrenza condiviso con i sync.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  scanner-m1-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Esegui lo spike
+        run: python scripts/scanner_m1_spike.py
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-m1-report
+          path: scanner_m1_report.json
