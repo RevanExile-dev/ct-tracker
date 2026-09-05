@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * true = da mostrare, false = da nascondere. Pensato per una barra
- * sticky: nascosta scrollando verso il basso oltre una piccola soglia
- * (per non sparire al minimo tremolio), mostrata di nuovo scrollando
- * verso l'alto o tornando vicino alla cima della pagina. `setVisible`
- * e' esposto cosi' un tap manuale (es. una maniglia per aprire/chiudere)
- * puo' sovrascrivere lo stato in qualunque momento - resta comunque lo
- * stesso stato che lo scroll verso l'alto rimette a `true`, come nel caso
- * automatico.
+ * sticky: su desktop viene nascosta scrollando verso il basso oltre una
+ * piccola soglia e mostrata di nuovo scrollando verso l'alto o tornando
+ * vicino alla cima della pagina.
+ *
+ * Su mobile (< 640px) lo scroll NON modifica mai lo stato: la barra resta
+ * esattamente come l'utente l'ha lasciata e si apre/chiude solo tramite la
+ * maniglia manuale. Evita il comportamento fastidioso in cui un normale
+ * gesto verticale faceva riapparire i filtri mentre si consultavano le
+ * carte. `setVisible` resta esposto per il toggle manuale.
  *
  * containerRef (opzionale): se l'utente ha il focus dentro il
  * contenitore (es. sta scrivendo nella ricerca), lo scroll non lo
@@ -76,6 +78,15 @@ export function useHideOnScrollDown(
       requestAnimationFrame(() => {
         ticking.current = false;
         const y = window.scrollY;
+
+        // Mobile: manual-only. Uno swipe verticale non deve mai decidere se
+        // mostrare o nascondere i filtri. Aggiorniamo soltanto l'ancora per
+        // evitare salti se il viewport passa poi a desktop (rotazione/
+        // resize), lasciando intatto lo stato scelto dalla maniglia.
+        if (window.matchMedia("(max-width: 639px)").matches) {
+          anchorY.current = y;
+          return;
+        }
 
         if (y < revealThresholdPx) {
           setVisible(true);
