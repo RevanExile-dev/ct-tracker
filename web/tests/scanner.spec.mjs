@@ -37,7 +37,7 @@ test.describe("scanner CartaViva", () => {
     const binder = page.getByRole("button", { name: /Binder/i }).last();
     await expect(binder).toBeEnabled();
     await binder.click();
-    await expect(page.getByRole("button", { name: /Nel Binder/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nel Binder ✓", exact: true })).toBeVisible();
   });
 
   test("la home espone un ingresso Scanner navigabile", async ({ page }) => {
