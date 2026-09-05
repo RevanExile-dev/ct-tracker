@@ -105,7 +105,13 @@ export default function ScannerStudio() {
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [manualQueries, setManualQueries] = useState<Record<string, string>>({});
 
-  useEffect(() => setBinderIds(getBinderIds()), []);
+  useEffect(() => {
+    // requestAnimationFrame invece di un setState sincrono nel corpo
+    // dell'effetto: stesso pattern gia' usato per lo stesso identico scopo
+    // in app/page.tsx e app/movers/page.tsx (react-hooks/set-state-in-effect).
+    const frame = requestAnimationFrame(() => setBinderIds(getBinderIds()));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -116,7 +122,7 @@ export default function ScannerStudio() {
   useEffect(() => {
     if (!cameraOpen) return;
     let cancelled = false;
-    setCameraError(null);
+    const clearFrame = requestAnimationFrame(() => setCameraError(null));
     navigator.mediaDevices?.getUserMedia({
       video: {
         facingMode: { ideal: "environment" },
@@ -139,6 +145,7 @@ export default function ScannerStudio() {
     });
     return () => {
       cancelled = true;
+      cancelAnimationFrame(clearFrame);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };

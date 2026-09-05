@@ -73,6 +73,20 @@ function wordSimilarity(a: string, b: string) {
   return Math.max(0, 1 - editDistance(a, b) / longest);
 }
 
+// ".includes(name)" grezzo dava punteggio pieno a nomi di 1-2 lettere (es.
+// "N", carta reale in piu' espansioni) ogni volta che quella sequenza
+// compariva DENTRO un'altra parola dell'OCR (es. "n" e' contenuto in
+// "resistenza") - bug reale trovato facendo girare il test Blitzle 195/182
+// di questa stessa PR: "N" (BW Black Star Promos, nessun numero estraibile)
+// batteva Blitzle 195/182 (nome VERO nome esatto) perche' otteneva comunque
+// nameScore=1. Richiede che il nome compaia come parola/frase intera,
+// delimitata da inizio/fine stringa o spazi.
+function containsWholeWord(haystack: string, needle: string) {
+  if (!needle) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(haystack);
+}
+
 export function collectorNumberFromImageUrl(imageUrl: string | null): string | null {
   if (!imageUrl) return null;
   let filename = imageUrl.split("/").pop()?.split("?")[0] ?? "";
@@ -210,7 +224,7 @@ export function rankScannerCandidates(
     const name = normalizeCatalogName(entry.name);
     if (!name) continue;
     const nameWords = name.split(" ").filter(Boolean);
-    let nameScore = normalizedText.includes(name) ? 1 : 0;
+    let nameScore = containsWholeWord(normalizedText, name) ? 1 : 0;
 
     if (nameScore < 1) {
       let total = 0;
@@ -254,9 +268,13 @@ export function rankScannerCandidates(
         score *= 0.34;
       }
     } else if (hasVisual) {
-      score = nameScore * 0.72 + visualScore * 0.28;
+      // *0.92: un candidato senza alcuna evidenza sul numero di collezione
+      // non deve MAI poter superare un altro candidato il cui numero e'
+      // stato verificato (branch hasNumberEvidence sopra, tetto ~0.94 con
+      // numberScore=1) - l'assenza di un dato non e' evidenza a favore.
+      score = (nameScore * 0.72 + visualScore * 0.28) * 0.92;
     } else {
-      score = nameScore;
+      score = nameScore * 0.92;
     }
 
     ranked.push({ ...entry, score: Math.min(1, score), nameScore, numberScore, visualScore });
