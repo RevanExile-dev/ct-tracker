@@ -13,6 +13,7 @@ web/out/
 web/.env*.local
 web/next-env.d.ts
 web/tsconfig.tsbuildinfo
+web/test-results/
 
 # OS
 .DS_Store
