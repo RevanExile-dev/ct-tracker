@@ -1,4 +1,7 @@
 requests==2.32.3
+# Driver Postgres per scripts/db.py e scripts/migrate_to_postgres.py
+# (catalogo/prezzi migrati da SQLite - vedi CLAUDE.md).
+psycopg2-binary==2.9.9
 # Solo per scripts/scanner_m1_spike.py (spike di misura, issue #20/#21):
 # decodifica/manipola le immagini di riferimento per generare le
 # distorsioni sintetiche e calcolare l'hash percettivo. Non tocca la
