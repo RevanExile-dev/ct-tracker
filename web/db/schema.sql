@@ -96,7 +96,12 @@ CREATE TABLE IF NOT EXISTS filter_presets (
 --
 -- blueprint_id resta lo stesso INTEGER usato da CardTrader (non un UUID
 -- generato): binder_cards/wishlist_cards sopra referenziano gia' questo
--- stesso id.
+-- stesso id. Stesso discorso per expansions.id/blueprints.id: sono id
+-- ESTERNI assegnati da CardTrader, sempre forniti esplicitamente dal
+-- codice applicativo (scripts/db.py, scripts/migrate_to_postgres.py) -
+-- deliberatamente NON SERIAL/IDENTITY: un id locale auto-generato
+-- disconnesso dall'id reale di CardTrader sarebbe sbagliato qui, non
+-- un miglioramento.
 --
 -- Flag booleani (is_premium, cheapest_foil, can_sell_via_hub, ...) restano
 -- INTEGER 0/1 invece di BOOLEAN nativo Postgres: preserva esattamente lo

@@ -229,9 +229,19 @@ def main():
     if dry_run:
         pg.rollback()
         print("\nDry-run completato, nessuna scrittura effettuata.")
-    else:
-        pg.commit()
-        print("\nMigrazione completata e confermata (commit).")
+        # Il confronto conteggi qui sotto ha senso solo dopo una scrittura
+        # vera: in dry-run nessuna riga e' stata inserita, quindi il
+        # Postgres di destinazione mostrerebbe quasi sempre un MISMATCH
+        # (a meno che non contenga gia' esattamente questi stessi dati) -
+        # un falso allarme fuorviante, non un problema reale da segnalare.
+        conn.close()
+        history_conn.close()
+        pg_cur.close()
+        pg.close()
+        return
+
+    pg.commit()
+    print("\nMigrazione completata e confermata (commit).")
 
     print("\nVerifica conteggi (SQLite vs Postgres):")
     checks = [
@@ -257,7 +267,7 @@ def main():
     pg_cur.close()
     pg.close()
 
-    if not dry_run and not all_match:
+    if not all_match:
         print("\n[ATTENZIONE] Alcuni conteggi non combaciano, controlla sopra.", file=sys.stderr)
         sys.exit(1)
 

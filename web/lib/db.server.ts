@@ -185,16 +185,22 @@ export async function fetchCards(opts: CardsFilterOpts & {
     // Piu' grande calo percentuale prima; le carte senza prezzo precedente
     // (o senza variazione) restano in fondo. La condizione qui DEVE restare
     // identica a priceDeltaPct() in format.ts: un prezzo/prezzo-precedente
-    // a 0 conta anche lui come "nessuna variazione valida".
+    // a 0 conta anche lui come "nessuna variazione valida". NULLIF(...,0)
+    // sul divisore: a differenza di SQLite (che su una divisione per zero
+    // torna silenziosamente NULL), Postgres solleva un errore "division by
+    // zero" che abortirebbe l'intera query - qui il CASE WHEN sopra sposta
+    // gia' queste righe in fondo, ma l'espressione di ORDER BY viene
+    // comunque valutata da Postgres su OGNI riga del risultato, quindi va
+    // resa sicura a prescindere da dove finisce nell'ordinamento.
     orderBy = `
       CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
-      (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} ASC
+      (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / NULLIF(${prevPriceExpr}, 0) ASC
     `;
   }
   if (opts.sortBy === "rise_first") {
     orderBy = `
       CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
-      (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / ${prevPriceExpr} DESC
+      (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / NULLIF(${prevPriceExpr}, 0) DESC
     `;
   }
 
