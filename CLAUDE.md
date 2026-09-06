@@ -210,11 +210,15 @@ casella di ricerca) per verificare che il tap non lo richiuda per errore.
 CartaViva è un tracker di carte Pokémon TCG basato sui dati di CardTrader.
 
 - `scripts/`: script Python per sincronizzare catalogo e prezzi e inviare le
-  notifiche Telegram facoltative.
+  notifiche Telegram facoltative. Scrivono direttamente sul Postgres di
+  CartaViva (`scripts/db.py`, `POSTGRES_URL`) - stesso database usato da
+  `web/` per login/profili, catalogo e prezzi (migrato da SQLite, vedi
+  `scripts/migrate_to_postgres.py` per la migrazione dati una tantum e
+  `web/db/schema.sql` per lo schema completo).
 - `config/`: configurazione delle espansioni tracciate e della watchlist.
-- `data/`: database SQLite separati per catalogo/ultimo prezzo
-  (`cardtrader.db`) e storico dei prezzi (`price_history.db`).
-- `web/`: applicazione Next.js distribuita su Vercel; legge i database nel
-  browser tramite sql.js/WASM, senza un backend dedicato.
+- `web/`: applicazione Next.js distribuita su Vercel; le query
+  catalogo/prezzi girano server-side (`web/lib/db.server.ts`, esposte via
+  Route Handler in `web/app/api/**`) - `web/lib/db.ts` lato client chiama
+  quelle API con `fetch()`, nessun database scaricato nel browser.
 - `.github/workflows/`: automazioni GitHub Actions per i sync giornalieri e
   settimanali e le altre operazioni pianificate.

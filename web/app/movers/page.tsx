@@ -249,12 +249,13 @@ function MoversContent() {
     resetPages();
   }
 
-  // Quando il database corrente non ha ancora la serie esatta it_nm_zero_*
-  // (prima del prossimo sync completo, vedi cardsDbHasExactSeries in
-  // db.ts), fetchMoversPage torna available:false su entrambi i lati -
-  // distinto da "0 carte in questa combinazione di filtri", che merita un
-  // messaggio diverso (non e' un problema di filtri, i dati non ci sono
-  // ancora).
+  // available:false esisteva per il vecchio database SQLite scaricato nel
+  // browser, che poteva restare indietro rispetto al codice fino al
+  // prossimo sync (mancava ancora la serie esatta it_nm_zero_*). Con
+  // Postgres lo schema e' sempre coerente con l'API che lo interroga (vedi
+  // web/lib/db.server.ts), quindi fetchMoversPage non restituisce piu'
+  // available:false - il campo resta nel tipo/risposta per compatibilita'
+  // ma questo ramo è ormai difensivo, non piu' un caso reale.
   const notYetAvailable = rises !== null && drops !== null && !rises.available && !drops.available;
 
   return (

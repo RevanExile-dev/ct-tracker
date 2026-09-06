@@ -391,7 +391,7 @@ function HomeContent() {
       {!cards && !error && (
         <div className="mt-8">
           <div className="text-center text-ink-muted font-mono text-sm mb-6">
-            Carico il database locale…
+            Carico le carte…
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5">
             {Array.from({ length: 10 }).map((_, i) => (
