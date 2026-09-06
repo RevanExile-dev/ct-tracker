@@ -64,7 +64,7 @@ def main():
 
     db.init_db()
     conn = db.get_connection()
-    history_conn = db.get_history_connection()
+    cur = conn.cursor()
 
     if only_missing:
         # Un'espansione e' considerata gia' sincronizzata solo se nel DB esiste
@@ -72,18 +72,14 @@ def main():
         # CardTrader puo' pubblicare prima il contenitore del set e aggiungere
         # i blueprint Singles in un secondo momento. In quel caso vogliamo
         # continuare a riprovarci nei giri automatici successivi.
-        existing_codes = {
-            row[0]
-            for row in conn.execute(
-                "SELECT DISTINCT expansion_code FROM blueprints "
-                "WHERE expansion_code IS NOT NULL"
-            ).fetchall()
-        }
+        cur.execute(
+            "SELECT DISTINCT expansion_code FROM blueprints WHERE expansion_code IS NOT NULL"
+        )
+        existing_codes = {row[0] for row in cur.fetchall()}
         codes = [code for code in codes if code not in existing_codes]
         if not codes:
             print("Nessuna espansione tracciata mancante: catalogo invariato.")
             conn.close()
-            history_conn.close()
             return
         print(
             f"Modalita' --only-missing: controllo {len(codes)} codici "
@@ -110,9 +106,8 @@ def main():
         # Prima leggiamo i blueprint e isoliamo i Singles. In --only-missing un
         # set annunciato puo' esistere su CardTrader prima che vengano pubblicate
         # le carte: in quel caso non dobbiamo neppure upsertare la riga expansion,
-        # altrimenti il DB binario cambierebbe pur dichiarando un no-op e il
-        # workflow potrebbe creare un commit inutile. Il set verra' riprovato al
-        # giro successivo perche' non ha ancora alcun blueprint nel DB.
+        # altrimenti il DB cambierebbe pur dichiarando un no-op. Il set verra'
+        # riprovato al giro successivo perche' non ha ancora alcun blueprint nel DB.
         all_blueprints = client.get_blueprints(expansion["id"])
         blueprints = [
             bp for bp in all_blueprints
@@ -145,53 +140,34 @@ def main():
         if blueprints:
             synced_sets += 1
 
-    # Pulizia: rimuove eventuali prodotti non-carta (e i loro dati di prezzo
-    # collegati, per via del vincolo di foreign key) inseriti da sync
-    # precedenti a questo filtro (booster, box, sleeve...).
-    non_card_ids = [
-        row[0] for row in conn.execute(
-            "SELECT id FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?",
-            (POKEMON_SINGLES_CATEGORY_ID,),
-        ).fetchall()
-    ]
-    if non_card_ids:
-        placeholders = ", ".join("?" * len(non_card_ids))
-        history_conn.execute(
-            f"DELETE FROM price_snapshots WHERE blueprint_id IN ({placeholders})",
-            non_card_ids,
-        )
-        conn.execute(
-            f"DELETE FROM latest_prices WHERE blueprint_id IN ({placeholders})",
-            non_card_ids,
-        )
-        conn.execute(
-            f"DELETE FROM price_listings WHERE blueprint_id IN ({placeholders})",
-            non_card_ids,
-        )
-    removed = conn.execute(
-        "DELETE FROM blueprints WHERE category_id IS NOT NULL AND category_id != ?",
+    # Pulizia: rimuove eventuali prodotti non-carta (booster, box, sleeve...)
+    # inseriti da sync precedenti a questo filtro. latest_prices/
+    # price_listings/price_snapshots collegati vengono rimossi in automatico
+    # da Postgres (FOREIGN KEY ... ON DELETE CASCADE, vedi web/db/schema.sql)
+    # invece di tre DELETE manuali separati come nella vecchia versione SQLite.
+    cur.execute(
+        "DELETE FROM blueprints WHERE category_id IS NOT NULL AND category_id != %s",
         (POKEMON_SINGLES_CATEGORY_ID,),
-    ).rowcount
+    )
+    removed = cur.rowcount
     if removed:
+        conn.commit()
         print(f"\nRimossi {removed} prodotti non-carta residui da sync precedenti.")
 
     # In modalita' --only-missing, se CardTrader conosce i codici ma non ha
     # ancora pubblicato alcuna carta Singles, non tocchiamo meta/DB: in questo
-    # modo il controllo giornaliero resta davvero un no-op e non genera commit
-    # binari inutili. Quei codici verranno riprovati al giro successivo.
+    # modo il controllo giornaliero resta davvero un no-op. Quei codici
+    # verranno riprovati al giro successivo.
     if only_missing and synced_sets == 0 and removed == 0:
         conn.close()
-        history_conn.close()
         print("\nNessuna nuova carta disponibile: catalogo invariato.")
         return
 
     db.set_meta(conn, "last_catalog_sync", synced_at)
     conn.commit()
-    history_conn.commit()
     conn.close()
-    history_conn.close()
 
-    print(f"\nFatto. {total_cards} carte sincronizzate nel catalogo locale.")
+    print(f"\nFatto. {total_cards} carte sincronizzate nel catalogo.")
 
 
 if __name__ == "__main__":

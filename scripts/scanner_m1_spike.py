@@ -26,7 +26,6 @@ from __future__ import annotations
 import io
 import json
 import random
-import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -36,7 +35,8 @@ from typing import Callable
 import requests
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cardtrader.db"
+import db
+
 REPORT_PATH = Path(__file__).resolve().parent.parent / "scanner_m1_report.json"
 
 HASH_SIZE = 8  # dHash 8x8 -> hash a 64 bit, misura di partenza piu' semplice
@@ -160,7 +160,7 @@ class CorpusEntry:
     group: str
 
 
-def select_corpus(con: sqlite3.Connection) -> list[CorpusEntry]:
+def select_corpus(con) -> list[CorpusEntry]:
     """Corpus curato seguendo la matrice sperimentale della sezione 25:
     piccolo ma pensato per essere avversariale, non carte facili a caso."""
     cur = con.cursor()
@@ -197,7 +197,7 @@ def select_corpus(con: sqlite3.Connection) -> list[CorpusEntry]:
         cur.execute(
             """
             SELECT id, name, expansion_name, image_url FROM blueprints
-            WHERE name = ? AND image_url IS NOT NULL
+            WHERE name = %s AND image_url IS NOT NULL
             ORDER BY RANDOM() LIMIT 2
             """,
             (name,),
@@ -281,7 +281,7 @@ def rank_of(blueprint_id: int, ranked: list[tuple[int, int]]) -> int:
 
 def main() -> None:
     random.seed(RNG_SEED)
-    con = sqlite3.connect(str(DB_PATH))
+    con = db.get_connection()
     corpus = select_corpus(con)
     con.close()
 
