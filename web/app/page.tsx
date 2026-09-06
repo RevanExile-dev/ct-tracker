@@ -44,9 +44,9 @@ function HomeContent() {
   const [error, setError] = useState<string | null>(null);
   // Incrementato dal pulsante "Riprova" nello stato d'errore per rilanciare
   // le stesse fetch senza dover duplicare la logica in due punti diversi -
-  // funziona perche' getDb()/getHistoryDb() ora resettano la Promise in
-  // cache a null quando falliscono (altrimenti riproverebbe la STESSA
-  // richiesta gia' fallita per sempre, vedi lib/db.ts).
+  // ogni chiamata in lib/db.ts e' una fetch() di rete indipendente, quindi
+  // un semplice re-run dell'effect basta (nessuna Promise fallita da
+  // resettare, a differenza della vecchia versione client-side su sql.js).
   const [reloadTick, setReloadTick] = useState(0);
   const [expansionSummaryData, setExpansionSummaryData] = useState<CardsSummary | null>(null);
 

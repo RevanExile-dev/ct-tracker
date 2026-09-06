@@ -1,4 +1,5 @@
-import { fetchCards, getDb, type CardRow } from "@/lib/db";
+import { fetchCards, type CardRow } from "@/lib/db";
+import type { ScannerCatalogRow } from "@/lib/types";
 import type { ScannerCandidate, ScannerCatalogEntry } from "./types";
 
 let catalogPromise: Promise<ScannerCatalogEntry[]> | null = null;
@@ -172,22 +173,17 @@ function hammingHex(a: string, b: string) {
 export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   if (!catalogPromise) {
     catalogPromise = (async () => {
-      const db = await getDb();
-      const result = db.exec(`
-        SELECT id, name, version, expansion_code, expansion_name, image_url, rarity
-        FROM blueprints
-        WHERE name IS NOT NULL
-      `)[0];
-      if (!result) return [];
-      const idx = Object.fromEntries(result.columns.map((column, i) => [column, i]));
-      return result.values.map((row) => ({
-        id: Number(row[idx.id]),
-        name: String(row[idx.name] ?? ""),
-        version: row[idx.version] == null ? null : String(row[idx.version]),
-        expansion_code: row[idx.expansion_code] == null ? null : String(row[idx.expansion_code]),
-        expansion_name: row[idx.expansion_name] == null ? null : String(row[idx.expansion_name]),
-        image_url: row[idx.image_url] == null ? null : String(row[idx.image_url]),
-        rarity: row[idx.rarity] == null ? null : String(row[idx.rarity]),
+      const res = await fetch("/api/scanner-catalog", { cache: "no-store" });
+      if (!res.ok) throw new Error(`/api/scanner-catalog fallita (${res.status})`);
+      const rows = (await res.json()) as ScannerCatalogRow[];
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name ?? "",
+        version: row.version,
+        expansion_code: row.expansion_code,
+        expansion_name: row.expansion_name,
+        image_url: row.image_url,
+        rarity: row.rarity,
       }));
     })().catch((error) => {
       catalogPromise = null;

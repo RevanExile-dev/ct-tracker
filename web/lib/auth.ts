@@ -56,10 +56,12 @@ const resendEmailProvider: EmailConfig = {
 const { handlers, auth, signIn, signOut } = NextAuth(() => ({
   // Inizializzazione "lazy" (funzione invece di oggetto diretto): il pool
   // Postgres viene creato solo alla prima richiesta che tocca davvero
-  // l'autenticazione, non ad ogni import di questo modulo - importante
-  // perche' pagine che non toccano mai il login (es. il catalogo, che
-  // legge solo cardtrader.db via sql.js) non devono richiedere
-  // POSTGRES_URL per poter fare build/render.
+  // l'autenticazione, non ad ogni import di questo modulo - cosi' il
+  // build/render di /login non richiede POSTGRES_URL solo per essere
+  // importato. Nota: da quando anche il catalogo/prezzi vive su Postgres
+  // (web/lib/db.server.ts), POSTGRES_URL serve comunque per l'intero sito,
+  // non solo per il login - questa inizializzazione lazy evita solo un
+  // require prematuro del pool, non rende il sito utilizzabile senza.
   adapter: PostgresAdapter(getPgPool()),
   // Bastano i riferimenti ai provider (non chiamati con {...opzioni}):
   // next-auth deduce automaticamente clientId/clientSecret dalle variabili
