@@ -259,8 +259,18 @@ function buildCardsFilter(opts: CardsFilterOpts): {
   const params: Record<string, string | number> = {};
 
   if (opts.search) {
-    where.push("b.name LIKE $search");
-    params["$search"] = `%${opts.search}%`;
+    // Ogni parola cercata deve trovare corrispondenza nel nome OPPURE nel
+    // numero/versione (es. "12/98", "Holo Rare | 12/98" - CardTrader mette
+    // il numero nell'espansione dentro `version`, non in una colonna
+    // dedicata) - cosi' "virizion 12" trova la carta anche se il numero e
+    // il nome vivono in due colonne diverse, senza richiedere che compaiano
+    // insieme in una sola.
+    const tokens = opts.search.trim().split(/\s+/).filter(Boolean);
+    tokens.forEach((token, i) => {
+      const key = `$search${i}`;
+      where.push(`(b.name LIKE ${key} OR b.version LIKE ${key})`);
+      params[key] = `%${token}%`;
+    });
   }
   if (opts.expansionCode) {
     where.push("b.expansion_code = $expansionCode");

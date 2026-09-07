@@ -110,8 +110,8 @@ export default function Toolbar({
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
-          placeholder="Cerca una carta per nome…"
-          aria-label="Cerca una carta per nome"
+          placeholder="Cerca per nome o numero (es. 12/98)…"
+          aria-label="Cerca una carta per nome o numero"
           className="lg:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
         />
 
