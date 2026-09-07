@@ -1,6 +1,7 @@
 requests==2.32.3
-# Solo per scripts/scanner_m1_spike.py (spike di misura, issue #20/#21):
-# decodifica/manipola le immagini di riferimento per generare le
-# distorsioni sintetiche e calcolare l'hash percettivo. Non tocca la
+# Per scripts/scanner_m1_spike.py (spike di misura, issue #20/#21) e
+# scripts/build_scanner_index.py (indice visivo di produzione dello
+# scanner): decodificano le immagini di riferimento del catalogo per
+# calcolare l'hash percettivo (carta intera + artwork). Non tocca la
 # pipeline di sync catalogo/prezzi.
 Pillow==11.0.0

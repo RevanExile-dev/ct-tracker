@@ -1,8 +1,11 @@
 import { fetchCards, getDb, type CardRow } from "@/lib/db";
 import type { ScannerCandidate, ScannerCatalogEntry } from "./types";
 
+export type VisualIndexEntry = { full: string; art: string | null };
+export type ScanHash = { full: string; art: string | null };
+
 let catalogPromise: Promise<ScannerCatalogEntry[]> | null = null;
-let visualIndexPromise: Promise<Map<number, string>> | null = null;
+let visualIndexPromise: Promise<Map<number, VisualIndexEntry>> | null = null;
 
 function normalize(value: string) {
   return value
@@ -197,29 +200,33 @@ export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   return catalogPromise;
 }
 
-export async function loadVisualIndex(): Promise<Map<number, string>> {
+const HASH_PATTERN = /^[0-9a-f]{16}$/i;
+
+export async function loadVisualIndex(): Promise<Map<number, VisualIndexEntry>> {
   if (!visualIndexPromise) {
     visualIndexPromise = fetch("/data/scanner_index.json", { cache: "no-cache" })
       .then(async (response) => {
-        if (!response.ok) return new Map<number, string>();
+        if (!response.ok) return new Map<number, VisualIndexEntry>();
         const payload = await response.json() as unknown;
         const rows = Array.isArray(payload)
           ? payload
           : typeof payload === "object" && payload && "entries" in payload
             ? (payload as { entries?: unknown }).entries
             : [];
-        const map = new Map<number, string>();
+        const map = new Map<number, VisualIndexEntry>();
         if (!Array.isArray(rows)) return map;
         for (const raw of rows) {
           if (!raw || typeof raw !== "object") continue;
           const row = raw as Record<string, unknown>;
           const id = Number(row.blueprint_id ?? row.id);
-          const hash = String(row.full_hash ?? row.full_dhash ?? row.dhash ?? "");
-          if (Number.isFinite(id) && /^[0-9a-f]{16}$/i.test(hash)) map.set(id, hash);
+          const full = String(row.full_hash ?? row.full_dhash ?? row.dhash ?? "");
+          const artRaw = row.art_hash ?? row.art_dhash ?? null;
+          const art = artRaw != null && HASH_PATTERN.test(String(artRaw)) ? String(artRaw) : null;
+          if (Number.isFinite(id) && HASH_PATTERN.test(full)) map.set(id, { full, art });
         }
         return map;
       })
-      .catch(() => new Map<number, string>());
+      .catch(() => new Map<number, VisualIndexEntry>());
   }
   return visualIndexPromise;
 }
@@ -227,8 +234,8 @@ export async function loadVisualIndex(): Promise<Map<number, string>> {
 export function rankScannerCandidates(
   text: string,
   catalog: ScannerCatalogEntry[],
-  scanHash?: string | null,
-  visualIndex: Map<number, string> = new Map(),
+  scanHash?: ScanHash | null,
+  visualIndex: Map<number, VisualIndexEntry> = new Map(),
   limit = 5,
 ): ScannerCandidate[] {
   const normalizedText = normalize(text);
@@ -265,9 +272,19 @@ export function rankScannerCandidates(
     const numberScore = collectorSimilarity(observedNumber, expectedNumber);
 
     let visualScore = 0;
-    if (scanHash && visualIndex.has(entry.id)) {
-      const distance = hammingHex(scanHash, visualIndex.get(entry.id)!);
-      visualScore = Math.max(0, 1 - distance / 32);
+    const visualEntry = scanHash ? visualIndex.get(entry.id) : undefined;
+    if (scanHash && visualEntry) {
+      const fullScore = Math.max(0, 1 - hammingHex(scanHash.full, visualEntry.full) / 32);
+      if (scanHash.art && visualEntry.art) {
+        // L'artwork da solo e' molto piu' resistente alle differenze di
+        // lingua/testo stampato rispetto alla carta intera (sezione 8.1 di
+        // docs/card_scanner_architecture.md): pesa di piu' quando e'
+        // disponibile su entrambi i lati (indice + foto scansionata).
+        const artScore = Math.max(0, 1 - hammingHex(scanHash.art, visualEntry.art) / 32);
+        visualScore = artScore * 0.62 + fullScore * 0.38;
+      } else {
+        visualScore = fullScore;
+      }
     }
 
     if (nameScore < 0.38 && numberScore < 0.55 && visualScore < 0.62) continue;
