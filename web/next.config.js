@@ -1,6 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
+    // Il piano gratuito Vercel concede solo 5.000 Image Optimization
+    // Transformations al mese: con ~29.315 carte nel catalogo, ogni
+    // combinazione carta+larghezza responsive vista per la prima volta ne
+    // consuma una - il tetto si esaurisce in fretta anche con poco
+    // traffico (successo reale: "Exceeded free resources" su
+    // Transformations, 5K/5K). Le immagini arrivano gia' pronte da
+    // CardTrader; disattivare l'ottimizzazione le serve cosi' come sono
+    // (nessuna conversione webp/avif ne' resize lato Vercel) invece di
+    // continuare a esaurire quel tetto - costo assorbito facilmente dal
+    // margine ampio su Fast Data Transfer (1,7% del limite).
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
