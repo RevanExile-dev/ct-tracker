@@ -134,8 +134,18 @@ function MoversContent() {
   const [risePage, setRisePage] = useState(() => parsePage(searchParams.get("risePage")));
   const [dropPage, setDropPage] = useState(() => parsePage(searchParams.get("dropPage")));
   const [activeFilter, setActiveFilter] = useState<"rarity" | null>(null);
-  const [activeTab, setActiveTab] = useState<"rises" | "drops">("rises");
+  const [activeTab, setActiveTab] = useState<"rises" | "drops">(() =>
+    searchParams.get("tab") === "drops" ? "drops" : "rises"
+  );
 
+  // La tab attiva (solo mobile, dove rialzi/cali si vedono uno alla volta)
+  // deve stare nell'URL come gli altri filtri: e' quella che decide quale
+  // sezione e' visibile, quindi anche quale altezza ha la pagina. Se non
+  // fosse in returnTo, tornare da un dettaglio aperto dalla tab "Cali"
+  // rimonterebbe la pagina sulla tab di default "Rialzi" - sezione diversa,
+  // altezza diversa, la Y salvata per "Cali" non corrisponderebbe piu' a
+  // niente e il ripristino scroll sembrerebbe non funzionare affatto (bug
+  // reale segnalato dall'utente).
   useEffect(() => {
     const params = new URLSearchParams();
     if (selectedRarities.length) params.set("rarity", selectedRarities.join(","));
@@ -148,9 +158,10 @@ function MoversContent() {
     if (sort !== "pct") params.set("sort", sort);
     if (risePage > 1) params.set("risePage", String(risePage));
     if (dropPage > 1) params.set("dropPage", String(dropPage));
+    if (activeTab !== "rises") params.set("tab", activeTab);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage, pathname, router]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage, activeTab, pathname, router]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
