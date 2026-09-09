@@ -171,9 +171,9 @@ async function runField(
     await worker.setParameters({
       tessedit_pageseg_mode: pageSegMode,
       // Empty string resets a previous whitelist. For the tiny collector crop
-      // allowing O/I/L as well as digits makes our normalizer able to repair
-      // common 0/1 OCR confusions instead of deleting the character entirely.
-      tessedit_char_whitelist: numeric ? "0123456789/OoIiLl|- " : "",
+      // Keep gallery prefixes (TG/GG/SV/RC), plus O/I/L digit confusions.
+      // A digits-only whitelist destroys identifiers such as TG05/TG30.
+      tessedit_char_whitelist: numeric ? "0123456789/TtGgSsVvRrCcOoIiLl|- " : "",
       preserve_interword_spaces: "1",
     });
   }
