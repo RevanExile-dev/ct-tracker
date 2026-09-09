@@ -1,8 +1,12 @@
 "use client";
 
-/** Il "binder personale": le carte che possiedi, salvate solo su questo
- * dispositivo (localStorage). Nessun account, nessun server: se cambi
- * browser o cancelli i dati del sito, la lista si perde. */
+/** Il "binder personale": le carte che possiedi. Sempre salvate in
+ * localStorage (letture/scritture restano sincrone, nessuno stato di
+ * caricamento per chi usa il sito da sloggato). Se l'utente ha fatto
+ * login, ogni modifica viene anche spinta in background su
+ * /api/account/binder (best-effort: un fallimento di rete non blocca ne'
+ * fa perdere la modifica locale) - vedi syncBinderWithServer(), chiamata
+ * una sola volta dopo il login da web/components/AccountSync.tsx. */
 
 // Binder v2: da Set<blueprintId> a un'entry per carta con lingua/quantita'/
 // condizione/finitura, richiesto per collegare lo scanner (che rileva la
@@ -97,6 +101,62 @@ export function getBinderEntries(): BinderEntry[] {
   return readEntries();
 }
 
+// Attivato da syncBinderWithServer() dopo il primo merge post-login: da
+// quel momento ogni scrittura locale spinge anche verso il server. Resta
+// false per l'intera sessione di navigazione da sloggato (nessuna fetch
+// inutile verso un endpoint che risponderebbe comunque 401).
+let syncEnabled = false;
+
+function pushUpsert(blueprintId: number, patch: Partial<Omit<BinderEntry, "blueprintId" | "addedAt">>) {
+  if (!syncEnabled) return;
+  fetch(`/api/account/binder/${blueprintId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }).catch(() => {
+    // Best-effort: la modifica resta comunque salvata in locale. Se questo
+    // push fallisce (rete assente, sessione scaduta...) il dato diverge
+    // dal server solo finche' non arriva un'altra modifica o un altro
+    // login/merge - nessun dato locale viene perso per questo.
+  });
+}
+
+function pushDelete(blueprintId: number) {
+  if (!syncEnabled) return;
+  fetch(`/api/account/binder/${blueprintId}`, { method: "DELETE" }).catch(() => {});
+}
+
+/** Da chiamare una sola volta subito dopo il login (vedi AccountSync):
+ * unisce il binder locale con quello dell'account - l'entry locale vince
+ * in caso di conflitto sullo stesso blueprintId (e' quella "attiva" su
+ * questo dispositivo proprio ora), le entry presenti solo sul server
+ * vengono aggiunte - poi allinea entrambi i lati al risultato e attiva il
+ * push in background per le modifiche successive. Nessun dato viene mai
+ * scartato, solo unito. */
+export async function syncBinderWithServer(): Promise<void> {
+  if (typeof window === "undefined") return;
+  let serverEntries: BinderEntry[] = [];
+  try {
+    const res = await fetch("/api/account/binder");
+    if (res.ok) serverEntries = await res.json();
+  } catch {
+    // Offline o errore di rete: procede solo con i dati locali, il merge
+    // verra' ritentato al prossimo login/refresh.
+  }
+  const local = readEntries();
+  const localIds = new Set(local.map((entry) => entry.blueprintId));
+  const merged = local.concat(serverEntries.filter((entry) => !localIds.has(entry.blueprintId)));
+  writeEntries(merged);
+  syncEnabled = true;
+  if (merged.length) {
+    fetch("/api/account/binder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(merged),
+    }).catch(() => {});
+  }
+}
+
 /** Compatibilita' con tutto il codice esistente (CardTile, catalogo, /binder,
  * /movers, pagina carta): un Set di soli id, esattamente come nel formato v1 -
  * nessuno di quei punti deve sapere che sotto ora c'e' un'entry piu' ricca. */
@@ -115,11 +175,13 @@ export function toggleBinder(id: number): Set<number> {
   if (typeof window === "undefined") return new Set();
   const entries = readEntries();
   const idx = entries.findIndex((entry) => entry.blueprintId === id);
-  const next =
-    idx >= 0
-      ? entries.slice(0, idx).concat(entries.slice(idx + 1))
-      : entries.concat([{ blueprintId: id, language: null, quantity: 1, finish: "unknown", addedAt: new Date().toISOString() }]);
+  const wasPresent = idx >= 0;
+  const next = wasPresent
+    ? entries.slice(0, idx).concat(entries.slice(idx + 1))
+    : entries.concat([{ blueprintId: id, language: null, quantity: 1, finish: "unknown", addedAt: new Date().toISOString() }]);
   writeEntries(next);
+  if (wasPresent) pushDelete(id);
+  else pushUpsert(id, { language: null, quantity: 1, finish: "unknown" });
   return new Set(next.map((entry) => entry.blueprintId));
 }
 
@@ -140,23 +202,29 @@ export function upsertBinderEntry(blueprintId: number, patch: Partial<Omit<Binde
     // review Gemini, difesa preventiva).
     const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
     next[idx] = { ...next[idx], ...cleanPatch };
+    writeEntries(next);
+    pushUpsert(blueprintId, cleanPatch);
+    return next;
   } else {
-    next = entries.concat([{
+    const created = {
       blueprintId,
       language: patch.language ?? null,
       quantity: patch.quantity ?? 1,
       condition: patch.condition,
       finish: patch.finish ?? "unknown",
       addedAt: new Date().toISOString(),
-    }]);
+    };
+    next = entries.concat([created]);
+    writeEntries(next);
+    pushUpsert(blueprintId, { language: created.language, quantity: created.quantity, condition: created.condition, finish: created.finish });
+    return next;
   }
-  writeEntries(next);
-  return next;
 }
 
 export function removeBinderEntry(blueprintId: number): BinderEntry[] {
   if (typeof window === "undefined") return [];
   const next = readEntries().filter((entry) => entry.blueprintId !== blueprintId);
   writeEntries(next);
+  pushDelete(blueprintId);
   return next;
 }

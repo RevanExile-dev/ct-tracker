@@ -58,15 +58,22 @@ CREATE TABLE IF NOT EXISTS verification_token (
 CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts ("userId");
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions ("userId");
 
--- --- Tabelle applicative (usate dalla fase 2/3 - binder/wishlist/filtri
--- salvati - create gia' qui per non dover rilanciare una seconda
--- migrazione: restano semplicemente vuote e inutilizzate finche' quelle
--- fasi non sono implementate). ---
+-- --- Tabelle applicative: binder/wishlist/filtri salvati, collegati
+-- all'account (web/lib/account.server.ts) - prima di questo vivevano solo
+-- in localStorage (vedi web/lib/binder.ts/wishlist.ts/filterPreset.ts, che
+-- restano il fallback per chi non ha fatto login). ---
 
 CREATE TABLE IF NOT EXISTS binder_cards (
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   blueprint_id INTEGER NOT NULL,
   added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Lingua/quantita'/condizione/finitura della copia posseduta (stesso
+  -- BinderEntry di web/lib/binder.ts, aggiunto li' per lo scanner dopo che
+  -- questa tabella era gia' stata creata solo con blueprint_id/added_at) -
+  -- JSONB invece di colonne dedicate perche' questi campi sono ancora in
+  -- evoluzione lato client (vedi commento su BinderEntry), stesso motivo
+  -- per cui filter_presets sotto usa gia' JSONB.
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
   PRIMARY KEY (user_id, blueprint_id)
 );
 
@@ -78,8 +85,9 @@ CREATE TABLE IF NOT EXISTS wishlist_cards (
 );
 
 -- "scope" rispecchia le chiavi gia' usate in localStorage da
--- web/lib/filterPreset.ts ("home", "movers", ...): stesso identificatore,
--- cosi' la fase 3 puo' mappare 1:1 senza inventare una nuova convenzione.
+-- web/lib/filterPreset.ts ("catalog", ...): stesso identificatore, cosi'
+-- web/lib/account.server.ts mappa 1:1 senza inventare una nuova
+-- convenzione.
 CREATE TABLE IF NOT EXISTS filter_presets (
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   scope TEXT NOT NULL,
