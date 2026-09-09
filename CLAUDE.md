@@ -168,14 +168,42 @@ il contesto giusto (es. passare un base_ref più indietro per includere
 i file rilevanti anche se non modificati in quel commit specifico,
 se serve mostrare il pattern non ancora corretto altrove).
 
-**4. Prima di ogni `git push`, verificare che nessun sync sia in corso** —
-non solo una volta a inizio sessione. `list_workflow_runs` con
-`workflow_runs_filter: {"status": "in_progress"}` prima di ogni push, senza
-eccezioni, anche per un fix piccolo. Errore reale commesso due volte in
-questa sessione (2026-08-30): push diretto su `main` mentre `sync_prices.yml`
-era in corso, causando un fallimento del sync a metà — nonostante la regola
-fosse scritta esplicitamente in questo stesso file/nella issue #1 e fosse
-stata riletta poco prima.
+**4. Prima di ogni `git push` su `main`, verificare che non sia in corso un
+workflow che scrive sul repo** — non solo una volta a inizio sessione.
+`list_workflow_runs` con `workflow_runs_filter: {"status": "in_progress"}`
+prima di ogni push, senza eccezioni, anche per un fix piccolo. Errore reale
+commesso due volte in una sessione (2026-08-30): push diretto su `main`
+mentre `sync_prices.yml` era in corso, causando un fallimento del sync a
+metà — nonostante la regola fosse scritta esplicitamente in questo stesso
+file/nella issue #1 e fosse stata riletta poco prima.
+
+**Aggiornamento post-migrazione Postgres (PR #29, mergiata il 2026-09-09):**
+il motivo di quell'incidente era che la vecchia versione SQLite di
+`sync_prices.py` faceva commit/push periodici di checkpoint su git durante
+il sync (da qui la lunga serie di commit `chore: checkpoint sync prezzi
+(.../...)` visibile nella storia prima di quella data) — un push manuale in
+parallelo entrava in conflitto proprio con quei commit automatici. Da quella
+migrazione, `scripts/sync_prices.py`, `sync_prices_full.py`, `sync_catalog.py`
+e `migrate_to_postgres.py` scrivono SOLO nel Postgres di CartaViva (`conn.commit()`
+via `scripts/db.py`) — nessuno dei tre fa più alcuna operazione git, e i
+workflow corrispondenti (`sync_prices.yml`, `sync_prices_full.yml`,
+`sync_catalog.yml`) girano con `permissions: contents: read`, quindi non
+potrebbero comunque scrivere sul repo anche se lo script provasse. **Pushare
+o mergiare su `main` mentre uno di questi tre è in corso è quindi sicuro** —
+verificato leggendo il codice reale di tutti e quattro gli script (nessun
+`subprocess`/comando `git`) prima di agire di conseguenza, non per supposizione.
+
+La regola resta però pienamente valida per `build_scanner_index.yml`: quel
+workflow gira con `permissions: contents: write`, è nello stesso gruppo di
+concorrenza (`ct-tracker-db-write`) dei sync DB, ed esegue esplicitamente
+`git commit -m "chore: aggiorna indice visivo scanner"` + `git push` su
+`main` a ogni run (schedulato ogni 6 ore, dopo ogni `sync_catalog.yml`, e su
+workflow_dispatch) — è esattamente il tipo di bot-commit-in-parallelo che
+questa regola serve a evitare. Quindi: prima di un push/merge su `main`,
+controllare comunque quali workflow sono `in_progress` e trattare come
+bloccante solo `build_scanner_index.yml` (o qualunque futuro workflow con
+`permissions: contents: write` e uno step che fa commit/push) — non più i
+tre sync Postgres sopra.
 
 **5. Prima di dire "fatto"/"tutto a posto" all'utente, un ultimo passaggio
 esplicito**: rileggere l'elenco delle cose toccate in questo giro e chiedersi
