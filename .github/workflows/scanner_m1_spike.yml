@@ -24,6 +24,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Esegui lo spike
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: python scripts/scanner_m1_spike.py
 
       - name: Upload report

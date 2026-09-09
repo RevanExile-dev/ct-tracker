@@ -46,6 +46,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Costruisci indice
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: |
           LIMIT="${{ github.event.inputs.limit }}"
           if [ -n "$LIMIT" ]; then

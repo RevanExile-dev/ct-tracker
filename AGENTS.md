@@ -67,12 +67,15 @@ per chiunque tocchi questo codice:
 ## Contesto tecnico rapido
 
 - `web/`: Next.js 16 / React 19, deploy su Vercel (Root Directory = `web`).
-  Legge due database SQLite (`cardtrader.db`, `price_history.db`) nel
-  browser via sql.js/WASM — nessun backend dedicato, niente API route per i
-  dati.
+  Catalogo e prezzi vivono su Postgres (Vercel Postgres/Neon, `POSTGRES_URL`
+  - lo stesso database di login/profili): query server-side in
+  `web/lib/db.server.ts`, esposte via Route Handler in `web/app/api/**`.
+  `web/lib/db.ts` (client) chiama quelle API con `fetch()` - niente più
+  sql.js/WASM né database scaricati nel browser (migrazione completata,
+  vedi CLAUDE.md).
 - `scripts/`: sync Python (catalogo, prezzi, notifiche) che gira su GitHub
-  Actions, non tocca `web/` direttamente ma scrive i `.db` che `web/`
-  legge da `web/public/data/`.
+  Actions e scrive direttamente nello stesso Postgres (`scripts/db.py`,
+  `POSTGRES_URL`) - zero commit/push di file `.db` verso `web/`.
 - `web/tests/mobile-toolbar.spec.mjs` (Playwright, gira in CI via
   `.github/workflows/ui_smoke.yml`) copre la toolbar filtri responsive — non
   è ancora una suite ampia, ma non è più vero che "non esiste nulla di

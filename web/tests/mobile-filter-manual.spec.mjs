@@ -45,6 +45,14 @@ test.describe("mobile filters: scroll touch non cambia apertura", () => {
     expect(handleBox).not.toBeNull();
     expect(handleBox.height).toBeGreaterThanOrEqual(36);
 
+    // Piccola pausa prima della PRIMA interazione: l'elemento e' visibile
+    // (HTML renderizzato lato server) ma su un runner CI condiviso/lento
+    // l'hydration di React (che attacca l'handler onClick) puo' non essere
+    // ancora completata - un tap troppo precoce non fa nulla (il bottone e'
+    // ancora "morto"), causa reale di un flake intermittente osservato in
+    // CI (altezza rimasta piena invece di collassare).
+    await page.waitForTimeout(300);
+
     // Stato chiuso scelto dall'utente.
     await handle.tap();
     await page.waitForTimeout(400);

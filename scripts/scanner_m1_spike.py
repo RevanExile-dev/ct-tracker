@@ -26,7 +26,6 @@ from __future__ import annotations
 import io
 import json
 import random
-import sqlite3
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,10 +33,11 @@ from typing import Callable
 
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
 
+import db
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scanner_common import HASH_SIZE, artwork_crop, dhash, fetch_image, hamming
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cardtrader.db"
 REPORT_PATH = Path(__file__).resolve().parent.parent / "scanner_m1_report.json"
 
 RNG_SEED = 20260920  # riproducibilita' tra run
@@ -107,7 +107,7 @@ class CorpusEntry:
     group: str
 
 
-def select_corpus(con: sqlite3.Connection) -> list[CorpusEntry]:
+def select_corpus(con) -> list[CorpusEntry]:
     """Corpus curato seguendo la matrice sperimentale della sezione 25:
     piccolo ma pensato per essere avversariale, non carte facili a caso."""
     cur = con.cursor()
@@ -144,7 +144,7 @@ def select_corpus(con: sqlite3.Connection) -> list[CorpusEntry]:
         cur.execute(
             """
             SELECT id, name, expansion_name, image_url FROM blueprints
-            WHERE name = ? AND image_url IS NOT NULL
+            WHERE name = %s AND image_url IS NOT NULL
             ORDER BY RANDOM() LIMIT 2
             """,
             (name,),
@@ -228,7 +228,7 @@ def rank_of(blueprint_id: int, ranked: list[tuple[int, int]]) -> int:
 
 def main() -> None:
     random.seed(RNG_SEED)
-    con = sqlite3.connect(str(DB_PATH))
+    con = db.get_connection()
     corpus = select_corpus(con)
     con.close()
 

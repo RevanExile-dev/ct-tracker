@@ -27,15 +27,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from pathlib import Path
+
+import db
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scanner_common import artwork_crop, dhash_hex, fetch_image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = REPO_ROOT / "data" / "cardtrader.db"
 CACHE_PATH = REPO_ROOT / "data" / "scanner_fingerprint_cache.json"
 INDEX_PATH = REPO_ROOT / "web" / "public" / "data" / "scanner_index.json"
 
@@ -59,7 +59,7 @@ def save_cache(cache: dict) -> None:
     CACHE_PATH.write_text(json.dumps(cache, indent=2, sort_keys=True))
 
 
-def load_blueprints(con: sqlite3.Connection) -> list[tuple[int, str]]:
+def load_blueprints(con) -> list[tuple[int, str]]:
     cur = con.cursor()
     cur.execute("SELECT id, image_url FROM blueprints WHERE image_url IS NOT NULL")
     return [(int(bid), str(url)) for bid, url in cur.fetchall()]
@@ -90,7 +90,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    con = sqlite3.connect(str(DB_PATH))
+    con = db.get_connection()
     blueprints = load_blueprints(con)
     con.close()
 

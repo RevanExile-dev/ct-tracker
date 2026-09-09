@@ -24,11 +24,6 @@ const nextConfig = {
       },
     ],
   },
-  webpack: (config) => {
-    // sql.js carica un file .wasm a runtime: lo trattiamo come asset statico
-    config.resolve.fallback = { ...config.resolve.fallback, fs: false, path: false, crypto: false };
-    return config;
-  },
 };
 
 module.exports = nextConfig;
