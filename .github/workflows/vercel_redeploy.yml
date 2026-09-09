@@ -1,0 +1,30 @@
+name: Vercel - redeploy manuale
+
+# Serve solo per i casi in cui non c'e' nessun commit dietro (es. una nuova
+# environment variable su Vercel, come AUTH_SECRET) - un push/merge su main
+# fa gia' partire un deploy da solo tramite l'integrazione Git di Vercel,
+# questo workflow non c'entra in quel caso.
+on:
+  workflow_dispatch:
+    inputs:
+      motivo:
+        description: "Perche' serve questo redeploy (facoltativo, solo per il log)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifica che il secret sia configurato
+        run: |
+          if [ -z "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}" ]; then
+            echo "::error::Secret VERCEL_DEPLOY_HOOK_URL non configurato. Crealo su Vercel (Settings -> Git -> Deploy Hooks, branch main) e salvalo come secret del repository con questo nome esatto."
+            exit 1
+          fi
+
+      - name: Chiama il Deploy Hook di Vercel
+        run: curl -sS --fail -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}"
