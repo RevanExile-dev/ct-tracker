@@ -66,6 +66,23 @@ INSERT INTO price_listings (blueprint_id, captured_at, price_cents, price_curren
   (900202, CURRENT_DATE, 500, 'EUR', 'Near Mint', 'it', 1, 'smoke-seller', 1)
 ON CONFLICT DO NOTHING;
 
+-- Carta con id REALE del catalogo di produzione (non nel range 900xxx delle
+-- altre righe di questo file): tests/scanner.spec.mjs "indice visivo trova
+-- la carta anche quando l'OCR non produce alcun testo" mocka la risposta di
+-- /data/scanner_index.json con blueprint_id=344562 hardcoded (e' l'id vero
+-- di Frosmoth in data/cardtrader.db, scelto dal test solo per un nome
+-- distintivo da verificare in UI) - deve esistere anche in questo catalogo
+-- minimo di test, altrimenti hydrateScannerCard(344562) non trova nulla e
+-- la card non si apre mai.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium) VALUES
+  (344562, 'Frosmoth', '045/182', 1, 73, 900001, 'smoketest', 'Smoke Test Set',
+   'https://cardtrader.com/uploads/blueprints/image/900000/frosmoth-smoke-test-set.jpg', 'Common', 0)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count) VALUES
+  (344562, CURRENT_DATE, now(), 120, 'EUR', 1)
+ON CONFLICT (blueprint_id) DO NOTHING;
+
 INSERT INTO meta (key, value) VALUES
   ('last_price_sync', now()::text),
   ('last_catalog_sync', now()::text)

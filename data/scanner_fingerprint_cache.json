@@ -1,0 +1,602 @@
+{
+  "109849": {
+    "art_hash": "64753972f3b52d8e",
+    "fingerprint_version": 1,
+    "full_hash": "c6b8b2328ce6b098",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109849/oddish-1-98-ancient-origins.jpg"
+  },
+  "109851": {
+    "art_hash": "8e9d150f0f37738e",
+    "fingerprint_version": 1,
+    "full_hash": "cece8eb6cee6b09a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109851/gloom-2-98-ancient-origins.jpg"
+  },
+  "109853": {
+    "art_hash": "5ba74f5547c9a08e",
+    "fingerprint_version": 1,
+    "full_hash": "86beeeea88a2b298",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109853/vileplume-3-98-ancient-origins.jpg"
+  },
+  "109855": {
+    "art_hash": "8e4e4d3933963fce",
+    "fingerprint_version": 1,
+    "full_hash": "c68eba968ee2b09c",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109855/bellossom-4-98-ancient-origins.jpg"
+  },
+  "109857": {
+    "art_hash": "cc7be94831150c8e",
+    "fingerprint_version": 1,
+    "full_hash": "e6eaaa938ce6b098",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109857/spinarak-5-98-ancient-origins.jpg"
+  },
+  "109859": {
+    "art_hash": "2e4848671cd0e18e",
+    "fingerprint_version": 1,
+    "full_hash": "aea8ccd0caa2b298",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109859/ariados-6-98-ancient-origins.jpg"
+  },
+  "109861": {
+    "art_hash": "68c993749bd5b109",
+    "fingerprint_version": 1,
+    "full_hash": "637bdddbc167710f",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109861/sceptile-ex-7-98-ancient-origins.jpg"
+  },
+  "109862": {
+    "art_hash": "ed2b3357d3079359",
+    "fingerprint_version": 1,
+    "full_hash": "46a237869266711b",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109862/m-sceptile-ex-8-98-ancient-origins.jpg"
+  },
+  "109863": {
+    "art_hash": "793c1e96959bab8e",
+    "fingerprint_version": 1,
+    "full_hash": "a2389e9acee6b098",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109863/combee-9-98-ancient-origins.jpg"
+  },
+  "109865": {
+    "art_hash": "b733325a5c99e78e",
+    "fingerprint_version": 1,
+    "full_hash": "e6969ccacee29298",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109865/vespiquen-10-98-ancient-origins.jpg"
+  },
+  "109867": {
+    "art_hash": "edd652ae23b43c71",
+    "fingerprint_version": 1,
+    "full_hash": "e66486b078e4e2a2",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109867/vespiquen-double-11-98-ancient-origins.jpg"
+  },
+  "109869": {
+    "art_hash": "37dad1c4b4a8f48e",
+    "fingerprint_version": 1,
+    "full_hash": "a672c4f4cea2b298",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109869/virizion-rare-holo-12-98-ancient-origins.jpg"
+  },
+  "109871": {
+    "art_hash": "6b83d954673b5b4c",
+    "fingerprint_version": 1,
+    "full_hash": "e6d28cb298a6b29e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109871/flareon-13-98-ancient-origins.jpg"
+  },
+  "109873": {
+    "art_hash": "4c4c92f36072c31c",
+    "fingerprint_version": 1,
+    "full_hash": "cd8df2e68ea6b29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109873/entei-14-98-ancient-origins.jpg"
+  },
+  "109875": {
+    "art_hash": "f37171e5696989a5",
+    "fingerprint_version": 1,
+    "full_hash": "cef3e1abcaceb2a2",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109875/entei-rare-holo-double-15-98-ancient-origins.jpg"
+  },
+  "109877": {
+    "art_hash": "5a9a1e2fbabcdc1e",
+    "fingerprint_version": 1,
+    "full_hash": "c29a9e9c9ee6b29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109877/larvesta-16-98-ancient-origins.jpg"
+  },
+  "109879": {
+    "art_hash": "2d68f2a22e1ad30e",
+    "fingerprint_version": 1,
+    "full_hash": "cee8a68a9ee6b29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109879/volcarona-rare-holo-17-98-ancient-origins.jpg"
+  },
+  "109881": {
+    "art_hash": "edb6a6dd59399054",
+    "fingerprint_version": 1,
+    "full_hash": "ced6769a9494ceec",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109881/volcarona-double-18-98-ancient-origins.jpg"
+  },
+  "109882": {
+    "art_hash": "70b1346d7393f84f",
+    "fingerprint_version": 1,
+    "full_hash": "e2b1b8b22c669a9a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109882/magikarp-19-98-ancient-origins.jpg"
+  },
+  "109884": {
+    "art_hash": "8c9461c8dc9d8b4d",
+    "fingerprint_version": 1,
+    "full_hash": "ce81e8daaae69a9a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109884/gyarados-20-98-ancient-origins.jpg"
+  },
+  "109886": {
+    "art_hash": "e9c3a5d25b3bdba7",
+    "fingerprint_version": 1,
+    "full_hash": "aec64272c6cbb2b2",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109886/gyarados-holo-rare-double-21-98-ancient-origins.webp"
+  },
+  "109888": {
+    "art_hash": "3333391d991b5f4d",
+    "fingerprint_version": 1,
+    "full_hash": "86b29a9eaee69a9e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109888/vaporeon-22-98-ancient-origins.jpg"
+  },
+  "109890": {
+    "art_hash": "f0e6695577f0c44d",
+    "fingerprint_version": 1,
+    "full_hash": "e6fac2f4aee69a9a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109890/relicanth-23-98-ancient-origins.jpg"
+  },
+  "109892": {
+    "art_hash": "0e0e2f5b2d27264d",
+    "fingerprint_version": 1,
+    "full_hash": "ce8e8e9eaee69a9a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109892/regice-24-98-ancient-origins.jpg"
+  },
+  "109894": {
+    "art_hash": "e4b9fb3d98a83c77",
+    "fingerprint_version": 1,
+    "full_hash": "67735b9934e69a58",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109894/kyurem-ex-25-98-ancient-origins.jpg"
+  },
+  "109895": {
+    "art_hash": "9f66444f2d73d588",
+    "fingerprint_version": 1,
+    "full_hash": "8ea68cb690a0e88c",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109895/jolteon-rare-holo-26-98-ancient-origins.jpg"
+  },
+  "109897": {
+    "art_hash": "e666cc4c58cee663",
+    "fingerprint_version": 1,
+    "full_hash": "73e4e94c6663b9d9",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109897/ampharos-ex-27-98-ancient-origins.jpg"
+  },
+  "109898": {
+    "art_hash": "b3316d6eefe70c12",
+    "fingerprint_version": 1,
+    "full_hash": "92b22cc79363191b",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109898/m-ampharos-ex-28-98-ancient-origins.jpg"
+  },
+  "109899": {
+    "art_hash": "e7a72c3c0c9b850c",
+    "fingerprint_version": 1,
+    "full_hash": "c6a6b8da46e2e88e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109899/rotom-29-98-ancient-origins.jpg"
+  },
+  "109901": {
+    "art_hash": "074d891b1210354b",
+    "fingerprint_version": 1,
+    "full_hash": "c68a9a90baa2e29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109901/unown-30-98-ancient-origins.jpg"
+  },
+  "109903": {
+    "art_hash": "f6cc5c5dc5829c5f",
+    "fingerprint_version": 1,
+    "full_hash": "c64dcac69ae2e29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109903/baltoy-31-98-ancient-origins.jpg"
+  },
+  "109905": {
+    "art_hash": "edf9cfa7eb799080",
+    "fingerprint_version": 1,
+    "full_hash": "cef266ba8186a6e2",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109905/baltoy-stop-32-98-ancient-origins.jpg"
+  },
+  "109907": {
+    "art_hash": "ce93b1596d35954b",
+    "fingerprint_version": 1,
+    "full_hash": "ced6bab88aa6e29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109907/claydol-33-98-ancient-origins.jpg"
+  },
+  "109909": {
+    "art_hash": "88b0b8c8b3e1711f",
+    "fingerprint_version": 1,
+    "full_hash": "cbd9f173bee2e29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109909/golett-34-98-ancient-origins.jpg"
+  },
+  "109911": {
+    "art_hash": "ef8684165a5271a9",
+    "fingerprint_version": 1,
+    "full_hash": "ee8e94b2fb5b96a6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109911/golurk-stop-35-98-ancient-origins.jpg"
+  },
+  "109913": {
+    "art_hash": "6471332648cb6a9c",
+    "fingerprint_version": 1,
+    "full_hash": "ecb2b268b0a378da",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109913/hoopa-ex-36-98-ancient-origins.jpg"
+  },
+  "109914": {
+    "art_hash": "2db9ec4c25a9b1b1",
+    "fingerprint_version": 1,
+    "full_hash": "3df9edb373277d22",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109914/machamp-ex-37-98-ancient-origins.jpg"
+  },
+  "109915": {
+    "art_hash": "e4e12fb8bab4bc8d",
+    "fingerprint_version": 1,
+    "full_hash": "c6e29a319ce6b29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109915/wooper-38-98-ancient-origins.jpg"
+  },
+  "109917": {
+    "art_hash": "27244cc2cfd8c09d",
+    "fingerprint_version": 1,
+    "full_hash": "a62449c896e6b09a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109917/quagsire-39-98-ancient-origins.jpg"
+  },
+  "109919": {
+    "art_hash": "cc5c76c25935479d",
+    "fingerprint_version": 1,
+    "full_hash": "caac669a86e6b29a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109919/regirock-40-98-ancient-origins.jpg"
+  },
+  "109921": {
+    "art_hash": "13b36764ec9c988d",
+    "fingerprint_version": 1,
+    "full_hash": "86b2ecd88aa6b09a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109921/golurk-41-98-ancient-origins.jpg"
+  },
+  "109923": {
+    "art_hash": "f184ce53919634b0",
+    "fingerprint_version": 1,
+    "full_hash": "71c54655fcccd9c1",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109923/tyranitar-ex-42-98-ancient-origins.jpg"
+  },
+  "109924": {
+    "art_hash": "e7e4d99162a2f372",
+    "fingerprint_version": 1,
+    "full_hash": "e9c8d272f1c4acc0",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109924/m-tyranitar-ex-43-98-ancient-origins.jpg"
+  },
+  "109925": {
+    "art_hash": "3654686b797971bc",
+    "fingerprint_version": 1,
+    "full_hash": "b2acbab28e8e9aa4",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109925/sableye-44-98-ancient-origins.jpg"
+  },
+  "109927": {
+    "art_hash": "db613137262f9eb1",
+    "fingerprint_version": 1,
+    "full_hash": "f233b60e9a9eb6a4",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109927/inkay-45-98-ancient-origins.jpg"
+  },
+  "109929": {
+    "art_hash": "686cf1746cdefaa7",
+    "fingerprint_version": 1,
+    "full_hash": "8e39397c968e9ea4",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109929/malamar-46-98-ancient-origins.jpg"
+  },
+  "109931": {
+    "art_hash": "b1122204c3b3db24",
+    "fingerprint_version": 1,
+    "full_hash": "cab2a6f206231b88",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109931/beldum-47-98-ancient-origins.jpg"
+  },
+  "109933": {
+    "art_hash": "477d36a2af2d7984",
+    "fingerprint_version": 1,
+    "full_hash": "ce3eb4ba22279a88",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109933/metang-48-98-ancient-origins.jpg"
+  },
+  "109935": {
+    "art_hash": "2c2c6c18746487a0",
+    "fingerprint_version": 1,
+    "full_hash": "86acb8b4a2a29a8c",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109935/metagross-49-98-ancient-origins.jpg"
+  },
+  "109937": {
+    "art_hash": "ed264e8f9bd9c1c6",
+    "fingerprint_version": 1,
+    "full_hash": "e6ae8ecac6e69092",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109937/metagross-double-50-98-ancient-origins.jpg"
+  },
+  "109939": {
+    "art_hash": "a42b2f4eece4e525",
+    "fingerprint_version": 1,
+    "full_hash": "c0aeae6ca6a71888",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109939/registeel-51-98-ancient-origins.jpg"
+  },
+  "109941": {
+    "art_hash": "1f1b4f4f7613732f",
+    "fingerprint_version": 1,
+    "full_hash": "d29eaeb69ea686aa",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109941/ralts-52-98-ancient-origins.jpg"
+  },
+  "109943": {
+    "art_hash": "77b1db587bd2dc2f",
+    "fingerprint_version": 1,
+    "full_hash": "c6727a7a9ea686ae",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109943/kirlia-53-98-ancient-origins.jpg"
+  },
+  "109945": {
+    "art_hash": "2361408dc9ab652f",
+    "fingerprint_version": 1,
+    "full_hash": "a6a3c3e2b6a686ae",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109945/gardevoir-rare-holo-54-98-ancient-origins.jpg"
+  },
+  "109947": {
+    "art_hash": "8b0f2e068f9d5d2f",
+    "fingerprint_version": 1,
+    "full_hash": "c28e8ecfbeb686ae",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109947/cottonee-55-98-ancient-origins.jpg"
+  },
+  "109949": {
+    "art_hash": "3932b2b931b6e73f",
+    "fingerprint_version": 1,
+    "full_hash": "c63733378eb686ae",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109949/whimsicott-56-98-ancient-origins.jpg"
+  },
+  "109951": {
+    "art_hash": "a9985274d9b9b216",
+    "fingerprint_version": 1,
+    "full_hash": "e9d975fab639c4da",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109951/giratina-ex-57-98-ancient-origins.jpg"
+  },
+  "109952": {
+    "art_hash": "179647077971657f",
+    "fingerprint_version": 1,
+    "full_hash": "908686f8aebab2a6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109952/goomy-58-98-ancient-origins.jpg"
+  },
+  "109954": {
+    "art_hash": "8f1b33370f8d911f",
+    "fingerprint_version": 1,
+    "full_hash": "ce9e9e8cbebab2a6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109954/sliggoo-59-98-ancient-origins.jpg"
+  },
+  "109956": {
+    "art_hash": "e9a4b2839396390f",
+    "fingerprint_version": 1,
+    "full_hash": "dcf093969ebeb6a6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109956/goodra-rare-holo-60-98-ancient-origins.jpg"
+  },
+  "109958": {
+    "art_hash": "797246a3dbef6e9e",
+    "fingerprint_version": 1,
+    "full_hash": "a236c66e9ee6589e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109958/meowth-61-98-ancient-origins.jpg"
+  },
+  "109960": {
+    "art_hash": "cfa3747463c314ce",
+    "fingerprint_version": 1,
+    "full_hash": "cea6b4eecec6e89a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109960/persian-62-98-ancient-origins.jpg"
+  },
+  "109962": {
+    "art_hash": "6f2d79794f69699e",
+    "fingerprint_version": 1,
+    "full_hash": "ae3abaaadec6789a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109962/eevee-63-98-ancient-origins.jpg"
+  },
+  "109964": {
+    "art_hash": "8622626032240d9e",
+    "fingerprint_version": 1,
+    "full_hash": "c686a0a6d4e6689a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109964/porygon-64-98-ancient-origins.jpg"
+  },
+  "109966": {
+    "art_hash": "cb274b596121219e",
+    "fingerprint_version": 1,
+    "full_hash": "c68e8ab28ee6989c",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109966/porygon2-65-98-ancient-origins.jpg"
+  },
+  "109968": {
+    "art_hash": "c0c544969b0b2dd6",
+    "fingerprint_version": 1,
+    "full_hash": "c6e0929aa4c6b09c",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109968/porygon-z-66-98-ancient-origins.jpg"
+  },
+  "109970": {
+    "art_hash": "edc7e4cdc1a461b2",
+    "fingerprint_version": 1,
+    "full_hash": "e6e6c0e0f2e6a698",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109970/porygon-z-rare-holo-stop-67-98-ancient-origins.jpg"
+  },
+  "109972": {
+    "art_hash": "727062744d56582d",
+    "fingerprint_version": 1,
+    "full_hash": "35216c9c316358da",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109972/lugia-ex-holo-rare-68-98-ancient-origins.png"
+  },
+  "109973": {
+    "art_hash": "0f32b23333b23303",
+    "fingerprint_version": 1,
+    "full_hash": "8e96b29686878e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109973/ace-trainer-69-98-ancient-origins.jpg"
+  },
+  "109975": {
+    "art_hash": "1367859f2e368f98",
+    "fingerprint_version": 1,
+    "full_hash": "aaa28eac8e138e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109975/ampharos-spirit-link-70-98-ancient-origins.jpg"
+  },
+  "109977": {
+    "art_hash": "174b698536a3f30f",
+    "fingerprint_version": 1,
+    "full_hash": "8eaaaab2820f8e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109977/eco-arm-71-98-ancient-origins.jpg"
+  },
+  "109979": {
+    "art_hash": "030f170f0f8f8f07",
+    "fingerprint_version": 1,
+    "full_hash": "aa8e8e8e8e0f8e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109979/energy-recycler-72-98-ancient-origins.jpg"
+  },
+  "109981": {
+    "art_hash": "0bac895998830f0f",
+    "fingerprint_version": 1,
+    "full_hash": "8e8ac89a8f07878e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109981/faded-town-73-98-ancient-origins.jpg"
+  },
+  "109983": {
+    "art_hash": "1399cb1b9d9a9e0f",
+    "fingerprint_version": 1,
+    "full_hash": "aaca9a988e87878e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109983/forest-of-giant-plants-74-98-ancient-origins.jpg"
+  },
+  "109985": {
+    "art_hash": "03899ba2b4909a17",
+    "fingerprint_version": 1,
+    "full_hash": "8e8ad2909e87878e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109985/hex-maniac-75-98-ancient-origins.jpg"
+  },
+  "109987": {
+    "art_hash": "0b613905213b3b0f",
+    "fingerprint_version": 1,
+    "full_hash": "8e9282b21e8f8e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109987/level-ball-76-98-ancient-origins.jpg"
+  },
+  "109989": {
+    "art_hash": "0f3b31657971128a",
+    "fingerprint_version": 1,
+    "full_hash": "8ab22331978f8e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109989/lucky-helmet-77-98-ancient-origins.jpg"
+  },
+  "109991": {
+    "art_hash": "13ceccccce8e8e07",
+    "fingerprint_version": 1,
+    "full_hash": "8ececccc8e17878e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109991/lysandre-78-98-ancient-origins.jpg"
+  },
+  "109993": {
+    "art_hash": "0b363c594bcbd807",
+    "fingerprint_version": 1,
+    "full_hash": "8a1d3b6a470f868e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109993/paint-roller-79-98-ancient-origins.jpg"
+  },
+  "109995": {
+    "art_hash": "03562e35db614992",
+    "fingerprint_version": 1,
+    "full_hash": "cab69ecaaa13868e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109995/sceptile-spirit-link-80-98-ancient-origins.jpg"
+  },
+  "109997": {
+    "art_hash": "03232505034a4e98",
+    "fingerprint_version": 1,
+    "full_hash": "8ab286868c138e8e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109997/tyranitar-spirit-link-81-98-ancient-origins.jpg"
+  },
+  "109999": {
+    "art_hash": "0e6366d286c645e1",
+    "fingerprint_version": 1,
+    "full_hash": "8fa6d64d7186a28a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/109999/dangerous-energy-82-98-ancient-origins.jpg"
+  },
+  "110001": {
+    "art_hash": "8ea369c7c4c46d61",
+    "fingerprint_version": 1,
+    "full_hash": "cfa2c66571c4928a",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110001/flash-energy-83-98-ancient-origins.jpg"
+  },
+  "110003": {
+    "art_hash": "9919b97a9c4f0cdb",
+    "fingerprint_version": 1,
+    "full_hash": "6b5b1b4d5b4e5963",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110003/sceptile-ex-rare-ultra-84-98-ancient-origins.jpg"
+  },
+  "110004": {
+    "art_hash": "ec4d898bc6ea5a9d",
+    "fingerprint_version": 1,
+    "full_hash": "47cbcb66094765b3",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110004/m-sceptile-ex-rare-ultra-85-98-ancient-origins.jpg"
+  },
+  "110005": {
+    "art_hash": "0e0e2b6a6461481c",
+    "fingerprint_version": 1,
+    "full_hash": "4d0c26294c471b1b",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110005/kyurem-ex-rare-ultra-86-98-ancient-origins.jpg"
+  },
+  "110006": {
+    "art_hash": "9b39b9e899ed4752",
+    "fingerprint_version": 1,
+    "full_hash": "461b796f2613591b",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110006/ampharos-ex-rare-ultra-87-98-ancient-origins.jpg"
+  },
+  "110007": {
+    "art_hash": "4d6e6664686c1932",
+    "fingerprint_version": 1,
+    "full_hash": "cd6c2d29d21d85e3",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110007/m-ampharos-ex-rare-ultra-88-98-ancient-origins.jpg"
+  },
+  "110008": {
+    "art_hash": "a8a675dd989ac4ce",
+    "fingerprint_version": 1,
+    "full_hash": "6ba559dc6d1d5743",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110008/hoopa-ex-rare-ultra-89-98-ancient-origins.jpg"
+  },
+  "110009": {
+    "art_hash": "b64e59b1395e4665",
+    "fingerprint_version": 1,
+    "full_hash": "775e134d27735931",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110009/machamp-ex-rare-ultra-90-98-ancient-origins.jpg"
+  },
+  "110010": {
+    "art_hash": "36170f1715164267",
+    "fingerprint_version": 1,
+    "full_hash": "e697171726211121",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110010/tyranitar-ex-rare-ultra-91-98-ancient-origins.jpg"
+  },
+  "110011": {
+    "art_hash": "eecc91d3e3e5252b",
+    "fingerprint_version": 1,
+    "full_hash": "64d9536385f4b0a6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110011/m-tyranitar-ex-rare-ultra-92-98-ancient-origins.jpg"
+  },
+  "110012": {
+    "art_hash": "8ab39bcf8f969a99",
+    "fingerprint_version": 1,
+    "full_hash": "ca92ce9e1b4f1d21",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110012/giratina-ex-rare-ultra-93-98-ancient-origins.jpg"
+  },
+  "110013": {
+    "art_hash": "33331b1999c6ce8f",
+    "fingerprint_version": 1,
+    "full_hash": "7333994d4f074f31",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110013/lugia-ex-rare-ultra-94-98-ancient-origins.jpg"
+  },
+  "110014": {
+    "art_hash": "131e3e7c0d1b5b0f",
+    "fingerprint_version": 1,
+    "full_hash": "4f1c3c9a92e3e6e6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110014/steven-rare-ultra-95-98-ancient-origins.jpg"
+  },
+  "110015": {
+    "art_hash": "f7a6cc5cbc18b2c4",
+    "fingerprint_version": 1,
+    "full_hash": "566cd898d488d889",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110015/m-primal-kyogre-ex-secret-rare-96-98-ancient-origins.jpg"
+  },
+  "110016": {
+    "art_hash": "f78dd96c6a394977",
+    "fingerprint_version": 1,
+    "full_hash": "f6dca82a23dc98b6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110016/m-primal-groudon-ex-secret-rare-97-98-ancient-origins.jpg"
+  },
+  "110017": {
+    "art_hash": "e5316bcd9716b2ec",
+    "fingerprint_version": 1,
+    "full_hash": "d4b2e695a94df9e6",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110017/m-rayquaza-ex-secret-rare-98-98-ancient-origins.jpg"
+  },
+  "110018": {
+    "art_hash": "07190cecc5cf390f",
+    "fingerprint_version": 1,
+    "full_hash": "8a89ede69b07078e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110018/energy-retrieval-secret-rare-99-98-ancient-origins.jpg"
+  },
+  "110019": {
+    "art_hash": "0f7c1e4c2932070b",
+    "fingerprint_version": 1,
+    "full_hash": "8a1c29a30f07878e",
+    "image_url": "https://cardtrader.com/uploads/blueprints/image/110019/trainers-mail-secret-rare-100-98-ancient-origins.jpg"
+  }
+}

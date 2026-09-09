@@ -25,6 +25,11 @@ on:
         type: choice
         options: ["auto", "gemini", "groq"]
         default: "auto"
+      paths:
+        description: "Limita il diff a questi path (newline o virgola). Vuoto = intero diff. Utile per Groq (limite 8000 token/minuto sul livello gratuito): un diff con prosa (doc lunghe) o tanti file puo' sforare anche quando il codice vero e' piccolo."
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -61,4 +66,5 @@ jobs:
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          AI_REVIEW_PATHS: ${{ inputs.paths }}
         run: python scripts/ai_review.py "${{ inputs.prompt }}" "${{ inputs.base_ref }}" "${{ inputs.head_ref }}" "${{ inputs.provider }}"
