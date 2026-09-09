@@ -1,5 +1,7 @@
 import { fetchCards, getDb, type CardRow } from "@/lib/db";
 import type { ScannerCandidate, ScannerCatalogEntry } from "./types";
+import { collectorParts, extractCollectorNumber, stripCollectorNumbers } from "./collector-number";
+export { extractCollectorNumber } from "./collector-number";
 
 export type VisualIndexEntry = { full: string; art: string | null };
 export type ScanHash = { full: string; art: string | null };
@@ -17,34 +19,12 @@ function normalize(value: string) {
     .trim();
 }
 
-function normalizeOcrDigits(value: string) {
-  return value
-    .replace(/[Oo]/g, "0")
-    .replace(/[Il|]/g, "1")
-    .replace(/\\/g, "/");
-}
-
-export function extractCollectorNumber(text: string): string | null {
-  const repaired = normalizeOcrDigits(text);
-  const matches = [...repaired.matchAll(/(?:^|\D)(\d{1,4})\s*[\/-]\s*(\d{1,4})(?=\D|$)/g)];
-  if (!matches.length) return null;
-
-  for (let i = matches.length - 1; i >= 0; i -= 1) {
-    const numerator = Number(matches[i][1]);
-    const denominator = Number(matches[i][2]);
-    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
-      return `${matches[i][1]}/${matches[i][2]}`;
-    }
-  }
-  return null;
-}
-
 function normalizeCatalogName(value: string) {
   // CardTrader puo' includere nel blueprint sia qualifier commerciali sia
   // il collector number. Nessuno dei due fa parte del nome stampato in alto
   // sulla carta, quindi non deve diluire il confronto con l'OCR del nome.
   const withoutParens = value.replace(/\([^)]*\)/g, " ");
-  const withoutCollector = withoutParens.replace(/\b\d{1,4}\s*[\/-]\s*\d{1,4}\b/g, " ");
+  const withoutCollector = stripCollectorNumbers(withoutParens);
   return normalize(withoutCollector)
     .replace(/\b(?:special illustration rare|illustration rare|ultra rare|secret rare|full art|trainer gallery|galarian gallery|alternate art|alt art|promo)\b/g, " ")
     .replace(/\s+/g, " ")
@@ -115,28 +95,13 @@ export function collectorNumberFromImageUrl(imageUrl: string | null): string | n
     // Un URL malformato non deve rompere l'intero catalogo.
   }
 
-  const matches = [...filename.matchAll(/(?:^|-)(\d{1,4})-(\d{1,4})(?=-|\.|$)/g)];
-  for (let i = matches.length - 1; i >= 0; i -= 1) {
-    const numerator = Number(matches[i][1]);
-    const denominator = Number(matches[i][2]);
-    if (numerator <= 9999 && denominator > 0 && denominator <= 9999) {
-      return `${matches[i][1]}/${matches[i][2]}`;
-    }
-  }
-  return null;
-}
-
-function collectorParts(value: string | null) {
-  if (!value) return null;
-  const match = value.match(/^(\d{1,4})\/(\d{1,4})$/);
-  if (!match) return null;
-  return { numerator: match[1], denominator: match[2] };
+  return extractCollectorNumber(filename);
 }
 
 function collectorSimilarity(observed: string | null, expected: string | null) {
   const a = collectorParts(observed);
   const b = collectorParts(expected);
-  if (!a || !b) return 0;
+  if (!a || !b || a.prefix !== b.prefix) return 0;
   if (a.numerator === b.numerator && a.denominator === b.denominator) return 1;
 
   const numeratorDistance = editDistance(a.numerator, b.numerator);
