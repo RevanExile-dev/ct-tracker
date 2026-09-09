@@ -67,4 +67,19 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
           AI_REVIEW_PATHS: ${{ inputs.paths }}
-        run: python scripts/ai_review.py "${{ inputs.prompt }}" "${{ inputs.base_ref }}" "${{ inputs.head_ref }}" "${{ inputs.provider }}"
+          # Passati come variabili d'ambiente, non interpolati direttamente
+          # nel comando "run:" (es. "...ai_review.py "${{ inputs.prompt }}"...):
+          # quell'interpolazione sostituisce il testo COSI' COM'E' nello script
+          # di shell generato prima che venga interpretato, quindi un prompt
+          # contenente virgolette doppie (es. per citare un termine, come in un
+          # prompt reale che ha rotto il job con "provider sconosciuto")
+          # spezza il parsing degli argomenti posizionali - oltre a essere,
+          # in generale, un'iniezione di comandi shell se l'input contenesse
+          # backtick o "$(...)". Con env + "$VAR" la shell tratta il
+          # contenuto come UN SOLO argomento letterale, qualunque carattere
+          # contenga (bug reale, verificato in CI: vedi PR di questo fix).
+          AI_REVIEW_PROMPT: ${{ inputs.prompt }}
+          AI_REVIEW_BASE_REF: ${{ inputs.base_ref }}
+          AI_REVIEW_HEAD_REF: ${{ inputs.head_ref }}
+          AI_REVIEW_PROVIDER: ${{ inputs.provider }}
+        run: python scripts/ai_review.py "$AI_REVIEW_PROMPT" "$AI_REVIEW_BASE_REF" "$AI_REVIEW_HEAD_REF" "$AI_REVIEW_PROVIDER"
