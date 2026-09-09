@@ -120,10 +120,12 @@ export default function InteractiveCard({ children, className = "", level = "til
             // composedPath()/URL invariato dopo il click. Ritardando la
             // cattura a quando il trascinamento e' confermato, un click
             // normale non la innesca piu' e il Link riceve l'evento
-            // regolarmente; solo mouse - il touch ha gia' una cattura
-            // implicita nativa (stesso motivo/verifica di
-            // BinderBook.handlePointerMove).
-            if (event.pointerType === "mouse") {
+            // regolarmente; non sul touch, che ha gia' una cattura implicita
+            // nativa (stesso motivo/verifica di BinderBook.handlePointerMove).
+            // Non "=== mouse": una penna/stilo (pointerType "pen") non ha la
+            // cattura implicita del touch, quindi andrebbe trattata come il
+            // mouse qui - suggerito in review, "!== touch" copre entrambi.
+            if (event.pointerType !== "touch") {
               event.currentTarget.setPointerCapture(event.pointerId);
             }
           }
