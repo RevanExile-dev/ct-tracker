@@ -352,17 +352,19 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
       drag.direction = direction;
       drag.pageWidth = Math.max(1, pageWidth);
       didSwipe.current = true; // sopprime il click sintetico che seguira' il rilascio
-      // Solo per il mouse: serve a continuare a ricevere pointermove/up anche
-      // se il cursore esce dai bordi dello stage durante il trascinamento.
-      // Il touch ha gia' una "cattura implicita" nativa (verificato: senza
+      // Non sul touch: serve a continuare a ricevere pointermove/up anche
+      // se il cursore esce dai bordi dello stage durante il trascinamento,
+      // ma il touch ha gia' una "cattura implicita" nativa (verificato: senza
       // chiamare setPointerCapture i pointermove/up continuano ad arrivare
       // regolarmente) - chiamarla comunque su un pointer touch ha innescato
       // in pratica un lostpointercapture spurio quasi subito dopo l'inizio
       // del gesto (isolato con log mirati: il drag veniva annullato dopo un
       // solo pointermove, con gli eventi successivi che continuavano ad
       // arrivare regolarmente ma ormai ignorati perche' il nostro stato
-      // interno era gia' stato azzerato).
-      if (event.pointerType === "mouse") event.currentTarget.setPointerCapture(event.pointerId);
+      // interno era gia' stato azzerato). Non "=== mouse": una penna/stilo
+      // (pointerType "pen") non ha la cattura implicita del touch, quindi va
+      // trattata come il mouse qui, non esclusa insieme al touch.
+      if (event.pointerType !== "touch") event.currentTarget.setPointerCapture(event.pointerId);
       setFlip({ direction, phase: "live" });
       scheduleDragPaint();
     }
