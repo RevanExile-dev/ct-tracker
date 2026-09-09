@@ -28,5 +28,9 @@ export function collectorParts(value: string | null) {
   if (!value) return null;
   const match = value.match(/^(TG|GG|SV|RC)?(\d{1,4})\/(TG|GG|SV|RC)?(\d{1,4})$/);
   if (!match || match[1] !== match[3]) return null;
-  return { prefix: match[1] ?? "", numerator: match[2], denominator: match[4] };
+  // Every caller today already routes through extractCollectorNumber() first,
+  // which strips leading zeros - but this function is exported and has no
+  // way to enforce that invariant on a future caller, so normalize here too
+  // instead of relying on it. Idempotent on already-stripped input.
+  return { prefix: match[1] ?? "", numerator: String(Number(match[2])), denominator: String(Number(match[4])) };
 }

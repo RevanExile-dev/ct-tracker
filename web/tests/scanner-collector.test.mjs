@@ -46,6 +46,25 @@ test('metadata names and image URLs use the same gallery parser', () => {
   assert.equal(catalog.collectorNumberFromImageUrl('https://example.test/pikachu-tg05%2Ftg30.jpg'), 'TG5/TG30');
 });
 
+test('collectorParts normalizes zero-padding on its own, independent of extractCollectorNumber', () => {
+  // Every current caller already routes through extractCollectorNumber() first
+  // (which strips padding), but collectorParts is exported and has no way to
+  // enforce that on a future direct caller - it must be correct standalone too.
+  const padded = parser.collectorParts('TG05/TG30');
+  assert.equal(padded.prefix, 'TG');
+  assert.equal(padded.numerator, '5');
+  assert.equal(padded.denominator, '30');
+
+  const plain = parser.collectorParts('005/030');
+  assert.equal(plain.prefix, '');
+  assert.equal(plain.numerator, '5');
+  assert.equal(plain.denominator, '30');
+
+  const stripped = parser.collectorParts('TG5/TG30');
+  assert.equal(stripped.numerator, padded.numerator);
+  assert.equal(stripped.denominator, padded.denominator);
+});
+
 const entry = (id, version, name = 'Pikachu') => ({
   id, name, version, expansion_code: 'lorg', expansion_name: 'Lost Origin',
   image_url: null, rarity: null,
