@@ -38,6 +38,42 @@ test.describe("scanner CartaViva", () => {
     await expect(page.getByRole("button", { name: "Nel Binder ✓", exact: true })).toBeVisible();
   });
 
+  test("indice visivo trova la carta anche quando l'OCR non produce alcun testo", async ({ page }) => {
+    // Riproduce il caso che l'indice visivo (scripts/build_scanner_index.py +
+    // rankScannerCandidates in web/lib/scanner/catalog.ts) esiste apposta per
+    // coprire: OCR completamente assente (CDN bloccato, come sopra) ma un
+    // segnale visivo comunque disponibile. Prima che l'indice esistesse
+    // questo scenario non produceva alcun candidato ("Match non abbastanza
+    // forte"): nessun nome/numero da leggere e nessun hash da confrontare.
+    await page.route("https://cdn.jsdelivr.net/**", (route) => route.abort());
+
+    // ONE_PIXEL_PNG forza il fallback full-frame (vedi sopra): l'intera
+    // "foto" analizzata resta un singolo pixel ingrandito, quindi ogni dHash
+    // calcolato su di essa (carta intera o ritaglio artwork, qualunque
+    // ritaglio: un solo pixel sorgente riempie il canvas 9x8 di un colore
+    // costante) e' deterministicamente "0000000000000000" - nessun confronto
+    // di pixel adiacenti puo' differire se sono tutti uguali. Blueprint
+    // 344562 = Frosmoth (Mega Symphonia, data/cardtrader.db) scelto solo
+    // perche' reale e con un nome distintivo da verificare in UI; il
+    // contenuto dell'immagine di riferimento vera non conta per questo test.
+    await page.route("**/data/scanner_index.json", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        fingerprint_version: 1,
+        entries: [{ blueprint_id: 344562, full_hash: "0000000000000000", art_hash: "0000000000000000" }],
+      }),
+    }));
+
+    await page.goto(`${BASE_URL}/scan`, { waitUntil: "domcontentloaded" });
+    const input = page.locator('input[type="file"]').first();
+    await input.setInputFiles({ name: "visual-only.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG });
+
+    await expect(page.getByRole("heading", { name: /^Frosmoth$/i }).first()).toBeVisible({ timeout: 30_000 });
+    // Nessuna evidenza di nome/numero (OCR muto): la confidenza deve restare
+    // bassa e visibile, mai spacciata per un match certo.
+    await expect(page.getByText(/Confidenza bassa/i)).toBeVisible();
+  });
+
   test("OCR zonale + collector number corregge O/1 e sceglie la ristampa esatta", async ({ page }) => {
     // Stub locale del worker: esercita il vero pipeline UI/catalogo senza rete
     // Tesseract. Il numero contiene apposta I al posto di 1, errore tipico OCR.

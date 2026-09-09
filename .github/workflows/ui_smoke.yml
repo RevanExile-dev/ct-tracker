@@ -16,6 +16,27 @@ jobs:
     defaults:
       run:
         working-directory: web
+    # Il catalogo/prezzi vive su Postgres (non piu' nei due file .db
+    # committati in git, rimossi dalla migrazione a Postgres): senza un
+    # database vero qui ogni pagina/API tornerebbe vuota o in errore, e
+    # questi test (che interagiscono con dropdown espansione/rarita' e con
+    # carte cercabili via scanner) non avrebbero nulla su cui lavorare.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ct_tracker_ui_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_URL: postgres://postgres:postgres@localhost:5432/ct_tracker_ui_smoke
     steps:
       - uses: actions/checkout@v4
 
@@ -32,6 +53,11 @@ jobs:
         run: |
           npm install --no-save --package-lock=false @playwright/test
           npx playwright install --with-deps chromium
+
+      - name: Schema + dati minimi di test su Postgres
+        run: |
+          psql "$POSTGRES_URL" -f db/schema.sql
+          psql "$POSTGRES_URL" -f tests/fixtures/smoke-seed.sql
 
       - name: Build
         run: npm run build

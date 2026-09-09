@@ -46,7 +46,8 @@ def format_price(cents, currency):
 
 
 def find_drops(conn, threshold_pct: float):
-    rows = conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         """
         SELECT b.id, b.name, b.expansion_name, lp.min_price_cents,
                lp.min_price_currency, lp.prev_price_cents
@@ -56,7 +57,8 @@ def find_drops(conn, threshold_pct: float):
           AND lp.prev_price_cents IS NOT NULL AND lp.prev_price_cents > 0
           AND lp.min_price_cents < lp.prev_price_cents
         """
-    ).fetchall()
+    )
+    rows = cur.fetchall()
     drops = []
     for bp_id, name, expansion_name, price, currency, prev in rows:
         pct = (price - prev) / prev * 100
@@ -85,17 +87,18 @@ def load_watchlist(conn):
         return []
     ids = [e["id"] for e in entries]
     thresholds = {e["id"]: e.get("alert_below") for e in entries}
-    placeholders = ",".join("?" * len(ids))
-    rows = conn.execute(
-        f"""
+    cur = conn.cursor()
+    cur.execute(
+        """
         SELECT b.id, b.name, b.expansion_name, lp.min_price_cents,
                lp.min_price_currency, lp.prev_price_cents
         FROM blueprints b
         LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
-        WHERE b.id IN ({placeholders})
+        WHERE b.id = ANY(%s)
         """,
-        ids,
-    ).fetchall()
+        (ids,),
+    )
+    rows = cur.fetchall()
     return [row + (thresholds.get(row[0]),) for row in rows]
 
 

@@ -1,0 +1,69 @@
+name: Scanner - costruisci indice visivo
+
+# Chiude il gap descritto in docs/card_scanner_architecture.md sezione 7:
+# genera web/public/data/scanner_index.json (dHash carta intera + artwork
+# per ogni blueprint) leggendo le immagini di riferimento gia' presenti nel
+# catalogo. Incrementale via data/scanner_fingerprint_cache.json: una carta
+# gia' in cache con lo stesso image_url non viene riscaricata, quindi ogni
+# run dopo la prima e' economica.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Numero massimo di blueprint da calcolare in questa run (vuoto = nessun limite)"
+        required: false
+        default: ""
+  workflow_run:
+    workflows: ["Sync catalogo (carte tracciate)"]
+    types: [completed]
+  schedule:
+    # Backfill incrementale del resto del catalogo: la cache rende ogni run
+    # economica dopo la prima, quindi un limite basso e' sufficiente.
+    - cron: "15 */6 * * *"
+
+permissions:
+  contents: write
+
+# Stesso gruppo dei workflow di sync DB (vedi CLAUDE.md, disciplina di
+# verifica #4): anche questo workflow scrive sul repo (cache + indice) e non
+# deve mai correre in parallelo con sync_catalog/sync_prices*.
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
+jobs:
+  build-scanner-index:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Costruisci indice
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ]; then
+            python scripts/build_scanner_index.py --limit "$LIMIT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python scripts/build_scanner_index.py
+          else
+            # schedule / workflow_run: backfill a piccoli passi, mai un job
+            # lunghissimo che scarica tutto il catalogo in un colpo solo.
+            python scripts/build_scanner_index.py --limit 4000
+          fi
+
+      - name: Commit e push
+        run: |
+          git config user.name "ct-tracker-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/scanner_fingerprint_cache.json web/public/data/scanner_index.json
+          git diff --staged --quiet || git commit -m "chore: aggiorna indice visivo scanner"
+          git push

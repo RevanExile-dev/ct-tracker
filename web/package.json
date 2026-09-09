@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/copy-wasm.js",
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
@@ -17,7 +16,7 @@
     "pg": "8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "sql.js": "1.10.3",
+    "server-only": "^0.0.1",
     "three": "0.185.1"
   },
   "devDependencies": {
@@ -25,7 +24,6 @@
     "@types/pg": "8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
-    "@types/sql.js": "1.4.9",
     "@types/three": "0.185.1",
     "autoprefixer": "10.4.19",
     "eslint": "^9.39.5",

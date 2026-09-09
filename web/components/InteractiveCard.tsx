@@ -82,18 +82,11 @@ export default function InteractiveCard({ children, className = "", level = "til
       data-level={level}
       onPointerDown={(event) => {
         if (event.pointerType === "mouse" && event.button !== 0) return;
-        // Bug reale trovato eseguendo davvero il sito (non solo letto):
-        // setPointerCapture() sul contenitore fa si' che TUTTI gli eventi
-        // successivi per questo pointerId (compreso "click", sotto mouse -
-        // il touch si comporta diversamente e non ne risente) vengano
-        // ritargettati al contenitore stesso, anche se il puntatore e'
-        // rilasciato fisicamente sopra un bottone annidato (stella binder,
-        // cuore desideri). Risultato: click del mouse su quei bottoni
-        // silenziosamente ignorato. Attenzione: SOLO "button", non "a" -
-        // il link principale della carta (CardTile, BinderBook) e' proprio
-        // cio' che ha bisogno della cattura/soppressione-click per
-        // distinguere un tap (naviga) da un trascinamento (sfoglio Binder);
-        // escluderlo romperebbe quel meccanismo, verificato dal vivo.
+        // Escluso "button/input/..." (non "a"): un tap/click su una stella
+        // binder o un cuore desideri annidati non deve avviare il
+        // tracking di trascinamento di questo contenitore, altrimenti la
+        // successiva (eventuale) cattura del pointer sotto retargetta i
+        // loro eventi mouse (vedi sotto) invece di lasciarli al bottone.
         const interactive = (event.target as HTMLElement).closest?.("button, input, select, textarea");
         if (interactive) return;
         pointerActiveRef.current = true;
@@ -101,7 +94,6 @@ export default function InteractiveCard({ children, className = "", level = "til
         dragStartRef.current = { x: event.clientX, y: event.clientY };
         suppressClickRef.current = false;
         event.currentTarget.dataset.pressed = "true";
-        event.currentTarget.setPointerCapture(event.pointerId);
         queuePoint(event.clientX, event.clientY);
       }}
       onPointerMove={(event) => {
@@ -113,8 +105,29 @@ export default function InteractiveCard({ children, className = "", level = "til
           // click sulla carta soppresso, rendendo le carte del binder poco
           // reattive al tocco. Il mouse resta a 5px: un click e' gia' preciso.
           const threshold = event.pointerType === "touch" ? 12 : 5;
-          if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= threshold) {
+          if (!suppressClickRef.current && start && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= threshold) {
             suppressClickRef.current = true;
+            // Cattura il pointer SOLO ora che il trascinamento e' confermato,
+            // non gia' su ogni pointerdown. Bug reale trovato eseguendo
+            // davvero il sito buildato (non solo letto): setPointerCapture()
+            // ritargetta al contenitore anche il "click" nativo che segue -
+            // chiamandola su OGNI pressione, un semplice click col mouse
+            // (nessun trascinamento) faceva ritargettare il click dal Link
+            // annidato (un discendente) al contenitore stesso (un suo
+            // antenato): il click non attraversava piu' affatto il Link,
+            // quindi la navigazione non partiva mai - "apro una carta e non
+            // succede nulla", riprodotto e verificato con
+            // composedPath()/URL invariato dopo il click. Ritardando la
+            // cattura a quando il trascinamento e' confermato, un click
+            // normale non la innesca piu' e il Link riceve l'evento
+            // regolarmente; non sul touch, che ha gia' una cattura implicita
+            // nativa (stesso motivo/verifica di BinderBook.handlePointerMove).
+            // Non "=== mouse": una penna/stilo (pointerType "pen") non ha la
+            // cattura implicita del touch, quindi andrebbe trattata come il
+            // mouse qui - suggerito in review, "!== touch" copre entrambi.
+            if (event.pointerType !== "touch") {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }
           }
           queuePoint(event.clientX, event.clientY);
           return;

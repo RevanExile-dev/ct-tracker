@@ -4,9 +4,10 @@ Traccia prezzi, andamento e immagini delle tue carte Pokémon TCG (Illustration
 Rare, Special Illustration Rare, full art, promo...) da CardTrader.
 
 - **Dati**: script Python + GitHub Actions, gira gratis nel cloud, aggiorna i
-  prezzi **ogni giorno automaticamente**.
-- **Sito**: Next.js, deploy gratuito su Vercel, legge il database
-  direttamente nel browser (nessun server da mantenere).
+  prezzi **ogni giorno automaticamente**, scrivendoli in un database Postgres
+  gratuito (Neon/Vercel Postgres).
+- **Sito**: Next.js, deploy gratuito su Vercel, interroga quel database
+  server-side (nessun database scaricato nel browser).
 
 Tutta la procedura qui sotto si fa **dal browser**, senza installare nulla sul
 tuo PC.
@@ -38,7 +39,29 @@ tuo PC.
 > browser con terminale incluso, da lì puoi incollare i file e fare `git push`
 > normalmente.
 
-## 2. Aggiungi il tuo token CardTrader come Secret
+## 2. Crea un database Postgres gratuito
+
+Sync e sito condividono lo stesso database (catalogo, prezzi, login) — va
+creato prima di lanciare qualunque sync, altrimenti gli script escono subito
+con un errore ("POSTGRES_URL mancante").
+
+1. Vai su **neon.tech** → Sign up (gratis, nessuna carta richiesta) → **New
+   Project** (nome a piacere)
+2. Nella dashboard del progetto, tab **Connect**, copia la connection string
+   (inizia con `postgres://...`)
+3. Nel repo GitHub → **Settings → Secrets and variables → Actions → New
+   repository secret** → nome `POSTGRES_URL`, valore la stringa appena
+   copiata
+
+Non serve creare le tabelle a mano: il primo sync (punto 6) le crea da solo
+al primo avvio.
+
+Se in futuro pubblichi il sito su Vercel con l'integrazione "Vercel Postgres"
+invece che con un account Neon separato, la connection string è la stessa
+cosa: usa quella al posto di crearne una nuova, per non avere due database
+scollegati.
+
+## 3. Aggiungi il tuo token CardTrader come Secret
 
 1. Sul tuo profilo CardTrader → Impostazioni → API, copia il token
 2. Nel repo GitHub → **Settings → Secrets and variables → Actions → New
@@ -49,14 +72,14 @@ tuo PC.
 Il token non finisce mai nel codice, resta cifrato da GitHub e visibile solo
 ai workflow.
 
-## 3. Trova i codici delle espansioni che ti interessano
+## 4. Trova i codici delle espansioni che ti interessano
 
 1. Nel repo → tab **Actions** → workflow **"Elenca espansioni disponibili"**
    → **Run workflow**
 2. Aspetta il completamento (circa 10-20 secondi), apri il log del job e
    troverai la lista di tutte le espansioni Pokémon con il relativo `code`
 
-## 4. Configura le espansioni da tracciare
+## 5. Configura le espansioni da tracciare
 
 1. Nel repo, apri `config/tracked_sets.json`, clicca la matita (edit)
 2. Sostituisci l'array `expansion_codes` con i codici che ti interessano,
@@ -68,14 +91,15 @@ ai workflow.
 
 Puoi tornare qui e aggiungere nuove espansioni ogni volta che vuoi.
 
-## 5. Primo sync del catalogo (carte + immagini)
+## 6. Primo sync del catalogo (carte + immagini)
 
 1. Tab **Actions** → workflow **"Sync catalogo (carte tracciate)"** → **Run
    workflow**
 2. Aspetta il completamento: scarica tutte le carte delle espansioni scelte
-   e aggiorna `data/cardtrader.db`
+   e le scrive nel database Postgres del punto 2 (crea le tabelle da solo al
+   primo avvio)
 
-## 6. Primo sync dei prezzi
+## 7. Primo sync dei prezzi
 
 Ci sono **due workflow prezzi distinti**, perché con molte espansioni
 tracciate un sync completo può richiedere diverse ore (l'API marketplace è
@@ -93,12 +117,13 @@ Lancia entrambi manualmente la prima volta (tab **Actions** → workflow →
 **Run workflow**) per avere subito dei dati, invece di aspettare il prossimo
 giro schedulato.
 
-Da qui in poi **non devi fare più nulla**: i workflow girano da soli,
-aggiungono un nuovo punto storico per ogni carta e aggiornano il sito. Se un
-sync lungo viene interrotto a metà, non perde il lavoro già fatto: salva e
-pusha un checkpoint ogni ~300 carte.
+Da qui in poi **non devi fare più nulla**: i workflow girano da soli e
+aggiungono un nuovo punto storico per ogni carta direttamente nel database.
+Se un sync lungo viene interrotto a metà, non perde il lavoro già fatto:
+ogni carta viene scritta e confermata nel database una per una, quindi al
+riavvio riparte semplicemente dalle carte non ancora aggiornate quel giorno.
 
-## 7. Metti online il sito (Vercel, gratis)
+## 8. Metti online il sito (Vercel, gratis)
 
 1. Vai su vercel.com → **Sign up / Log in with GitHub** (autorizzi Vercel ad
    accedere ai tuoi repo — lo fai tu, con un click, io non ho mai accesso al
@@ -106,13 +131,18 @@ pusha un checkpoint ogni ~300 carte.
 2. **Add New → Project**, seleziona il repo privato appena creato
 3. Alla voce **Root Directory** seleziona la cartella **`web`**
 4. Framework Preset: Vercel riconosce automaticamente **Next.js**
-5. Deploy
+5. **Settings → Environment Variables** → aggiungi `POSTGRES_URL` con la
+   stessa connection string del punto 2 (Production, e opzionalmente
+   Preview/Development)
+6. Deploy
 
 In 1-2 minuti ottieni un link tipo `https://ct-tracker.vercel.app` — apri
-quello dal telefono o dal PC, niente da installare, e si aggiorna da solo ad
-ogni push (quindi anche dopo ogni sync prezzi giornaliero).
+quello dal telefono o dal PC, niente da installare. Si ridispiega da solo
+solo quando cambia il **codice** (un push su `main`): i sync di prezzi e
+catalogo scrivono direttamente nel database e non toccano più il sito, quindi
+i nuovi prezzi compaiono subito senza bisogno di un nuovo deploy.
 
-## 8. Notifiche Telegram sui cali di prezzo (facoltativo, gratis)
+## 9. Notifiche Telegram sui cali di prezzo (facoltativo, gratis)
 
 Se vuoi ricevere un messaggio Telegram quando una carta scende di prezzo,
 senza dover aprire il sito ogni giorno:
@@ -158,25 +188,27 @@ il resto del tracker continua a funzionare normalmente.
 ## Come funziona sotto il cofano
 
 ```
-scripts/sync_catalog.py     → popola data/cardtrader.db con carte + immagini
-                               (URL immagine, non le scarica in locale)
+scripts/sync_catalog.py     → popola le tabelle catalogo su Postgres con
+                               carte + immagini (URL immagine, non le
+                               scarica in locale)
 scripts/sync_prices.py      → ogni carta tracciata, interroga il marketplace
                                e salva uno snapshot di prezzo per la giornata
 scripts/notify_telegram.py  → dopo il sync prezzi, manda un messaggio
                                Telegram se ci sono cali sopra soglia o carte
-                               in watchlist (facoltativo, vedi punto 8)
-web/                         → sito Next.js che legge i database
-                               DIRETTAMENTE nel browser (sql.js/WASM),
-                               nessun backend da mantenere
+                               in watchlist (facoltativo, vedi punto 9)
+web/                         → sito Next.js: le pagine interrogano il
+                               database Postgres lato server (Route Handler
+                               in web/app/api/**), il browser riceve solo
+                               JSON già pronto
 ```
 
-I dati sono divisi in **due database** per restare veloci da scaricare:
+Tutto vive nello **stesso database Postgres** (`web/db/schema.sql`):
 
-- `data/cardtrader.db` — catalogo carte + **solo l'ultimo prezzo noto** di
-  ognuna: file piccolo, è quello che il sito scarica sempre (griglia
-  principale, filtri, ricerca)
-- `data/price_history.db` — lo **storico completo** giorno per giorno: il
-  sito lo scarica solo quando apri il dettaglio di una carta (serve per il
+- tabella `blueprints` + `latest_prices` — catalogo carte e **solo l'ultimo
+  prezzo noto** di ognuna: quello che la griglia principale, i filtri e la
+  ricerca interrogano sempre
+- tabella `price_snapshots` — lo **storico completo** giorno per giorno,
+  interrogato solo quando apri il dettaglio di una carta (serve per il
   grafico), non per navigare il catalogo. Per restare compatto nel tempo, i
   dati più vecchi di 120 giorni vengono automaticamente compattati da
   giornalieri a settimanali (un punto a settimana invece di uno al giorno)
@@ -198,7 +230,7 @@ più il grafico si popola.
    controllo automatico ogni giorno alle 04:30 UTC, utile per i set
    annunciati ma non ancora pubblicati su CardTrader al momento in cui li
    aggiungi. Per i prezzi resta comunque da lanciare a mano uno dei due
-   workflow prezzi la prima volta (punto 6), o aspettare il prossimo giro
+   workflow prezzi la prima volta (punto 7), o aspettare il prossimo giro
    schedulato.
 
 ## Sviluppo locale (facoltativo)
@@ -207,11 +239,12 @@ Se in futuro vuoi lavorarci dal tuo PC:
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # inserisci il tuo token
+cp .env.example .env   # inserisci token e POSTGRES_URL, poi esportali nella shell
 python scripts/sync_catalog.py
 python scripts/sync_prices.py
 
 cd web
+cp .env.example .env.local   # POSTGRES_URL - stesso valore di sopra
 npm install
 npm run dev
 ```

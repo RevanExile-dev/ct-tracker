@@ -12,10 +12,10 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 # Condiviso con sync_catalog.yml e sync_prices_full.yml (vedi li' per il
-# motivo): mai due sync in scrittura sugli stessi DB in parallelo.
+# motivo): mai due sync in scrittura sul database Postgres in parallelo.
 concurrency:
   group: ct-tracker-db-write
   cancel-in-progress: false
@@ -38,18 +38,15 @@ jobs:
       - name: Installa dipendenze
         run: pip install -r requirements.txt
 
-      - name: Configura identita' git per i checkpoint
-        run: |
-          git config user.name "ct-tracker-bot"
-          git config user.email "actions@users.noreply.github.com"
-
       - name: Aggiorna prezzi (solo espansioni recenti)
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: python scripts/sync_prices.py --only-daily ${{ inputs.force && '--force' || '' }}
 
       - name: Notifica Telegram (cali di prezzo e watchlist)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: python scripts/notify_telegram.py

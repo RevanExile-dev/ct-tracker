@@ -53,6 +53,14 @@ for (const device of mobileDevices) {
       const expansion = expansionTrigger(page);
       await expect(expansion).toBeVisible({ timeout: 30_000 });
 
+      // Piccola pausa prima della PRIMA interazione: l'elemento e' visibile
+      // (HTML renderizzato lato server) ma su un runner CI condiviso/lento
+      // l'hydration di React (che attacca l'handler onClick) puo' non
+      // essere ancora completata - un tap troppo precoce non fa nulla,
+      // causa reale di un flake intermittente osservato in CI
+      // (aria-expanded rimasto "false" per l'intero timeout di retry).
+      await page.waitForTimeout(300);
+
       // TAP reale (non un click sintetico): e' proprio la sequenza touch a
       // essere stata segnalata come rotta ("appena li clicco si auto
       // chiudono"). Il pannello deve restare aperto ben oltre l'istante del

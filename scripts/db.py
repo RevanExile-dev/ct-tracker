@@ -1,296 +1,73 @@
 """
-Gestione dei due database SQLite locali, entrambi versionati dentro data/ e
-letti direttamente nel browser tramite sql.js:
+Gestione del Postgres di CartaViva (lo stesso database usato da login/
+profili, POSTGRES_URL - vedi web/lib/pgPool.ts): catalogo (espansioni,
+carte), l'ultimo prezzo noto di ogni carta (latest_prices) e le inserzioni
+piu' economiche del momento (price_listings), piu' lo storico
+giorno-per-giorno dei prezzi (price_snapshots).
 
-- cardtrader.db: catalogo (espansioni, carte), l'ultimo prezzo noto di ogni
-  carta (latest_prices) e le inserzioni piu' economiche del momento
-  (price_listings). E' il file scaricato ad OGNI visita del sito (serve per
-  la griglia), quindi va tenuto piccolo.
-- price_history.db: lo storico giorno-per-giorno dei prezzi (price_snapshots).
-  Cresce nel tempo (una riga per carta per giorno), ma viene scaricato solo
-  quando apri il dettaglio di una carta specifica, non per navigare il sito.
-  I dati piu' vecchi di RETENTION_DAILY_DAYS vengono compressi automaticamente
-  a un punto a settimana, cosi' la crescita a lungo termine resta limitata.
+Migrato da due file SQLite locali versionati in git (data/cardtrader.db +
+data/price_history.db, vedi scripts/migrate_to_postgres.py per la
+migrazione una tantum): ogni sync scriveva li' e poi faceva commit+push
+degli 85MB dei due .db su main, ridispiegando l'intero sito su Vercel ad
+ogni run e riempiendo la quota di Deployment Storage. Con Postgres il sync
+scrive direttamente nel database - zero commit/push per un aggiornamento
+prezzi.
+
+Lo schema vive in un unico posto, web/db/schema.sql (fonte di verita'
+anche per le tabelle Auth.js/binder/wishlist/filtri): init_db() lo applica
+per intero ad ogni avvio (idempotente: IF NOT EXISTS ovunque, e in futuro
+eventuali ALTER TABLE ADD COLUMN IF NOT EXISTS per nuove colonne), stesso
+principio delle migrazioni incrementali gia' in uso prima con SQLite.
 """
-import sqlite3
+import os
+import sys
 from pathlib import Path
+
+import psycopg2
+import psycopg2.extras
 
 CARDTRADER_ORIGIN = "https://cardtrader.com"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = REPO_ROOT / "data" / "cardtrader.db"
-HISTORY_DB_PATH = REPO_ROOT / "data" / "price_history.db"
+SCHEMA_PATH = REPO_ROOT / "web" / "db" / "schema.sql"
 
 RETENTION_DAILY_DAYS = 120  # oltre questa soglia lo storico si comprime a 1 punto/settimana
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS expansions (
-    id INTEGER PRIMARY KEY,
-    game_id INTEGER,
-    code TEXT,
-    name TEXT
-);
 
-CREATE TABLE IF NOT EXISTS blueprints (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    version TEXT,
-    game_id INTEGER,
-    category_id INTEGER,
-    expansion_id INTEGER,
-    expansion_code TEXT,
-    expansion_name TEXT,
-    image_url TEXT,
-    scryfall_id TEXT,
-    tcg_player_id TEXT,
-    rarity TEXT,
-    is_premium INTEGER DEFAULT 0,
-    last_synced_at TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_blueprint_expansion
-    ON blueprints (expansion_id);
-
-CREATE INDEX IF NOT EXISTS idx_blueprint_rarity
-    ON blueprints (rarity);
-
--- Solo l'ultimo prezzo noto e quello precedente (per la freccina su/giu'),
--- una riga per carta: e' una "vista materializzata" di price_history.db,
--- cosi' la griglia principale non deve mai scaricare lo storico completo.
-CREATE TABLE IF NOT EXISTS latest_prices (
-    blueprint_id INTEGER PRIMARY KEY,
-    captured_at TEXT,
-    captured_at_ts TEXT,
-    min_price_cents INTEGER,
-    min_price_currency TEXT,
-    avg_price_cents INTEGER,
-    listings_count INTEGER,
-    cheapest_condition TEXT,
-    cheapest_language TEXT,
-    cheapest_foil INTEGER,
-    -- Tutte le lingue con almeno un'inserzione attiva (non solo quella
-    -- della piu' economica), delimitate da virgole (es. ",en,it,jp,") per
-    -- poter filtrare "carte disponibili in lingua X" con LIKE '%,X,%'.
-    languages_available TEXT,
-    prev_price_cents INTEGER,
-    prev_captured_at TEXT,
-    -- Prezzo "migliore" per un compratore reale: preferisce Near Mint +
-    -- CardTrader Zero, allentando i vincoli a cascata se non esiste (vedi
-    -- _pick_best_listing). min_price_cents sopra resta il puro piu'
-    -- economico in assoluto, tenuto come dato secondario ("prezzo piu'
-    -- basso"), non sostituito.
-    best_price_cents INTEGER,
-    best_price_currency TEXT,
-    best_condition TEXT,
-    best_language TEXT,
-    best_can_sell_via_hub INTEGER,
-    prev_best_price_cents INTEGER,
-    -- Serie ESATTA senza fallback: italiano + Near Mint + CardTrader Zero.
-    -- A differenza di best_price_cents sopra (che allenta i vincoli a
-    -- cascata se non trova un'inserzione che li soddisfa tutti), qui NULL
-    -- significa "nessuna offerta con questo identico profilo", mai un
-    -- prezzo di un profilo diverso spacciato per lo stesso - altrimenti un
-    -- confronto corrente/precedente potrebbe paragonare un NM Zero di ieri
-    -- con uno Slightly Played di oggi (bug segnalato: il vecchio
-    -- best_price_cents non distingueva).
-    it_nm_zero_price_cents INTEGER,
-    it_nm_zero_price_currency TEXT,
-    it_nm_zero_listings_count INTEGER,
-    prev_it_nm_zero_price_cents INTEGER,
-    FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
-);
-
--- Le migliori inserzioni live per ogni carta (non storico: ad ogni sync
--- sostituiamo le righe della carta con le inserzioni piu' economiche del
--- momento, cosi' la tabella resta piccola invece di accumulare per sempre).
-CREATE TABLE IF NOT EXISTS price_listings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    blueprint_id INTEGER NOT NULL,
-    captured_at TEXT NOT NULL,
-    price_cents INTEGER NOT NULL,
-    price_currency TEXT,
-    condition TEXT,
-    language TEXT,
-    quantity INTEGER,
-    seller_username TEXT,
-    can_sell_via_hub INTEGER DEFAULT 0,
-    -- Paese di spedizione del venditore (es. "IT"), utile a colpo d'occhio
-    -- quanto la lingua della carta; CardTrader non espone invece nessun
-    -- dato di reputazione/numero vendite in questa risposta (verificato).
-    ships_from_country TEXT,
-    FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_listings_blueprint
-    ON price_listings (blueprint_id, price_cents);
-
--- Il filtro combinato lingua/condizione/Zero (web/lib/db.ts, fetchCards)
--- interroga price_listings due volte per query (il sottofiltro "b.id IN
--- (...)" e il LEFT JOIN che sceglie l'inserzione filtrata piu' economica):
--- senza questi indici ogni chiamata scansiona tutta la tabella (oltre
--- 200mila righe dopo il sync completo). Trovato investigando un lag reale
--- di ~2s sulla pagina "carte in movimento" con filtri attivi.
-CREATE INDEX IF NOT EXISTS idx_listings_condition ON price_listings (condition);
-CREATE INDEX IF NOT EXISTS idx_listings_language ON price_listings (language);
-CREATE INDEX IF NOT EXISTS idx_listings_zero ON price_listings (can_sell_via_hub);
-
-CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-"""
-
-HISTORY_SCHEMA = """
-CREATE TABLE IF NOT EXISTS price_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    blueprint_id INTEGER NOT NULL,
-    captured_at TEXT NOT NULL,      -- data UTC, formato YYYY-MM-DD
-    captured_at_ts TEXT NOT NULL,   -- timestamp completo ISO
-    min_price_cents INTEGER,
-    min_price_currency TEXT,
-    avg_price_cents INTEGER,
-    listings_count INTEGER,
-    cheapest_condition TEXT,
-    cheapest_language TEXT,
-    cheapest_foil INTEGER,
-    best_price_cents INTEGER,
-    -- Stessa semantica esatta-senza-fallback di latest_prices.
-    -- it_nm_zero_price_cents (vedi commento li'): NULL se quel giorno non
-    -- c'era nessuna offerta italiano+Near Mint+Zero, mai un prezzo di un
-    -- profilo diverso.
-    it_nm_zero_price_cents INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_price_blueprint_date
-    ON price_snapshots (blueprint_id, captured_at);
-"""
-
-
-def get_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def get_history_connection() -> sqlite3.Connection:
-    HISTORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(HISTORY_DB_PATH)
-
-
-def _ensure_column(conn, table: str, column: str, coltype: str):
-    """Aggiunge una colonna a una tabella gia' esistente se manca (SQLite
-    CREATE TABLE IF NOT EXISTS non la aggiungerebbe da solo su un database
-    creato prima che la colonna fosse introdotta)."""
-    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+def get_connection():
+    dsn = os.environ.get("POSTGRES_URL")
+    if not dsn:
+        print("ERRORE: variabile d'ambiente POSTGRES_URL mancante.", file=sys.stderr)
+        sys.exit(1)
+    return psycopg2.connect(dsn)
 
 
 def init_db():
+    """Applica web/db/schema.sql per intero (idempotente): unica fonte di
+    verita' per lo schema, condivisa con le tabelle Auth.js/applicative di
+    web/. Va rilanciato ad ogni avvio dei sync, non solo una volta - stesso
+    principio del vecchio init_db() SQLite che riallineava lo schema prima
+    di ogni run."""
     conn = get_connection()
-    conn.executescript(SCHEMA)
-    _migrate_legacy_price_snapshots(conn)
-    _ensure_column(conn, "latest_prices", "languages_available", "TEXT")
-    _ensure_column(conn, "latest_prices", "best_price_cents", "INTEGER")
-    _ensure_column(conn, "latest_prices", "best_price_currency", "TEXT")
-    _ensure_column(conn, "latest_prices", "best_condition", "TEXT")
-    _ensure_column(conn, "latest_prices", "best_language", "TEXT")
-    _ensure_column(conn, "latest_prices", "best_can_sell_via_hub", "INTEGER")
-    _ensure_column(conn, "latest_prices", "prev_best_price_cents", "INTEGER")
-    _ensure_column(conn, "latest_prices", "it_nm_zero_price_cents", "INTEGER")
-    _ensure_column(conn, "latest_prices", "it_nm_zero_price_currency", "TEXT")
-    _ensure_column(conn, "latest_prices", "it_nm_zero_listings_count", "INTEGER")
-    _ensure_column(conn, "latest_prices", "prev_it_nm_zero_price_cents", "INTEGER")
-    _ensure_column(conn, "price_listings", "ships_from_country", "TEXT")
-    conn.commit()
-    conn.close()
-
-    history_conn = get_history_connection()
-    history_conn.executescript(HISTORY_SCHEMA)
-    _ensure_column(history_conn, "price_snapshots", "best_price_cents", "INTEGER")
-    _ensure_column(history_conn, "price_snapshots", "it_nm_zero_price_cents", "INTEGER")
-    history_conn.commit()
-    history_conn.close()
-
-
-def _migrate_legacy_price_snapshots(conn):
-    """Una tantum: le prime versioni del tracker tenevano price_snapshots
-    dentro cardtrader.db insieme al catalogo. Se troviamo ancora quella
-    tabella qui, spostiamo i dati in price_history.db e la eliminiamo."""
-    has_legacy = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='price_snapshots'"
-    ).fetchone()
-    if not has_legacy:
-        return
-
-    print("Migrazione: sposto price_snapshots da cardtrader.db a price_history.db...")
-    rows = conn.execute(
-        "SELECT blueprint_id, captured_at, captured_at_ts, min_price_cents, "
-        "min_price_currency, avg_price_cents, listings_count, cheapest_condition, "
-        "cheapest_language, cheapest_foil FROM price_snapshots"
-    ).fetchall()
-
-    history_conn = get_history_connection()
-    history_conn.executescript(HISTORY_SCHEMA)
-    history_conn.executemany(
-        """INSERT INTO price_snapshots
-           (blueprint_id, captured_at, captured_at_ts, min_price_cents,
-            min_price_currency, avg_price_cents, listings_count,
-            cheapest_condition, cheapest_language, cheapest_foil)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        rows,
-    )
-    history_conn.commit()
-
-    # Ripopola latest_prices (ultimo prezzo noto + precedente) dai dati appena
-    # migrati, altrimenti le carte gia' sincronizzate risulterebbero senza
-    # prezzo finche' non arriva il prossimo sync.
-    per_blueprint: dict = {}
-    for r in rows:
-        bp_id = r[0]
-        per_blueprint.setdefault(bp_id, []).append(r)
-    backfilled = 0
-    for bp_id, snaps in per_blueprint.items():
-        snaps.sort(key=lambda r: r[1])  # per captured_at, crescente
-        latest = snaps[-1]
-        prev = snaps[-2] if len(snaps) > 1 else None
-        conn.execute(
-            """
-            INSERT INTO latest_prices
-                (blueprint_id, captured_at, captured_at_ts, min_price_cents,
-                 min_price_currency, avg_price_cents, listings_count,
-                 cheapest_condition, cheapest_language, cheapest_foil,
-                 prev_price_cents, prev_captured_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(blueprint_id) DO NOTHING
-            """,
-            (
-                bp_id, latest[1], latest[2], latest[3], latest[4], latest[5],
-                latest[6], latest[7], latest[8], latest[9],
-                prev[3] if prev else None, prev[1] if prev else None,
-            ),
-        )
-        backfilled += 1
-    history_conn.close()
-
-    conn.execute("DROP TABLE price_snapshots")
-    conn.commit()
-    conn.execute("VACUUM")  # altrimenti sqlite non restituisce lo spazio liberato dalla tabella spostata
-    print(f"Migrazione completata: {len(rows)} righe spostate, "
-          f"{backfilled} carte ripopolate in latest_prices.")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def upsert_expansion(conn, exp: dict):
-    conn.execute(
-        """
-        INSERT INTO expansions (id, game_id, code, name)
-        VALUES (:id, :game_id, :code, :name)
-        ON CONFLICT(id) DO UPDATE SET
-            game_id=excluded.game_id, code=excluded.code, name=excluded.name
-        """,
-        exp,
-    )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO expansions (id, game_id, code, name)
+            VALUES (%(id)s, %(game_id)s, %(code)s, %(name)s)
+            ON CONFLICT (id) DO UPDATE SET
+                game_id = EXCLUDED.game_id, code = EXCLUDED.code, name = EXCLUDED.name
+            """,
+            exp,
+        )
 
 
 def _best_image_url(bp: dict) -> str | None:
@@ -307,37 +84,38 @@ def _best_image_url(bp: dict) -> str | None:
 
 def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
                        is_premium: bool, synced_at: str):
-    conn.execute(
-        """
-        INSERT INTO blueprints
-            (id, name, version, game_id, category_id, expansion_id,
-             expansion_code, expansion_name, image_url, scryfall_id,
-             tcg_player_id, is_premium, last_synced_at)
-        VALUES
-            (:id, :name, :version, :game_id, :category_id, :expansion_id,
-             :expansion_code, :expansion_name, :image_url, :scryfall_id,
-             :tcg_player_id, :is_premium, :synced_at)
-        ON CONFLICT(id) DO UPDATE SET
-            name=excluded.name, version=excluded.version,
-            image_url=excluded.image_url, is_premium=excluded.is_premium,
-            last_synced_at=excluded.last_synced_at
-        """,
-        {
-            "id": bp["id"],
-            "name": bp.get("name"),
-            "version": bp.get("version"),
-            "game_id": bp.get("game_id"),
-            "category_id": bp.get("category_id"),
-            "expansion_id": bp.get("expansion_id"),
-            "expansion_code": expansion_code,
-            "expansion_name": expansion_name,
-            "image_url": _best_image_url(bp),
-            "scryfall_id": bp.get("scryfall_id"),
-            "tcg_player_id": bp.get("tcg_player_id"),
-            "is_premium": int(is_premium),
-            "synced_at": synced_at,
-        },
-    )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO blueprints
+                (id, name, version, game_id, category_id, expansion_id,
+                 expansion_code, expansion_name, image_url, scryfall_id,
+                 tcg_player_id, is_premium, last_synced_at)
+            VALUES
+                (%(id)s, %(name)s, %(version)s, %(game_id)s, %(category_id)s, %(expansion_id)s,
+                 %(expansion_code)s, %(expansion_name)s, %(image_url)s, %(scryfall_id)s,
+                 %(tcg_player_id)s, %(is_premium)s, %(synced_at)s)
+            ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name, version = EXCLUDED.version,
+                image_url = EXCLUDED.image_url, is_premium = EXCLUDED.is_premium,
+                last_synced_at = EXCLUDED.last_synced_at
+            """,
+            {
+                "id": bp["id"],
+                "name": bp.get("name"),
+                "version": bp.get("version"),
+                "game_id": bp.get("game_id"),
+                "category_id": bp.get("category_id"),
+                "expansion_id": bp.get("expansion_id"),
+                "expansion_code": expansion_code,
+                "expansion_name": expansion_name,
+                "image_url": _best_image_url(bp),
+                "scryfall_id": bp.get("scryfall_id"),
+                "tcg_player_id": bp.get("tcg_player_id"),
+                "is_premium": int(is_premium),
+                "synced_at": synced_at,
+            },
+        )
 
 
 def _product_language(p: dict):
@@ -432,137 +210,141 @@ def _summarize_products(products: list):
     }
 
 
-def insert_price_snapshot(history_conn, blueprint_id: int, captured_at: str,
+def insert_price_snapshot(conn, blueprint_id: int, captured_at: str,
                             captured_at_ts: str, products: list):
     """Aggiunge (o sovrascrive, se rilanciato lo stesso giorno) il punto di
-    storico odierno in price_history.db."""
-    history_conn.execute(
-        "DELETE FROM price_snapshots WHERE blueprint_id = ? AND captured_at = ?",
-        (blueprint_id, captured_at),
-    )
-    summary = _summarize_products(products)
-    if summary is None:
-        history_conn.execute(
+    storico odierno in price_snapshots."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM price_snapshots WHERE blueprint_id = %s AND captured_at = %s",
+            (blueprint_id, captured_at),
+        )
+        summary = _summarize_products(products)
+        if summary is None:
+            cur.execute(
+                """INSERT INTO price_snapshots
+                   (blueprint_id, captured_at, captured_at_ts, min_price_cents,
+                    min_price_currency, avg_price_cents, listings_count,
+                    cheapest_condition, cheapest_language, cheapest_foil, best_price_cents,
+                    it_nm_zero_price_cents)
+                   VALUES (%s, %s, %s, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL)""",
+                (blueprint_id, captured_at, captured_at_ts),
+            )
+            return
+        cur.execute(
             """INSERT INTO price_snapshots
                (blueprint_id, captured_at, captured_at_ts, min_price_cents,
                 min_price_currency, avg_price_cents, listings_count,
                 cheapest_condition, cheapest_language, cheapest_foil, best_price_cents,
                 it_nm_zero_price_cents)
-               VALUES (?, ?, ?, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL)""",
-            (blueprint_id, captured_at, captured_at_ts),
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                blueprint_id, captured_at, captured_at_ts,
+                summary["min_price_cents"], summary["min_price_currency"],
+                summary["avg_price_cents"], summary["listings_count"],
+                summary["cheapest_condition"], summary["cheapest_language"],
+                summary["cheapest_foil"], summary["best_price_cents"],
+                summary["it_nm_zero_price_cents"],
+            ),
         )
-        return
-    history_conn.execute(
-        """INSERT INTO price_snapshots
-           (blueprint_id, captured_at, captured_at_ts, min_price_cents,
-            min_price_currency, avg_price_cents, listings_count,
-            cheapest_condition, cheapest_language, cheapest_foil, best_price_cents,
-            it_nm_zero_price_cents)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            blueprint_id, captured_at, captured_at_ts,
-            summary["min_price_cents"], summary["min_price_currency"],
-            summary["avg_price_cents"], summary["listings_count"],
-            summary["cheapest_condition"], summary["cheapest_language"],
-            summary["cheapest_foil"], summary["best_price_cents"],
-            summary["it_nm_zero_price_cents"],
-        ),
-    )
 
 
-def upsert_latest_price(conn, history_conn, blueprint_id: int, captured_at: str,
+def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
                           captured_at_ts: str, products: list):
-    """Aggiorna la "vista materializzata" latest_prices in cardtrader.db.
-    Il prezzo precedente (per la freccina) viene letto da price_history.db:
-    e' sempre corretto anche se il sync viene rilanciato piu' volte lo
-    stesso giorno, a differenza di tenere il "prev" copiandolo dal valore
-    precedente di latest_prices (che si romperebbe sui rilanci)."""
-    prev_row = history_conn.execute(
-        "SELECT captured_at, min_price_cents, best_price_cents FROM price_snapshots "
-        "WHERE blueprint_id = ? AND captured_at < ? AND min_price_cents IS NOT NULL "
-        "ORDER BY captured_at DESC LIMIT 1",
-        (blueprint_id, captured_at),
-    ).fetchone()
-    prev_captured_at, prev_price_cents, prev_best_price_cents = (
-        prev_row if prev_row else (None, None, None)
-    )
-    # Query separata, non lo stesso prev_row: il giorno piu' recente con UN
-    # prezzo qualsiasi non e' necessariamente lo stesso giorno piu' recente
-    # con un'offerta italiano+Near Mint+Zero - confrontare "corrente" e
-    # "precedente" di questa serie richiede che ENTRAMBI appartengano alla
-    # stessa serie omogenea, non un valore preso da un giorno con un
-    # profilo diverso.
-    prev_exact_row = history_conn.execute(
-        "SELECT it_nm_zero_price_cents FROM price_snapshots "
-        "WHERE blueprint_id = ? AND captured_at < ? AND it_nm_zero_price_cents IS NOT NULL "
-        "ORDER BY captured_at DESC LIMIT 1",
-        (blueprint_id, captured_at),
-    ).fetchone()
-    prev_it_nm_zero_price_cents = prev_exact_row[0] if prev_exact_row else None
+    """Aggiorna la "vista materializzata" latest_prices. Il prezzo
+    precedente (per la freccina) viene letto da price_snapshots: e' sempre
+    corretto anche se il sync viene rilanciato piu' volte lo stesso giorno,
+    a differenza di tenere il "prev" copiandolo dal valore precedente di
+    latest_prices (che si romperebbe sui rilanci)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT captured_at, min_price_cents, best_price_cents FROM price_snapshots "
+            "WHERE blueprint_id = %s AND captured_at < %s AND min_price_cents IS NOT NULL "
+            "ORDER BY captured_at DESC LIMIT 1",
+            (blueprint_id, captured_at),
+        )
+        prev_row = cur.fetchone()
+        prev_captured_at, prev_price_cents, prev_best_price_cents = (
+            prev_row if prev_row else (None, None, None)
+        )
+        # Query separata, non lo stesso prev_row: il giorno piu' recente con
+        # UN prezzo qualsiasi non e' necessariamente lo stesso giorno piu'
+        # recente con un'offerta italiano+Near Mint+Zero - confrontare
+        # "corrente" e "precedente" di questa serie richiede che ENTRAMBI
+        # appartengano alla stessa serie omogenea, non un valore preso da un
+        # giorno con un profilo diverso.
+        cur.execute(
+            "SELECT it_nm_zero_price_cents FROM price_snapshots "
+            "WHERE blueprint_id = %s AND captured_at < %s AND it_nm_zero_price_cents IS NOT NULL "
+            "ORDER BY captured_at DESC LIMIT 1",
+            (blueprint_id, captured_at),
+        )
+        prev_exact_row = cur.fetchone()
+        prev_it_nm_zero_price_cents = prev_exact_row[0] if prev_exact_row else None
 
-    summary = _summarize_products(products) or {
-        "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
-        "listings_count": 0, "cheapest_condition": None, "cheapest_language": None,
-        "cheapest_foil": None, "languages_available": None,
-        "best_price_cents": None, "best_price_currency": None, "best_condition": None,
-        "best_language": None, "best_can_sell_via_hub": None,
-        "it_nm_zero_price_cents": None, "it_nm_zero_price_currency": None,
-        "it_nm_zero_listings_count": 0,
-    }
+        summary = _summarize_products(products) or {
+            "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
+            "listings_count": 0, "cheapest_condition": None, "cheapest_language": None,
+            "cheapest_foil": None, "languages_available": None,
+            "best_price_cents": None, "best_price_currency": None, "best_condition": None,
+            "best_language": None, "best_can_sell_via_hub": None,
+            "it_nm_zero_price_cents": None, "it_nm_zero_price_currency": None,
+            "it_nm_zero_listings_count": 0,
+        }
 
-    conn.execute(
-        """
-        INSERT INTO latest_prices
-            (blueprint_id, captured_at, captured_at_ts, min_price_cents,
-             min_price_currency, avg_price_cents, listings_count,
-             cheapest_condition, cheapest_language, cheapest_foil,
-             languages_available, prev_price_cents, prev_captured_at,
-             best_price_cents, best_price_currency, best_condition,
-             best_language, best_can_sell_via_hub, prev_best_price_cents,
-             it_nm_zero_price_cents, it_nm_zero_price_currency,
-             it_nm_zero_listings_count, prev_it_nm_zero_price_cents)
-        VALUES (:blueprint_id, :captured_at, :captured_at_ts, :min_price_cents,
-                :min_price_currency, :avg_price_cents, :listings_count,
-                :cheapest_condition, :cheapest_language, :cheapest_foil,
-                :languages_available, :prev_price_cents, :prev_captured_at,
-                :best_price_cents, :best_price_currency, :best_condition,
-                :best_language, :best_can_sell_via_hub, :prev_best_price_cents,
-                :it_nm_zero_price_cents, :it_nm_zero_price_currency,
-                :it_nm_zero_listings_count, :prev_it_nm_zero_price_cents)
-        ON CONFLICT(blueprint_id) DO UPDATE SET
-            captured_at=excluded.captured_at, captured_at_ts=excluded.captured_at_ts,
-            min_price_cents=excluded.min_price_cents,
-            min_price_currency=excluded.min_price_currency,
-            avg_price_cents=excluded.avg_price_cents,
-            listings_count=excluded.listings_count,
-            cheapest_condition=excluded.cheapest_condition,
-            cheapest_language=excluded.cheapest_language,
-            cheapest_foil=excluded.cheapest_foil,
-            languages_available=excluded.languages_available,
-            prev_price_cents=excluded.prev_price_cents,
-            prev_captured_at=excluded.prev_captured_at,
-            best_price_cents=excluded.best_price_cents,
-            best_price_currency=excluded.best_price_currency,
-            best_condition=excluded.best_condition,
-            best_language=excluded.best_language,
-            best_can_sell_via_hub=excluded.best_can_sell_via_hub,
-            prev_best_price_cents=excluded.prev_best_price_cents,
-            it_nm_zero_price_cents=excluded.it_nm_zero_price_cents,
-            it_nm_zero_price_currency=excluded.it_nm_zero_price_currency,
-            it_nm_zero_listings_count=excluded.it_nm_zero_listings_count,
-            prev_it_nm_zero_price_cents=excluded.prev_it_nm_zero_price_cents
-        """,
-        {
-            "blueprint_id": blueprint_id,
-            "captured_at": captured_at,
-            "captured_at_ts": captured_at_ts,
-            "prev_price_cents": prev_price_cents,
-            "prev_captured_at": prev_captured_at,
-            "prev_best_price_cents": prev_best_price_cents,
-            "prev_it_nm_zero_price_cents": prev_it_nm_zero_price_cents,
-            **summary,
-        },
-    )
+        cur.execute(
+            """
+            INSERT INTO latest_prices
+                (blueprint_id, captured_at, captured_at_ts, min_price_cents,
+                 min_price_currency, avg_price_cents, listings_count,
+                 cheapest_condition, cheapest_language, cheapest_foil,
+                 languages_available, prev_price_cents, prev_captured_at,
+                 best_price_cents, best_price_currency, best_condition,
+                 best_language, best_can_sell_via_hub, prev_best_price_cents,
+                 it_nm_zero_price_cents, it_nm_zero_price_currency,
+                 it_nm_zero_listings_count, prev_it_nm_zero_price_cents)
+            VALUES (%(blueprint_id)s, %(captured_at)s, %(captured_at_ts)s, %(min_price_cents)s,
+                    %(min_price_currency)s, %(avg_price_cents)s, %(listings_count)s,
+                    %(cheapest_condition)s, %(cheapest_language)s, %(cheapest_foil)s,
+                    %(languages_available)s, %(prev_price_cents)s, %(prev_captured_at)s,
+                    %(best_price_cents)s, %(best_price_currency)s, %(best_condition)s,
+                    %(best_language)s, %(best_can_sell_via_hub)s, %(prev_best_price_cents)s,
+                    %(it_nm_zero_price_cents)s, %(it_nm_zero_price_currency)s,
+                    %(it_nm_zero_listings_count)s, %(prev_it_nm_zero_price_cents)s)
+            ON CONFLICT (blueprint_id) DO UPDATE SET
+                captured_at = EXCLUDED.captured_at, captured_at_ts = EXCLUDED.captured_at_ts,
+                min_price_cents = EXCLUDED.min_price_cents,
+                min_price_currency = EXCLUDED.min_price_currency,
+                avg_price_cents = EXCLUDED.avg_price_cents,
+                listings_count = EXCLUDED.listings_count,
+                cheapest_condition = EXCLUDED.cheapest_condition,
+                cheapest_language = EXCLUDED.cheapest_language,
+                cheapest_foil = EXCLUDED.cheapest_foil,
+                languages_available = EXCLUDED.languages_available,
+                prev_price_cents = EXCLUDED.prev_price_cents,
+                prev_captured_at = EXCLUDED.prev_captured_at,
+                best_price_cents = EXCLUDED.best_price_cents,
+                best_price_currency = EXCLUDED.best_price_currency,
+                best_condition = EXCLUDED.best_condition,
+                best_language = EXCLUDED.best_language,
+                best_can_sell_via_hub = EXCLUDED.best_can_sell_via_hub,
+                prev_best_price_cents = EXCLUDED.prev_best_price_cents,
+                it_nm_zero_price_cents = EXCLUDED.it_nm_zero_price_cents,
+                it_nm_zero_price_currency = EXCLUDED.it_nm_zero_price_currency,
+                it_nm_zero_listings_count = EXCLUDED.it_nm_zero_listings_count,
+                prev_it_nm_zero_price_cents = EXCLUDED.prev_it_nm_zero_price_cents
+            """,
+            {
+                "blueprint_id": blueprint_id,
+                "captured_at": captured_at,
+                "captured_at_ts": captured_at_ts,
+                "prev_price_cents": prev_price_cents,
+                "prev_captured_at": prev_captured_at,
+                "prev_best_price_cents": prev_best_price_cents,
+                "prev_it_nm_zero_price_cents": prev_it_nm_zero_price_cents,
+                **summary,
+            },
+        )
 
 
 def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: list, top_n: int = 25):
@@ -573,63 +355,68 @@ def replace_price_listings(conn, blueprint_id: int, captured_at: str, products: 
     filtrare per condizione/venditore invece di essere bloccati alle sole
     5 piu' economiche, che spesso non includono nessuna inserzione Near
     Mint/CardTrader Zero decente."""
-    conn.execute("DELETE FROM price_listings WHERE blueprint_id = ?", (blueprint_id,))
-    valid_products = [p for p in products if (p.get("price") or {}).get("cents") is not None]
-    if not valid_products:
-        return
-    cheapest_first = sorted(valid_products, key=lambda p: p["price"]["cents"])[:top_n]
-    conn.executemany(
-        """INSERT INTO price_listings
-           (blueprint_id, captured_at, price_cents, price_currency, condition,
-            language, quantity, seller_username, can_sell_via_hub, ships_from_country)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [
-            (
-                blueprint_id,
-                captured_at,
-                p["price"]["cents"],
-                p["price"].get("currency"),
-                p.get("properties_hash", {}).get("condition"),
-                p.get("properties_hash", {}).get("pokemon_language")
-                    or p.get("properties_hash", {}).get("mtg_language"),
-                p.get("quantity"),
-                p.get("user", {}).get("username"),
-                int(bool(p.get("user", {}).get("can_sell_via_hub"))),
-                p.get("user", {}).get("country_code"),
-            )
-            for p in cheapest_first
-        ],
-    )
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM price_listings WHERE blueprint_id = %s", (blueprint_id,))
+        valid_products = [p for p in products if (p.get("price") or {}).get("cents") is not None]
+        if not valid_products:
+            return
+        cheapest_first = sorted(valid_products, key=lambda p: p["price"]["cents"])[:top_n]
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO price_listings
+               (blueprint_id, captured_at, price_cents, price_currency, condition,
+                language, quantity, seller_username, can_sell_via_hub, ships_from_country)
+               VALUES %s""",
+            [
+                (
+                    blueprint_id,
+                    captured_at,
+                    p["price"]["cents"],
+                    p["price"].get("currency"),
+                    p.get("properties_hash", {}).get("condition"),
+                    p.get("properties_hash", {}).get("pokemon_language")
+                        or p.get("properties_hash", {}).get("mtg_language"),
+                    p.get("quantity"),
+                    p.get("user", {}).get("username"),
+                    int(bool(p.get("user", {}).get("can_sell_via_hub"))),
+                    p.get("user", {}).get("country_code"),
+                )
+                for p in cheapest_first
+            ],
+        )
 
 
-def prune_old_history(history_conn, keep_daily_days: int = RETENTION_DAILY_DAYS):
+def prune_old_history(conn, keep_daily_days: int = RETENTION_DAILY_DAYS):
     """Oltre keep_daily_days, tiene un solo punto a settimana per carta invece
-    di uno al giorno: limita la crescita a lungo termine di price_history.db
+    di uno al giorno: limita la crescita a lungo termine di price_snapshots
     senza perdere la tendenza generale (i dati recenti restano al dettaglio
-    giornaliero)."""
+    giornaliero). to_char(..., 'IYYY-IW') raggruppa per settimana ISO -
+    equivalente Postgres dello strftime('%Y-%W', ...) usato con SQLite (la
+    numerazione esatta della settimana non e' significativa qui, serve solo
+    come chiave di raggruppamento stabile)."""
     from datetime import datetime, timedelta, timezone
     cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_daily_days)).strftime("%Y-%m-%d")
-    deleted = history_conn.execute(
-        """
-        DELETE FROM price_snapshots
-        WHERE captured_at < ?
-        AND id NOT IN (
-            SELECT MIN(id) FROM price_snapshots
-            WHERE captured_at < ?
-            GROUP BY blueprint_id, strftime('%Y-%W', captured_at)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM price_snapshots
+            WHERE captured_at < %(cutoff)s
+            AND id NOT IN (
+                SELECT MIN(id) FROM price_snapshots
+                WHERE captured_at < %(cutoff)s
+                GROUP BY blueprint_id, to_char(captured_at, 'IYYY-IW')
+            )
+            """,
+            {"cutoff": cutoff},
         )
-        """,
-        (cutoff, cutoff),
-    ).rowcount
-    if deleted:
-        history_conn.commit()
-        history_conn.execute("VACUUM")  # restituisce lo spazio liberato dalle righe cancellate
+        deleted = cur.rowcount
     return deleted
 
 
 def set_meta(conn, key: str, value: str):
-    conn.execute(
-        "INSERT INTO meta (key, value) VALUES (?, ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (key, value),
-    )
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO meta (key, value) VALUES (%s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            (key, value),
+        )
