@@ -119,7 +119,13 @@ export default function PriceChart({
     );
   }
 
-  const active = hoverIdx !== null ? withPrice[hoverIdx] : withPrice[withPrice.length - 1];
+  // hoverIdx !== null non basta da solo: se points si accorciasse da props
+  // (non succede oggi - card/[id]/page.tsx lo carica una volta sola - ma il
+  // componente non deve assumerlo) con un hoverIdx rimasto piu' alto della
+  // nuova lunghezza, withPrice[hoverIdx] sarebbe undefined e il resto del
+  // rendering esploderebbe leggendo active.captured_at.
+  const active =
+    hoverIdx !== null && withPrice[hoverIdx] ? withPrice[hoverIdx] : withPrice[withPrice.length - 1];
   const activeMinCoord = {
     x: xForDate(Date.parse(active.captured_at), minMs, maxMs),
     y: yForValue(active.min_price_cents as number, minV, maxV),
