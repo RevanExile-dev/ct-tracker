@@ -26,71 +26,24 @@ scanner_m1_spike.py).
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import sqlite3
 import sys
-import time
 from pathlib import Path
 
-import requests
-from PIL import Image
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from scanner_common import artwork_crop, dhash_hex, fetch_image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = REPO_ROOT / "data" / "cardtrader.db"
 CACHE_PATH = REPO_ROOT / "data" / "scanner_fingerprint_cache.json"
 INDEX_PATH = REPO_ROOT / "web" / "public" / "data" / "scanner_index.json"
 
-HASH_SIZE = 8  # dHash 8x8 -> hash a 64 bit, stesso schema dello spike M1.
-# Deve restare identico ad ARTWORK_BOX in web/lib/scanner/image.ts.
-ARTWORK_BOX = (0.09, 0.10, 0.91, 0.58)  # (left, top, right, bottom) frazioni
-
 # Alzare quando l'algoritmo di hashing cambia, per forzare il ricalcolo di
 # tutta la cache anche se image_url non e' cambiato.
 FINGERPRINT_VERSION = 1
 
-REQUEST_TIMEOUT = 20
-REQUEST_RETRIES = 3
 CHECKPOINT_EVERY = 200  # salva la cache periodicamente: una run interrotta non riparte da zero
-
-
-def dhash(img: Image.Image, hash_size: int = HASH_SIZE) -> str:
-    """Difference hash classico: confronta pixel adiacenti dopo resize+grayscale.
-
-    Identico a scanner_m1_spike.py (nessuna dipendenza oltre Pillow, vedi
-    sezione 23 del documento di architettura) e alla stessa logica bit-a-bit
-    di dhash() in web/lib/scanner/image.ts (confronto riga per riga,
-    sinistra > destra), cosi' i due hash restano confrontabili.
-    """
-    small = img.convert("L").resize((hash_size + 1, hash_size), Image.LANCZOS)
-    pixels = list(small.getdata())
-    bits = 0
-    for row in range(hash_size):
-        row_start = row * (hash_size + 1)
-        for col in range(hash_size):
-            bits <<= 1
-            if pixels[row_start + col] > pixels[row_start + col + 1]:
-                bits |= 1
-    return f"{bits:016x}"
-
-
-def artwork_crop(img: Image.Image) -> Image.Image:
-    w, h = img.size
-    left, top, right, bottom = ARTWORK_BOX
-    return img.crop((int(w * left), int(h * top), int(w * right), int(h * bottom)))
-
-
-def fetch_image(url: str) -> Image.Image:
-    last_err: Exception | None = None
-    for attempt in range(REQUEST_RETRIES):
-        try:
-            resp = requests.get(url, timeout=REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            return Image.open(io.BytesIO(resp.content)).convert("RGB")
-        except Exception as exc:  # rete instabile sul runner, non e' l'oggetto della misura
-            last_err = exc
-            time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"Download fallito per {url}: {last_err}")
 
 
 def load_cache() -> dict:
@@ -172,8 +125,8 @@ def main() -> None:
             img = fetch_image(image_url)
             cache[str(blueprint_id)] = {
                 "image_url": image_url,
-                "full_hash": dhash(img),
-                "art_hash": dhash(artwork_crop(img)),
+                "full_hash": dhash_hex(img),
+                "art_hash": dhash_hex(artwork_crop(img)),
                 "fingerprint_version": FINGERPRINT_VERSION,
             }
         except Exception as exc:
