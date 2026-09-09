@@ -69,6 +69,16 @@ const { handlers, auth, signIn, signOut } = NextAuth(() => ({
   // verificata in node_modules/next-auth/index.d.ts).
   providers: [Google, resendEmailProvider],
   session: { strategy: "database" },
+  callbacks: {
+    // Il callback di default (session strategy "database") espone solo
+    // name/email/image - "id" viene tolto deliberatamente da Auth.js
+    // (verificato in node_modules/@auth/core/lib/init.js, non a memoria):
+    // senza questo override web/lib/account.server.ts non saprebbe a
+    // quale account collegare binder/wishlist/filtri salvati.
+    session({ session, user }) {
+      return { ...session, user: { ...session.user, id: user.id } };
+    },
+  },
   pages: {
     signIn: "/login",
     // Auth.js ci porta qui in automatico subito dopo che
