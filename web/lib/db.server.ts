@@ -72,7 +72,19 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
   const where: string[] = [];
 
   if (opts.search) {
-    where.push(`b.name ILIKE ${p.add(`%${opts.search}%`)}`);
+    // Ogni parola cercata deve trovare corrispondenza nel nome OPPURE nel
+    // numero/versione (es. "12/98", "Holo Rare | 12/98" - CardTrader mette
+    // il numero nell'espansione dentro `version`, non in una colonna
+    // dedicata) - cosi' "virizion 12" trova la carta anche se il numero e
+    // il nome vivono in due colonne diverse, senza richiedere che compaiano
+    // insieme in una sola. Porta lo stesso fix della PR #31 (pre-migrazione
+    // Postgres, dove viveva in buildCardsFilter lato client) qui, unico
+    // punto che ora costruisce davvero la query.
+    const tokens = opts.search.trim().split(/\s+/).filter(Boolean);
+    for (const token of tokens) {
+      const placeholder = p.add(`%${token}%`);
+      where.push(`(b.name ILIKE ${placeholder} OR b.version ILIKE ${placeholder})`);
+    }
   }
   if (opts.expansionCode) {
     where.push(`b.expansion_code = ${p.add(opts.expansionCode)}`);

@@ -29,7 +29,7 @@ for (const device of mobileDevices) {
     test(`nessun overflow e nessuna chiusura automatica a ${device.name}`, async ({ page }) => {
       await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
-      const search = page.getByPlaceholder("Cerca una carta per nome…");
+      const search = page.getByLabel("Cerca una carta per nome o numero");
       await expect(search).toBeVisible({ timeout: 30_000 });
 
       // Da chiuso, i filtri non devono MAI occupare spazio ne' allargare la
@@ -199,7 +199,7 @@ test.describe("desktop", () => {
   test("popover ancorato al trigger, chiusura con click fuori, nessun auto-chiusura", async ({ page }) => {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
-    const search = page.getByPlaceholder("Cerca una carta per nome…");
+    const search = page.getByLabel("Cerca una carta per nome o numero");
     const expansion = expansionTrigger(page);
     const sort = page.getByRole("combobox", { name: "Ordina carte" });
     await expect(expansion).toBeVisible({ timeout: 30_000 });
