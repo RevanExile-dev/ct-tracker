@@ -51,7 +51,11 @@ function BinderContent() {
     fetch("/api/account/binder/value-history")
       .then((res) => (res.ok ? res.json() : []))
       .then((points: BinderValuePoint[]) => { if (!cancelled) setValueHistory(points); })
-      .catch(() => { if (!cancelled) setValueHistory(null); });
+      // Un array vuoto, non null: altrimenti valueHistory resta null per
+      // sempre su un errore di rete e lo scheletro animato non sparisce
+      // mai - un array vuoto fa cadere sul messaggio "nessuno storico
+      // ancora" di CollectionValueChart, non ideale ma mai bloccato.
+      .catch(() => { if (!cancelled) setValueHistory([]); });
     return () => { cancelled = true; };
   }, [session]);
 
