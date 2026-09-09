@@ -184,37 +184,33 @@ If JSON size becomes material, move to:
 - one row per blueprint with 64-bit hashes;
 - a tiny metadata header with `fingerprintVersion` and catalog timestamp.
 
-### 7.2 Build-time generation
+### 7.2 Build-time generation — implemented
 
-Add a build/sync helper, likely under `scripts/`, e.g.:
+`scripts/build_scanner_index.py` implements this. It:
 
-```text
-scripts/build_scanner_index.py
-```
+1. reads current `blueprints` from `data/cardtrader.db`;
+2. finds rows with usable `image_url`;
+3. downloads reference images during CI (GitHub Actions), not at recognition time;
+4. computes deterministic dHash fingerprints (full card + artwork crop, section 8.1);
+5. reuses existing fingerprints when `image_url` and `FINGERPRINT_VERSION` have not changed;
+6. writes `web/public/data/scanner_index.json` deterministically (sorted by `blueprint_id`);
+7. bumps `FINGERPRINT_VERSION` to force a full rebuild when the algorithm changes.
 
-Responsibilities:
+Note: this closed a real production gap, not just a missing nice-to-have —
+`web/lib/scanner/catalog.ts` (`rankScannerCandidates`) was already written
+to consume a populated visual index, but until this script existed the index
+file was never generated, so the shipped scanner ran on OCR text alone with
+no visual fallback.
 
-1. read current `blueprints` from `data/cardtrader.db`;
-2. find rows with usable `image_url`;
-3. download reference images during CI/build-time, not at recognition time;
-4. compute deterministic fingerprints;
-5. reuse existing fingerprints when source image identity has not changed;
-6. write the scanner index deterministically;
-7. record a `fingerprintVersion` so algorithm changes can force rebuilds.
+### 7.3 Caching / incremental rebuild — implemented
 
-The current Python environment only guarantees `requests`; image-processing dependencies must be added deliberately when the spike proves which library is actually needed. Do not expand production dependencies before M1 validates the approach.
-
-### 7.3 Caching / incremental rebuild
-
-Do not redownload every card image on every catalog sync.
-
-Maintain enough state to determine whether a row needs recomputation, e.g. source image URL hash + algorithm version. Possible implementation forms:
-
-- a small SQLite cache table in a scanner-only build cache;
-- a JSON cache adjacent to the generated index;
-- scanner fingerprint rows in `cardtrader.db` only as build metadata, while the browser still consumes a separate scanner asset.
-
-The final choice should optimize simplicity and Git diff size.
+`data/scanner_fingerprint_cache.json` (built and read by
+`scripts/build_scanner_index.py`) keys each blueprint by id and stores
+`image_url` + both hashes + `fingerprint_version`; a row is only
+re-downloaded/re-hashed when one of those has changed. `.github/workflows/build_scanner_index.yml`
+runs this after each catalog sync and on a schedule with `--limit` for
+incremental backfill, so a full 30k-card catalog does not need one very
+long/fragile run.
 
 ## 8. Fingerprints and candidate retrieval
 
@@ -887,16 +883,34 @@ Do not add more complexity until this table shows where errors actually occur.
 
 The following are intentionally not frozen yet:
 
-- exact perceptual hash algorithm/library;
 - fixed artwork crop vs card-layout-specific crop;
-- scanner index JSON vs packed binary;
 - exact OCR library and language packs;
-- confidence weights/thresholds;
+- confidence weights/thresholds — the full/artwork visual blend (62%
+  artwork / 38% full-card in `rankScannerCandidates`) is a documented
+  starting guess based on section 8.1's reasoning (artwork is more
+  language-agnostic), not a value calibrated from the M1 report, since that
+  report has never actually been generated/committed (`scanner_m1_spike.yml`
+  exists but no run's `scanner_m1_report.json` has been captured in the
+  repo). Recalibrate once real numbers exist;
 - whether blur/glare scoring is useful enough for V1;
-- whether Binder `condition` belongs in the persisted aggregation key;
-- whether scanner index generation runs in catalog sync or a separate workflow.
+- whether Binder `condition` belongs in the persisted aggregation key.
 
-Claude should resolve each only after a small measurement/prototype, not by preference.
+Resolved by measurement/implementation:
+
+- perceptual hash algorithm: dHash 8x8 (64-bit), no extra dependency beyond
+  Pillow client-side/Canvas browser-side — section 23's simplicity bias, not
+  yet compared against a DCT-based pHash;
+- scanner index format: JSON (`web/public/data/scanner_index.json`), one
+  compact array of `{blueprint_id, full_hash, art_hash}` — simple enough at
+  current catalog size, revisit only if the fetched payload size becomes a
+  measured problem (section 19);
+- scanner index generation: a separate workflow
+  (`.github/workflows/build_scanner_index.yml`), triggered after catalog
+  sync completes and on a schedule with `--limit` batching, not folded into
+  `sync_catalog.yml` — keeps a slow/flaky image-hashing run from ever
+  blocking or breaking the catalog sync it depends on.
+
+Claude should resolve the rest only after a small measurement/prototype, not by preference.
 
 ## 27. Explicit non-goals for first release
 

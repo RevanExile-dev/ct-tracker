@@ -457,14 +457,33 @@ export async function assessQuality(src: string): Promise<ScanQuality> {
   };
 }
 
-export async function dhash(src: string): Promise<string> {
+export type NormalizedBox = { x: number; y: number; width: number; height: number };
+
+// Ritaglio artwork: stesse coordinate frazionarie di ARTWORK_BOX in
+// scripts/build_scanner_index.py. L'hash sull'artwork da solo e' molto piu'
+// resistente alle differenze di lingua/testo stampato rispetto all'hash
+// sulla carta intera (docs/card_scanner_architecture.md sezione 8.1): i due
+// lati (build-time sull'immagine di riferimento, runtime sulla foto
+// scansionata) devono ritagliare esattamente la stessa area per restare
+// confrontabili via distanza di Hamming.
+export const ARTWORK_BOX: NormalizedBox = { x: 0.09, y: 0.10, width: 0.82, height: 0.48 };
+
+export async function dhash(src: string, box?: NormalizedBox): Promise<string> {
   const image = await loadImage(src);
+  const sx = box ? Math.max(0, Math.round(box.x * image.naturalWidth)) : 0;
+  const sy = box ? Math.max(0, Math.round(box.y * image.naturalHeight)) : 0;
+  const sw = box
+    ? Math.max(1, Math.min(image.naturalWidth - sx, Math.round(box.width * image.naturalWidth)))
+    : image.naturalWidth;
+  const sh = box
+    ? Math.max(1, Math.min(image.naturalHeight - sy, Math.round(box.height * image.naturalHeight)))
+    : image.naturalHeight;
   const canvas = document.createElement("canvas");
   canvas.width = 9;
   canvas.height = 8;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas non disponibile.");
-  ctx.drawImage(image, 0, 0, 9, 8);
+  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, 9, 8);
   const data = ctx.getImageData(0, 0, 9, 8).data;
   let bits = BigInt(0);
   for (let y = 0; y < 8; y += 1) {
