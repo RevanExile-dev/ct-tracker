@@ -264,6 +264,38 @@ body::after {
   animation: pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* --- Serie secondaria (tratteggiata) del grafico prezzi: entra in
+   dissolvenza invece del disegno progressivo di .price-line sopra, perche'
+   quel meccanismo usa stroke-dasharray per l'animazione e non puo'
+   convivere con un vero pattern tratteggiato sullo stesso elemento (la
+   regola CSS vincerebbe sull'attributo, cancellando il tratteggio). Un
+   piccolo ritardo la fa comparire subito dopo che la linea principale ha
+   finito di disegnarsi, invece che insieme. --- */
+@keyframes chart-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.chart-fade-in {
+  animation: chart-fade-in 0.5s ease-out 0.5s backwards;
+}
+
+/* --- Alone pulsante sul punto "live" (ultimo prezzo noto) del grafico
+   prezzi, quando non si sta scorrendo lo storico - richiama un ticker
+   azionario. Anima solo raggio/opacita' (proprieta' SVG animabili via CSS
+   nei browser moderni), il pallino pieno sotto resta comunque visibile se
+   l'animazione e' disattivata. --- */
+@keyframes chart-pulse-ring {
+  0% { r: 1.8; opacity: 0.6; }
+  100% { r: 4.5; opacity: 0; }
+}
+
+.chart-pulse-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chart-pulse-ring 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-enter,
   .card-reveal,
@@ -271,9 +303,16 @@ body::after {
   .price-line,
   .pop-on-toggle,
   .text-holo,
+  .chart-fade-in,
   body::before,
   body::after {
     animation: none !important;
+  }
+  .chart-fade-in {
+    opacity: 1;
+  }
+  .chart-pulse-ring {
+    display: none;
   }
   .btn-lift:hover {
     transform: none;

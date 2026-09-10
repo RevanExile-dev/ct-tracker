@@ -157,6 +157,17 @@ def main():
         print(f"Storico compresso: rimossi {pruned} punti giornalieri "
               f"oltre i {db.RETENTION_DAILY_DAYS} giorni (tenuto 1 punto/settimana).")
 
+    # Punto odierno del valore totale del Binder per ogni utente - usa
+    # latest_prices cosi' com'e' ora (aggiornato sopra, almeno per le carte
+    # raggiunte), non solo le carte appena sincronizzate in questo run.
+    binder_users = db.snapshot_binder_values(conn, today)
+    if binder_users:
+        print(f"Valore Binder salvato per {binder_users} utenti.")
+    binder_pruned = db.prune_old_binder_value_history(conn)
+    if binder_pruned:
+        print(f"Storico valore Binder compresso: rimossi {binder_pruned} punti "
+              f"oltre i {db.RETENTION_DAILY_DAYS} giorni (tenuto 1 punto/settimana).")
+
     db.set_meta(conn, "last_price_sync", now_iso)
     conn.commit()
     cur.close()

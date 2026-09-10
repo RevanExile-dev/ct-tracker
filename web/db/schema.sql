@@ -230,6 +230,29 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_price_blueprint_date ON price_snapshots (blueprint_id, captured_at);
 
+-- Storico del valore totale del Binder (collezione) per utente, un punto al
+-- giorno: scritto da snapshot_binder_values() in scripts/db.py, chiamata da
+-- scripts/sync_prices.py subito dopo l'aggiornamento di latest_prices.
+-- total_cents somma best_price_cents sulle carte nel binder dell'utente in
+-- quel momento - stesso campo e stessa euristica di "Valore stimato" nel
+-- Binder web (web/app/binder/page.tsx), cosi' il grafico storico racconta
+-- esattamente lo stesso numero che l'utente vede oggi, solo nel tempo.
+-- Cattura lo stato REALE del binder al momento dello snapshot (non una
+-- ricostruzione a ritroso): un punto passato riflette le carte possedute
+-- allora, non quelle di oggi. Stessa politica di retention di
+-- price_snapshots (RETENTION_DAILY_DAYS, prune_old_binder_value_history).
+CREATE TABLE IF NOT EXISTS binder_value_snapshots (
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  captured_at DATE NOT NULL,
+  total_cents INTEGER NOT NULL,
+  currency TEXT,
+  cards_count INTEGER NOT NULL,
+  priced_count INTEGER NOT NULL,
+  PRIMARY KEY (user_id, captured_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_binder_value_user_date ON binder_value_snapshots (user_id, captured_at);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT

@@ -2,6 +2,7 @@ import "server-only";
 import { getPgPool } from "./pgPool";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
+import type { BinderValuePoint } from "./types";
 
 // Query Postgres per i dati collegati all'account (binder/wishlist/filtri
 // salvati) - solo lato server (Route Handler in web/app/api/account/**),
@@ -89,6 +90,23 @@ export async function mergeBinderEntries(userId: string, entries: BinderEntry[])
   } finally {
     client.release();
   }
+}
+
+/** Storico del valore totale del Binder di questo utente, un punto al
+ * giorno (scritto da snapshot_binder_values() in scripts/db.py dopo ogni
+ * sync prezzi - vedi web/db/schema.sql). Cresce ogni giorno che passa:
+ * niente da ricostruire qui, solo leggere quello che il sync ha gia'
+ * salvato. */
+export async function getBinderValueHistory(userId: string): Promise<BinderValuePoint[]> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `SELECT captured_at::text AS captured_at, total_cents, currency, cards_count, priced_count
+     FROM binder_value_snapshots
+     WHERE user_id = $1
+     ORDER BY captured_at ASC`,
+    [userId]
+  );
+  return rows;
 }
 
 export async function getWishlistIds(userId: string): Promise<number[]> {

@@ -3,13 +3,16 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { CardRow, fetchCards } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { formatCents } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import type { BinderValuePoint } from "@/lib/types";
 import BinderBook from "@/components/BinderBook";
 import BinderTable from "@/components/BinderTable";
 import CardTile from "@/components/CardTile";
+import CollectionValueChart from "@/components/CollectionValueChart";
 import SiteHeader from "@/components/SiteHeader";
 
 function BinderContent() {
@@ -21,6 +24,8 @@ function BinderContent() {
   const initialPage = Math.max(0, Number(searchParams.get("page")) || 0);
   const [cards, setCards] = useState<CardRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const [valueHistory, setValueHistory] = useState<BinderValuePoint[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +39,25 @@ function BinderContent() {
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    // Lo storico del valore esiste solo lato server (binder_value_snapshots,
+    // scritto dal sync giornaliero): senza login non c'e' niente da
+    // mostrare, niente fetch verso un endpoint che risponderebbe 401 (il
+    // rendering sotto e' gia' condizionato su `session`, quindi non serve
+    // nemmeno resettare lo stato qui al logout).
+    if (!session) return;
+    let cancelled = false;
+    fetch("/api/account/binder/value-history")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((points: BinderValuePoint[]) => { if (!cancelled) setValueHistory(points); })
+      // Un array vuoto, non null: altrimenti valueHistory resta null per
+      // sempre su un errore di rete e lo scheletro animato non sparisce
+      // mai - un array vuoto fa cadere sul messaggio "nessuno storico
+      // ancora" di CollectionValueChart, non ideale ma mai bloccato.
+      .catch(() => { if (!cancelled) setValueHistory([]); });
+    return () => { cancelled = true; };
+  }, [session]);
 
   const summary = useMemo(() => {
     if (!cards) return null;
@@ -86,6 +110,16 @@ function BinderContent() {
               <Link href="/binder?view=collection" className={`min-h-9 inline-flex items-center rounded-md px-3 text-xs ${layout === "grid" ? "bg-accent/15 text-accent-bright" : "text-ink-muted"}`}>Griglia</Link>
               <Link href="/binder?view=collection&layout=table" className={`min-h-9 inline-flex items-center rounded-md px-3 text-xs ${layout === "table" ? "bg-accent/15 text-accent-bright" : "text-ink-muted"}`}>Tabella</Link>
             </div>
+          )}
+        </div>
+      )}
+
+      {session && cards && cards.length > 0 && (
+        <div className="mb-7">
+          {valueHistory === null ? (
+            <div className="rounded-card border border-base-border bg-base-surface p-5 h-40 animate-pulse" />
+          ) : (
+            <CollectionValueChart points={valueHistory} />
           )}
         </div>
       )}
