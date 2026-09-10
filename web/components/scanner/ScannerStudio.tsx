@@ -501,6 +501,9 @@ export default function ScannerStudio() {
                     <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl border border-base-border text-xs text-ink-faint">Reset</button>
                   </div>
                 </div>
+                <p className="text-[11px] text-ink-faint leading-relaxed mt-2 max-w-xl">
+                  Il riquadro verde è l&apos;area che viene ritagliata e analizzata: se non segue bene i bordi della carta, il risultato sotto sarà impreciso — riprova con la carta più dritta, più a fuoco e più vicina all&apos;obiettivo.
+                </p>
                 <input ref={inputRef} className="sr-only" type="file" accept="image/*" onChange={(event) => void acceptFile(event.target.files?.[0])} />
               </div>
 
@@ -547,8 +550,9 @@ export default function ScannerStudio() {
                           className="w-full aspect-[5/7] object-cover bg-base-surface2"
                         />
                         {selected?.image_url && (
-                          <div className="absolute bottom-2 right-2 w-12 sm:w-14 rounded-md overflow-hidden border border-white/20 shadow-xl">
-                            <Image src={item.cropUrl} alt="Scansione originale" width={90} height={126} unoptimized className="w-full aspect-[5/7] object-cover" />
+                          <div className="absolute bottom-2 right-2 w-16 sm:w-20 rounded-md overflow-hidden border-2 border-white/30 shadow-xl" title="Cosa è stato ritagliato e analizzato dalla foto">
+                            <Image src={item.cropUrl} alt="Ritaglio analizzato dalla foto" width={90} height={126} unoptimized className="w-full aspect-[5/7] object-cover" />
+                            <div className="absolute inset-x-0 bottom-0 bg-black/70 text-center text-[8px] font-mono uppercase tracking-wide text-white py-0.5">Ritaglio</div>
                           </div>
                         )}
                       </div>

@@ -65,10 +65,31 @@ function overlapCoverage(a: ScanRegion, b: ScanRegion) {
   return smaller > 0 ? intersection / smaller : 0;
 }
 
-export function overlapsExisting(kept: ScanRegion[], candidate: ScanRegion, iouThreshold: number) {
-  return kept.some(
-    (existing) => iou(existing, candidate) > iouThreshold || overlapCoverage(existing, candidate) > 0.7,
-  );
+// Assorbe candidate in kept (mutandolo) e ritorna true se candidate NON va
+// aggiunto come nuova regione separata. Un vero duplicato alla stessa scala
+// (IoU alto) viene semplicemente scartato - il primo tenuto, in ordine di
+// punteggio, resta valido quanto l'altro. Ma per una coppia in rapporto di
+// CONTENIMENTO (overlapCoverage alto: uno sta quasi interamente dentro
+// l'altro), scartare sempre in base al punteggio e' sbagliato: un riquadro
+// interno ad alto contrasto (cornice illustrazione, riquadro testo, pattern
+// del foil) puo' facilmente segnare piu' in alto del bordo fisico vero della
+// carta se quest'ultimo e' debole (cartoncino chiaro su sfondo chiaro,
+// leggero fuori fuoco) - nessun punteggio di bordo puo' mai essere piu'
+// piccolo di quello che contiene fisicamente. Per il contenimento si tiene
+// SEMPRE il rettangolo piu' grande, indipendentemente da quale dei due ha
+// punteggio piu' alto. Rilevato da una foto reale (Samurott V, 2026-09-10):
+// senza questa regola, il riquadro interno sbagliato ma piu' contrastato
+// vinceva ed eliminava quello esterno corretto come "gia' coperto".
+export function absorbCandidate(kept: ScanRegion[], candidate: ScanRegion, iouThreshold: number): boolean {
+  for (let i = 0; i < kept.length; i += 1) {
+    const existing = kept[i];
+    if (iou(existing, candidate) > iouThreshold) return true;
+    if (overlapCoverage(existing, candidate) > 0.7) {
+      if (candidate.width * candidate.height > existing.width * existing.height) kept[i] = candidate;
+      return true;
+    }
+  }
+  return false;
 }
 
 function smoothProfile(source: Float32Array, radius = 2) {
@@ -98,6 +119,15 @@ function pickPeaks(profile: Float32Array, maxPeaks: number, minGap: number) {
     if (peaks.length >= maxPeaks) break;
   }
   return peaks.sort((a, b) => a - b);
+}
+
+export function withFrameMargins(peaks: number[], size: number, marginFrac = 0.02) {
+  const margin = Math.max(4, Math.round(size * marginFrac));
+  const seeded = [...peaks];
+  for (const candidate of [margin, size - margin]) {
+    if (!seeded.some((existing) => Math.abs(existing - candidate) < margin)) seeded.push(candidate);
+  }
+  return seeded.sort((a, b) => a - b);
 }
 
 function linePrefixVertical(
@@ -157,7 +187,7 @@ function meanPrefix(prefix: Float32Array, start: number, end: number) {
  * L'algoritmo resta Canvas-only e O(n) sui pixel; la ricerca dei rettangoli e'
  * limitata a poche decine di picchi e usa prefix sums per non riscorrere i bordi.
  */
-function detectBorderRectangles(
+export function detectBorderRectangles(
   rgba: Uint8ClampedArray,
   width: number,
   height: number,
@@ -189,8 +219,23 @@ function detectBorderRectangles(
   for (let x = 0; x < width; x += 1) verticalProfile[x] /= Math.max(1, height - 2);
   for (let y = 0; y < height; y += 1) horizontalProfile[y] /= Math.max(1, width - 2);
 
-  const xs = pickPeaks(smoothProfile(verticalProfile), 32, Math.max(3, Math.round(width / 70)));
-  const ys = pickPeaks(smoothProfile(horizontalProfile), 48, Math.max(4, Math.round(height / 110)));
+  // pickPeaks tiene solo le righe/colonne con il gradiente piu' forte in
+  // assoluto. Una carta reale fotografata da vicino puo' avere un bordo
+  // fisico DEBOLE (cartoncino chiaro su sfondo chiaro, leggero fuori fuoco)
+  // mentre texture interne - cornice illustrazione, riquadro testo, pattern
+  // del foil - hanno un contrasto molto piu' forte: in quel caso il vero
+  // bordo della carta non entra proprio tra i picchi scelti, e nessuna
+  // soglia di punteggio puo' recuperarlo dopo perche' non viene mai provato
+  // come candidato. Seminiamo sempre un paio di coordinate vicine al bordo
+  // della cornice di lavoro, cosi' "la carta riempie quasi tutto il
+  // fotogramma" (il caso comune: l'utente inquadra una sola carta da
+  // vicino) resta un candidato valutabile con lo stesso punteggio degli
+  // altri, anche quando il suo gradiente reale e' troppo debole per essere
+  // scelto organicamente da pickPeaks. Rilevato da foto reali (Samurott V,
+  // 2026-09-10): un solo riquadro sopravvive al dedup ma non segue il bordo
+  // vero della carta.
+  const xs = withFrameMargins(pickPeaks(smoothProfile(verticalProfile), 32, Math.max(3, Math.round(width / 70))), width);
+  const ys = withFrameMargins(pickPeaks(smoothProfile(horizontalProfile), 48, Math.max(4, Math.round(height / 110))), height);
   if (xs.length < 2 || ys.length < 2) return [];
 
   const vPrefixes = new Map<number, Float32Array>();
@@ -295,7 +340,7 @@ function detectBorderRectangles(
 
   const kept: ScanRegion[] = [];
   for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
-    if (overlapsExisting(kept, candidate, 0.58)) continue;
+    if (absorbCandidate(kept, candidate, 0.58)) continue;
     kept.push(candidate);
     if (kept.length >= MAX_REGIONS) break;
   }
@@ -413,7 +458,7 @@ function detectConnectedComponents(
 
   const kept: ScanRegion[] = [];
   for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
-    if (overlapsExisting(kept, candidate, 0.5)) continue;
+    if (absorbCandidate(kept, candidate, 0.5)) continue;
     kept.push(candidate);
     if (kept.length >= MAX_REGIONS) break;
   }
