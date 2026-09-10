@@ -65,6 +65,16 @@ function confidenceTone(value: number) {
   return "text-ink-muted border-base-border bg-base-surface2";
 }
 
+// Il risultato di uno scan non deve mai essere solo un ID/percentuale secca:
+// tre livelli espliciti (stesse soglie gia' usate per auto-selezione vs
+// alternative vs ricerca manuale) cosi' l'utente capisce SEMPRE quanto
+// fidarsi del match, non solo vedere un numero.
+function confidenceLabel(value: number) {
+  if (value >= 0.84) return "Confidenza alta";
+  if (value >= 0.64) return "Confidenza media";
+  return "Confidenza bassa";
+}
+
 function qualityLabel(quality: ScanQuality) {
   if (quality.label === "glare") return "Riflesso forte";
   if (quality.label === "soft") return "Foto morbida";
@@ -548,7 +558,10 @@ export default function ScannerStudio() {
                           <span className="text-[10px] font-mono uppercase tracking-wider rounded-full border border-base-border px-2.5 py-1 text-ink-faint">#{index + 1}</span>
                           <span className={`text-[10px] font-mono uppercase tracking-wider rounded-full border px-2.5 py-1 ${item.status === "done" ? "border-accent/30 bg-accent/10 text-accent-bright" : "border-base-border text-ink-muted"}`}>{statusLabel(item.status)}</span>
                           {item.status === "done" && (
-                            <span className={`text-[10px] font-mono rounded-full border px-2.5 py-1 ${confidenceTone(item.matchConfidence)}`}>{Math.round(item.matchConfidence * 100)}% match</span>
+                            <span className={`text-[10px] font-mono rounded-full border px-2.5 py-1 ${confidenceTone(item.matchConfidence)}`}>{confidenceLabel(item.matchConfidence)} · {Math.round(item.matchConfidence * 100)}%</span>
+                          )}
+                          {item.status === "error" && !item.candidates.length && (
+                            <span className="text-[10px] font-mono rounded-full border border-base-border bg-base-surface2 px-2.5 py-1 text-ink-muted">Nessuna corrispondenza</span>
                           )}
                           <span className="text-[10px] font-mono rounded-full border border-base-border px-2.5 py-1 text-ink-faint">{qualityLabel(item.quality)}</span>
                         </div>

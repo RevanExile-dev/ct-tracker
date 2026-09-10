@@ -1,10 +1,23 @@
 // Keep gallery prefixes as identity, and repair OCR confusions only in digits.
 // Requiring token boundaries prevents a malformed/unknown prefix from silently
 // becoming an ordinary numeric card number.
-const COLLECTOR_PATTERN = /(?<![a-z0-9])((?:TG|GG|SV|RC)?)[ \t]*([0-9OoIiLl|]{1,4})[ \t]*[\/\\-][ \t]*((?:TG|GG|SV|RC)?)[ \t]*([0-9OoIiLl|]{1,4})(?![a-z0-9])/gi;
+const COLLECTOR_PATTERN = /(?<![a-z0-9])((?:TG|GG|SV|RC)?)[ \t]*([0-9OoIiLl|SsBb]{1,4})[ \t]*[\/\\-][ \t]*((?:TG|GG|SV|RC)?)[ \t]*([0-9OoIiLl|SsBb]{1,4})(?![a-z0-9])/gi;
 
+// S/B in piu' rispetto a O/I/L: aggiunti solo nella classe di caratteri della
+// parte NUMERICA, mai nel prefisso (che resta l'alternanza esplicita
+// TG|GG|SV|RC provata per prima dal motore regex - "SV107" continua a
+// riconoscere "SV" come prefisso, non "S" come cifra, perche' il gruppo
+// prefisso e' tentato PRIMA e consuma quei caratteri se l'alternanza
+// combacia). Corregge letture tipiche tipo "S5/198" (5 letto S) o
+// "1B5/198" (8 letto B) sulla parte cifre di carte NON gallery.
 function digits(value: string) {
-  return String(Number(value.replace(/[Oo]/g, "0").replace(/[IiLl|]/g, "1")));
+  return String(Number(
+    value
+      .replace(/[Oo]/g, "0")
+      .replace(/[IiLl|]/g, "1")
+      .replace(/[Ss]/g, "5")
+      .replace(/[Bb]/g, "8"),
+  ));
 }
 
 export function extractCollectorNumber(text: string): string | null {
