@@ -31,5 +31,8 @@ jobs:
       - name: Installa dipendenze
         run: npm ci
 
+      - name: Test unitari (logica pura, nessun server/browser)
+        run: npm run test:unit
+
       - name: Build (include il type-check di Next.js)
         run: npm run build

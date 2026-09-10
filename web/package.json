@@ -6,7 +6,8 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:unit": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@auth/pg-adapter": "1.11.3",

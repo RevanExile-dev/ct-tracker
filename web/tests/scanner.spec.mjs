@@ -70,8 +70,12 @@ test.describe("scanner CartaViva", () => {
 
     await expect(page.getByRole("heading", { name: /^Frosmoth$/i }).first()).toBeVisible({ timeout: 30_000 });
     // Nessuna evidenza di nome/numero (OCR muto): la confidenza deve restare
-    // bassa e visibile, mai spacciata per un match certo.
-    await expect(page.getByText(/Confidenza bassa/i)).toBeVisible();
+    // esplicita e bassa, mai spacciata per un match certo - sia nel badge
+    // sintetico (etichetta + percentuale) sia nel messaggio di dettaglio.
+    // .first(): con l'etichetta di confidenza esplicita entrambi contengono
+    // "Confidenza bassa", quindi il testo compare in due elementi distinti.
+    await expect(page.getByText(/Confidenza bassa/i).first()).toBeVisible();
+    await expect(page.getByText(/Confidenza bassa: controlla le alternative/i)).toBeVisible();
   });
 
   test("OCR zonale + collector number corregge O/1 e sceglie la ristampa esatta", async ({ page }) => {

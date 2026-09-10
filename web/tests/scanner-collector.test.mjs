@@ -39,11 +39,39 @@ test('numeric regressions and malformed prefixes do not become exact evidence', 
   }
 });
 
+test('S/B sono riparate come cifre (5/8) solo nella parte numerica, mai nel prefisso', () => {
+  assert.equal(parser.extractCollectorNumber('S5/198'), '55/198');
+  assert.equal(parser.extractCollectorNumber('1B5/198'), '185/198');
+  assert.equal(parser.extractCollectorNumber('B5/B8'), '85/88');
+  // "SV" resta il prefisso gallery, non "S" letto come cifra: l'alternanza
+  // esplicita del prefisso viene tentata prima e vince sulla classe cifre.
+  assert.equal(parser.extractCollectorNumber('SV107/SV122'), 'SV107/SV122');
+});
+
 test('metadata names and image URLs use the same gallery parser', () => {
   assert.equal(parser.stripCollectorNumbers('Pikachu TG05/TG30'), 'Pikachu  ');
   assert.equal(catalog.collectorNumberFromImageUrl('https://cardtrader.com/uploads/blueprints/image/221649/pikachu-ultra-rare-tg05-tg30-lost-origin.jpg'), 'TG5/TG30');
   assert.equal(catalog.collectorNumberFromImageUrl('https://example.test/blitzle-195-182.jpg'), '195/182');
   assert.equal(catalog.collectorNumberFromImageUrl('https://example.test/pikachu-tg05%2Ftg30.jpg'), 'TG5/TG30');
+});
+
+test('collectorParts normalizes zero-padding on its own, independent of extractCollectorNumber', () => {
+  // Every current caller already routes through extractCollectorNumber() first
+  // (which strips padding), but collectorParts is exported and has no way to
+  // enforce that on a future direct caller - it must be correct standalone too.
+  const padded = parser.collectorParts('TG05/TG30');
+  assert.equal(padded.prefix, 'TG');
+  assert.equal(padded.numerator, '5');
+  assert.equal(padded.denominator, '30');
+
+  const plain = parser.collectorParts('005/030');
+  assert.equal(plain.prefix, '');
+  assert.equal(plain.numerator, '5');
+  assert.equal(plain.denominator, '30');
+
+  const stripped = parser.collectorParts('TG5/TG30');
+  assert.equal(stripped.numerator, padded.numerator);
+  assert.equal(stripped.denominator, padded.denominator);
 });
 
 const entry = (id, version, name = 'Pikachu') => ({
