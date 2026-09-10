@@ -3,40 +3,68 @@
 import { useMemo, useRef, useState } from "react";
 import type { BinderValuePoint } from "@/lib/types";
 import { formatCents, formatDate, formatDateLong } from "@/lib/format";
+import { areaPath, monotonePath, xForDate, yForValue } from "@/lib/chartGeometry";
 
-/** Stessa idea di xForIndex in PriceChart.tsx (un solo punto va al centro,
- * altrimenti distribuito linearmente) - qui su una singola serie, niente
- * bisogno del confronto multi-serie che giustifica quella versione. */
-function xForIndex(idx: number, total: number): number {
-  return total <= 1 ? 50 : (idx / (total - 1)) * 100;
-}
+const DAY_MS = 86_400_000;
+
+// Stesso set di preset di PriceChart.tsx (web/components/PriceChart.tsx) -
+// qui la duplicazione e' voluta: e' un array di dati banale, non logica,
+// e i due grafici filtrano periodi leggermente diversi (allWithPrice vs
+// points grezzi) per motivi propri a ciascuno.
+const RANGE_PRESETS = [
+  { days: 30, label: "30g" },
+  { days: 90, label: "90g" },
+  { days: 180, label: "6 mesi" },
+  { days: 365, label: "1 anno" },
+] as const;
 
 export default function CollectionValueChart({ points }: { points: BinderValuePoint[] }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [rangeDays, setRangeDays] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const { path, areaPath, coords, min, max } = useMemo(() => {
-    if (points.length === 0) {
-      return { path: "", areaPath: "", coords: [] as { x: number; y: number }[], min: 0, max: 0 };
+  // Solo i preset che accorciano davvero la vista rispetto allo storico
+  // completo (margine di 2 giorni) - su un binder tracciato da pochi
+  // giorni "1 anno" sarebbe identico a "Tutto".
+  const availablePresets = useMemo(() => {
+    if (points.length < 2) return [];
+    const spanDays =
+      (Date.parse(points[points.length - 1].captured_at) - Date.parse(points[0].captured_at)) / DAY_MS;
+    return RANGE_PRESETS.filter((preset) => preset.days < spanDays - 2);
+  }, [points]);
+
+  const filteredPoints = useMemo(() => {
+    if (rangeDays === null || points.length === 0) return points;
+    const cutoff = Date.parse(points[points.length - 1].captured_at) - rangeDays * DAY_MS;
+    return points.filter((p) => Date.parse(p.captured_at) >= cutoff);
+  }, [points, rangeDays]);
+
+  function selectRange(days: number | null) {
+    setRangeDays(days);
+    setHoverIdx(null);
+  }
+
+  const { path, areaFillPath, coords, min, max, minMs, maxMs } = useMemo(() => {
+    if (filteredPoints.length === 0) {
+      return { path: "", areaFillPath: "", coords: [] as { x: number; y: number }[], min: 0, max: 0, minMs: 0, maxMs: 0 };
     }
-    const values = points.map((p) => p.total_cents);
+    const values = filteredPoints.map((p) => p.total_cents);
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const span = max - min || 1;
-    const h = 100;
-    const coords = points.map((p, idx) => ({
-      x: xForIndex(idx, points.length),
-      y: h - ((p.total_cents - min) / span) * (h - 20) - 10,
+    const minMs = Date.parse(filteredPoints[0].captured_at);
+    const maxMs = Date.parse(filteredPoints[filteredPoints.length - 1].captured_at);
+    const coords = filteredPoints.map((p) => ({
+      x: xForDate(Date.parse(p.captured_at), minMs, maxMs),
+      y: yForValue(p.total_cents, min, max),
     }));
-    const path = coords.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x} ${c.y}`).join(" ");
-    const areaPath = path ? `${path} L ${coords[coords.length - 1].x} 100 L ${coords[0].x} 100 Z` : "";
-    return { path, areaPath, coords, min, max };
-  }, [points]);
+    const path = monotonePath(coords);
+    return { path, areaFillPath: areaPath(path, coords), coords, min, max, minMs, maxMs };
+  }, [filteredPoints]);
 
   // Meno di 2 punti: non c'e' ancora un andamento da disegnare (un punto
   // solo, o nessuno il primissimo giorno prima del sync notturno) - un
   // messaggio invece di un grafico vuoto/piatto che sembrerebbe un bug.
-  if (points.length < 2) {
+  if (filteredPoints.length < 2) {
     return (
       <div className="rounded-card border border-base-border bg-base-surface p-5 text-center text-ink-muted text-sm">
         {points.length === 0
@@ -46,18 +74,29 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
     );
   }
 
-  const active = hoverIdx !== null ? points[hoverIdx] : points[points.length - 1];
-  const first = points[0];
+  const active = hoverIdx !== null ? filteredPoints[hoverIdx] : filteredPoints[filteredPoints.length - 1];
+  const first = filteredPoints[0];
   const deltaCents = active.total_cents - first.total_cents;
   const deltaPct = first.total_cents !== 0 ? (deltaCents / first.total_cents) * 100 : null;
+  const activeCoord = {
+    x: xForDate(Date.parse(active.captured_at), minMs, maxMs),
+    y: yForValue(active.total_cents, min, max),
+  };
+  const lastCoord = coords[coords.length - 1];
 
   function indexFromClientX(clientX: number): number {
     const svg = svgRef.current;
-    if (!svg) return 0;
+    if (!svg || coords.length === 0) return 0;
     const rect = svg.getBoundingClientRect();
     if (rect.width === 0) return 0;
-    const px = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return Math.round(px * (points.length - 1));
+    const targetX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * 100;
+    let nearest = 0;
+    let nearestDist = Infinity;
+    coords.forEach((c, i) => {
+      const dist = Math.abs(c.x - targetX);
+      if (dist < nearestDist) { nearestDist = dist; nearest = i; }
+    });
+    return nearest;
   }
 
   function scrubTo(clientX: number) {
@@ -65,26 +104,60 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
   }
 
   function handleKeyDown(event: React.KeyboardEvent<SVGSVGElement>) {
-    const current = hoverIdx ?? points.length - 1;
+    const current = hoverIdx ?? filteredPoints.length - 1;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       setHoverIdx(Math.max(0, current - 1));
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      setHoverIdx(Math.min(points.length - 1, current + 1));
+      setHoverIdx(Math.min(filteredPoints.length - 1, current + 1));
     } else if (event.key === "Home") {
       event.preventDefault();
       setHoverIdx(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      setHoverIdx(points.length - 1);
+      setHoverIdx(filteredPoints.length - 1);
     } else if (event.key === "Escape") {
       setHoverIdx(null);
     }
   }
 
+  const revealKey = `${rangeDays ?? "all"}-${filteredPoints.length}`;
+
   return (
     <div className="rounded-card border border-base-border bg-base-surface p-5">
+      {availablePresets.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-4" role="group" aria-label="Periodo storico">
+          {availablePresets.map((preset) => (
+            <button
+              key={preset.days}
+              type="button"
+              aria-pressed={rangeDays === preset.days}
+              onClick={() => selectRange(preset.days)}
+              className={`min-h-8 text-xs px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+                rangeDays === preset.days
+                  ? "bg-accent/10 border-accent/60 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            aria-pressed={rangeDays === null}
+            onClick={() => selectRange(null)}
+            className={`min-h-8 text-xs px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+              rangeDays === null
+                ? "bg-accent/10 border-accent/60 text-accent-bright"
+                : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+            }`}
+          >
+            Tutto
+          </button>
+        </div>
+      )}
+
       <div className="flex items-baseline justify-between mb-4 flex-wrap gap-x-4 gap-y-2">
         <div>
           <div className="text-xs uppercase tracking-wider text-ink-muted font-mono">
@@ -130,40 +203,48 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
       >
         <defs>
           <linearGradient id="binderValueFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2DD8C9" stopOpacity="0.35" />
+            <stop offset="0%" stopColor="#2DD8C9" stopOpacity="0.32" />
             <stop offset="100%" stopColor="#2DD8C9" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={areaPath} fill="url(#binderValueFill)" stroke="none" />
-        <path
-          d={path}
-          fill="none"
-          stroke="#2DD8C9"
-          strokeWidth="1.4"
-          vectorEffect="non-scaling-stroke"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {hoverIdx !== null && (
-          <line
-            x1={xForIndex(hoverIdx, points.length)}
-            x2={xForIndex(hoverIdx, points.length)}
-            y1={0}
-            y2={100}
-            stroke="#565C63"
-            strokeWidth="0.5"
-            strokeDasharray="2 2"
+
+        <g key={revealKey}>
+          <path d={areaFillPath} fill="url(#binderValueFill)" stroke="none" />
+          <path
+            className="price-line"
+            d={path}
+            pathLength={1}
+            fill="none"
+            stroke="#2DD8C9"
+            strokeWidth="2"
             vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ "--line-length": 1 } as React.CSSProperties}
           />
-        )}
-        {hoverIdx !== null && coords[hoverIdx] && (
-          <circle cx={coords[hoverIdx].x} cy={coords[hoverIdx].y} r="1.8" fill="#5FF0E3" />
+          {hoverIdx === null && (
+            <>
+              <circle cx={lastCoord.x} cy={lastCoord.y} r="3" fill="none" stroke="#5FF0E3" strokeWidth="1.5" className="chart-pulse-ring" />
+              <circle cx={lastCoord.x} cy={lastCoord.y} r="1.8" fill="#5FF0E3" />
+            </>
+          )}
+        </g>
+
+        {hoverIdx !== null && (
+          <>
+            <line
+              x1={activeCoord.x} x2={activeCoord.x} y1={0} y2={100}
+              stroke="#565C63" strokeWidth="1" vectorEffect="non-scaling-stroke"
+            />
+            <circle cx={activeCoord.x} cy={activeCoord.y} r="1.8" fill="none" stroke="#16191D" strokeWidth="4" vectorEffect="non-scaling-stroke" />
+            <circle cx={activeCoord.x} cy={activeCoord.y} r="1.8" fill="#5FF0E3" />
+          </>
         )}
       </svg>
 
       <div className="flex justify-between mt-2 text-[11px] font-mono text-ink-faint">
         <span>{formatDate(first.captured_at)}</span>
-        <span>{formatDate(points[points.length - 1].captured_at)}</span>
+        <span>{formatDate(filteredPoints[filteredPoints.length - 1].captured_at)}</span>
       </div>
       <p className="sm:hidden mt-2 text-center text-[10px] text-ink-faint">
         Trascina sul grafico per scorrere lo storico

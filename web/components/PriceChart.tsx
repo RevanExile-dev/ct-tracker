@@ -298,6 +298,12 @@ export default function PriceChart({
         </div>
       )}
 
+      {hiddenSeries.has("min") && hiddenSeries.has("exact") && (
+        <p className="text-center text-xs text-ink-faint py-8">
+          Entrambe le serie sono nascoste — riattivane una dalla legenda per vedere il grafico.
+        </p>
+      )}
+
       <svg
         ref={svgRef}
         viewBox="0 0 100 100"
@@ -310,6 +316,7 @@ export default function PriceChart({
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
         onKeyDown={handleKeyDown}
+        style={{ display: hiddenSeries.has("min") && hiddenSeries.has("exact") ? "none" : undefined }}
       >
         <defs>
           <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
