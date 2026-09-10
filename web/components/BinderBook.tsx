@@ -104,6 +104,27 @@ function ScreenView({ screen, returnTo, fade = false }: { screen: Screen | undef
   );
 }
 
+// Una faccia (fronte o retro) di uno dei due pannelli near/far dello sfoglio.
+// Renderizza la pagina INTERA a doppia larghezza dentro una finestra
+// overflow:hidden (binder-flip-window/slice, vedi CSS): a seconda di quale
+// meta' (.binder-flip-near o .binder-flip-far, dedotto dal CSS via
+// data-direction, non serve saperlo qui) la contiene, si vede ritagliata
+// solo la meta' sinistra o destra - le due meta' ricostruiscono la pagina
+// intera quando sono piatte (progress 0/1), esattamente come un pannello
+// unico prima di questa modifica.
+function FlipFace({ screen, returnTo, back = false }: { screen: Screen | undefined; returnTo: string; back?: boolean }) {
+  return (
+    <div className={`binder-flip-face ${back ? "binder-flip-back" : "binder-flip-front"}`}>
+      <div className="binder-flip-window">
+        <div className="binder-flip-slice">
+          <ScreenView screen={screen} returnTo={returnTo} />
+        </div>
+      </div>
+      <div className="binder-flip-shade" />
+    </div>
+  );
+}
+
 // Fase dello sfoglio in corso:
 // - "live": trascinamento attivo, il transform e' scritto ad ogni frame via
 //   ref (segue dito/cursore 1:1), nessuna transizione CSS.
@@ -124,6 +145,11 @@ const COMPLETE_PROGRESS = 0.35;
 // Un rilascio abbastanza veloce (px/ms) completa lo sfoglio anche se il
 // trascinamento non ha superato COMPLETE_PROGRESS - un "flick" deciso.
 const FLICK_VELOCITY_PX_MS = 0.55;
+// Piega massima (gradi) tra i due pannelli near/far a meta' gesto - vedi
+// paintProgress per la geometria. 0 renderebbe il vecchio flip piatto a
+// lastra unica (sparisce del tutto a 90 gradi, non voluto); troppo alto
+// sembra un ventaglio invece di una pagina che si piega.
+const BEND_MAX_DEG = 46;
 // Durata dell'animazione di uno sfoglio completo (bottone/tastiera, o un
 // drag che parte da progress=0) - durata dell'assestamento per un drag
 // e' invece proporzionale alla distanza restante, con questo come tetto.
@@ -172,7 +198,8 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const [page, setPage] = useState(Math.max(0, initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const flipElRef = useRef<HTMLDivElement>(null);
+  const flipNearRef = useRef<HTMLDivElement>(null);
+  const flipFarRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const rafRef = useRef<number | null>(null);
   const didSwipe = useRef(false);
@@ -207,20 +234,35 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     }
   }
 
-  // Applica al nodo del flip il transform/ombra corrispondenti al progress
+  // Applica ai due pannelli (near = attaccato al dorso, far = lembo libero,
+  // nidificato dentro near) il transform/ombra corrispondenti al progress
   // corrente (0-1) - unico punto che scrive sul DOM durante il trascinamento,
   // cosi' i pointermove restano leggeri (aggiornano solo dragRef) e il ritmo
   // reale delle scritture e' quello dei frame, non degli eventi di input.
+  //
+  // Geometria (perche' due pannelli e non uno): un singolo pannello rigido
+  // ruotato con rotateY sparisce del tutto a progress=0.5 (di taglio verso
+  // la camera) - una pagina vera non lo fa mai, resta sempre visibile come
+  // sagoma curva. "total" e' l'angolo che avrebbe un pannello unico rigido;
+  // "bend" (0 agli estremi, massimo a meta' gesto) e' quanto i due pannelli
+  // si separano tra loro. near resta "indietro" di meta' bend, far (la cui
+  // rotazione e' LOCALE, nidificata dentro near, quindi si somma alla sua)
+  // "avanti" di meta' bend - insieme formano una V che non collassa mai a
+  // una linea, pur restando esattamente piatti e indistinguibili da un
+  // pannello unico quando bend=0 (progress 0 o 1, verificato visivamente
+  // prima di integrare: nessuna differenza a riposo).
   function paintProgress(direction: "next" | "prev", progress: number) {
-    const el = flipElRef.current;
-    if (!el) return;
-    const deg = direction === "next" ? -progress * 180 : progress * 180;
-    // Leggera compressione al centro del gesto (la pagina "si stacca" un
-    // filo dal piano quando e' di taglio, come una pagina vera) - puramente
-    // estetico, nessun impatto sulla logica di sfoglio.
-    const dip = 1 - 0.03 * Math.sin(progress * Math.PI);
-    el.style.transform = `rotateY(${deg}deg) scale(${dip})`;
-    el.style.setProperty("--flip-shadow", String(Math.sin(progress * Math.PI)));
+    const near = flipNearRef.current;
+    const far = flipFarRef.current;
+    if (!near || !far) return;
+    const sign = direction === "next" ? -1 : 1;
+    const total = progress * 180;
+    const bend = BEND_MAX_DEG * Math.sin(progress * Math.PI);
+    const aNear = sign * (total - bend / 2);
+    const bFarLocal = sign * bend;
+    near.style.transform = `rotateY(${aNear}deg)`;
+    far.style.transform = `rotateY(${bFarLocal}deg)`;
+    near.style.setProperty("--flip-shadow", String(Math.sin(progress * Math.PI)));
   }
 
   // Coda un aggiornamento continuo: legge il progress corrente da dragRef
@@ -242,27 +284,37 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   // onTransitionEnd sia dalla rete di sicurezza a timeout): se completing
   // avanza la pagina, altrimenti la lascia invariata. Ripulisce sempre gli
   // stili imperativi cosi' il prossimo sfoglio riparte da uno stato pulito.
-  function resolveFlip(completing: boolean) {
+  //
+  // "direction" arriva come parametro esplicito (non letto da "current" in
+  // un updater funzionale di setFlip): chiamare setPage() DENTRO l'updater
+  // di setFlip e' un side-effect innestato in un updater, che React
+  // StrictMode (dev) invoca due volte per rilevare impurita' - risultato
+  // reale osservato, isolato con log mirati: un solo click avanzava la
+  // pagina di 2*step invece di step. Con direction passata dall'esterno
+  // (dal chiamante, che ce l'ha gia' in scope) le due setState restano
+  // pure e indipendenti, nessun doppio incremento possibile.
+  function resolveFlip(direction: "next" | "prev", completing: boolean) {
     clearFlipTimeout();
-    setFlip((current) => {
-      if (!current) return null;
-      if (completing) {
-        const direction = current.direction;
-        setPage((page) => Math.max(0, Math.min(screens.length - 1, page + (direction === "next" ? step : -step))));
-      }
-      return null;
-    });
-    const el = flipElRef.current;
-    if (el) {
-      el.style.transform = "";
-      el.style.transitionDuration = "";
-      el.style.removeProperty("--flip-shadow");
+    if (completing) {
+      setPage((page) => Math.max(0, Math.min(screens.length - 1, page + (direction === "next" ? step : -step))));
+    }
+    setFlip(null);
+    const near = flipNearRef.current;
+    const far = flipFarRef.current;
+    if (near) {
+      near.style.transform = "";
+      near.style.transitionDuration = "";
+      near.style.removeProperty("--flip-shadow");
+    }
+    if (far) {
+      far.style.transform = "";
+      far.style.transitionDuration = "";
     }
   }
 
-  function armSettleTimeout(durationMs: number, completing: boolean) {
+  function armSettleTimeout(direction: "next" | "prev", durationMs: number, completing: boolean) {
     clearFlipTimeout();
-    flipTimeoutRef.current = setTimeout(() => resolveFlip(completing), durationMs + SETTLE_SAFETY_MARGIN_MS);
+    flipTimeoutRef.current = setTimeout(() => resolveFlip(direction, completing), durationMs + SETTLE_SAFETY_MARGIN_MS);
   }
 
   // Anima dallo stato corrente (che sia in mezzo a un drag o a riposo) fino
@@ -278,14 +330,16 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     // le due modifiche in un solo frame e saltare la transizione.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const el = flipElRef.current;
-        if (!el) return;
-        el.style.transitionDuration = `${duration}ms`;
+        const near = flipNearRef.current;
+        const far = flipFarRef.current;
+        if (!near || !far) return;
+        near.style.transitionDuration = `${duration}ms`;
+        far.style.transitionDuration = `${duration}ms`;
         const targetProgress = completing ? 1 : 0;
         paintProgress(direction, targetProgress);
       });
     });
-    armSettleTimeout(duration, completing);
+    armSettleTimeout(direction, duration, completing);
   }
 
   function turn(direction: "next" | "prev") {
@@ -410,6 +464,8 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const underlyingRight = singlePage
     ? undefined
     : flip?.direction === "next" ? screens[nextStart + 1] : right;
+  const flipFrontScreen = flip ? (singlePage ? left : flip.direction === "next" ? right : left) : undefined;
+  const flipBackScreen = flip ? (flip.direction === "next" ? screens[nextStart] : screens[prevStart + (singlePage ? 0 : 1)]) : undefined;
 
   return (
     <div className="w-full">
@@ -443,20 +499,30 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
           )}
 
           {flip && (
+            // Decorativo puro durante l'animazione: la pagina reale e
+            // cliccabile e' quella statica sottostante, rivelata a fine
+            // sfoglio - da qui pointer-events:none in CSS, niente carte
+            // "fantasma" cliccabili a meta' gesto sulle 4 copie sotto.
             <div
-              ref={flipElRef}
-              className={`binder-flip ${singlePage ? "binder-flip-single" : flip.direction === "next" ? "binder-flip-right" : "binder-flip-left"} ${flip.phase === "live" ? "binder-flip-live" : ""}`}
+              className={`binder-flip ${singlePage ? "binder-flip-single" : ""} ${flip.phase === "live" ? "binder-flip-live" : ""}`}
               data-direction={flip.direction}
-              onTransitionEnd={(event) => {
-                if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
-                resolveFlip(flip.phase === "completing");
-              }}
+              aria-hidden
             >
-              <div className="binder-flip-face binder-flip-front">
-                <ScreenView screen={singlePage ? left : flip.direction === "next" ? right : left} returnTo={returnTo} />
-              </div>
-              <div className="binder-flip-face binder-flip-back">
-                <ScreenView screen={flip.direction === "next" ? screens[nextStart] : screens[prevStart + (singlePage ? 0 : 1)]} returnTo={returnTo} />
+              <div
+                ref={flipNearRef}
+                className="binder-flip-near"
+                onTransitionEnd={(event) => {
+                  if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
+                  resolveFlip(flip.direction, flip.phase === "completing");
+                }}
+              >
+                <FlipFace screen={flipFrontScreen} returnTo={returnTo} />
+                <FlipFace screen={flipBackScreen} returnTo={returnTo} back />
+                <div className="binder-flip-crease" />
+                <div ref={flipFarRef} className="binder-flip-far">
+                  <FlipFace screen={flipFrontScreen} returnTo={returnTo} />
+                  <FlipFace screen={flipBackScreen} returnTo={returnTo} back />
+                </div>
               </div>
             </div>
           )}

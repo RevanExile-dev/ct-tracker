@@ -673,41 +673,93 @@ body::after {
 .binder-spine {
   width: clamp(14px, 1.6vw, 24px);
 }
+
+/* Blocco di pagine: qualche riga sottile offset dietro il dorso di ogni
+   meta', cosi' il binder si legge come "tante pagine" e non un foglio
+   solo - trucco statico via ::after, nessun costo di layout. */
+.binder-slot-left::after,
+.binder-slot-right::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 5px;
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 3px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.binder-slot-left::after { right: -3px; }
+.binder-slot-right::after { left: -3px; }
+
+/* --- Sfoglio: cerniera a due pannelli (near = attaccato al dorso, far =
+   lembo libero, nidificato dentro near) invece di un'unica lastra rigida.
+   Un rotateY piatto su un solo pannello sparisce del tutto a meta' gesto
+   (di taglio verso la camera, a 90 gradi) - una pagina vera non lo fa mai,
+   resta sempre visibile come sagoma curva. Nidificando due pannelli e
+   facendo "ritardare" near mentre far piega di piu' (la differenza,
+   --flip-bend-deg, e' 0 agli estremi e massima a meta' gesto) si ottiene
+   una vera "V" di carta che non collassa mai a una linea, restando piatta
+   e indistinguibile da oggi a riposo (progress 0 o 1). Vedi paintProgress
+   in BinderBook.tsx per la matematica (aNear/bFarLocal). --- */
 .binder-flip {
   top: 0;
   bottom: 0;
   width: calc(50% - clamp(7px, .8vw, 12px));
-  transition: transform 680ms cubic-bezier(.45,.05,.18,1);
-  /* L'intensita' dell'ombra di piega segue --flip-shadow (0-1), scritta a
-     ogni frame dal trascinamento in BinderBook.tsx (picco a meta' del
-     gesto) - a riposo/0 non produce alcuna ombra visibile. */
-  box-shadow: 0 0 calc(var(--flip-shadow, 0) * 40px) calc(var(--flip-shadow, 0) * 6px) rgba(0, 0, 0, calc(var(--flip-shadow, 0) * 0.5));
+  /* Azzera lo shadow statico del blocco "prototipo" piu' sopra nel file:
+     l'ombra dinamica vera vive ora su .binder-flip-near. */
+  box-shadow: none;
+  /* Puramente decorativo durante l'animazione: la pagina cliccabile e'
+     quella statica sottostante, rivelata a fine sfoglio. Senza questo le
+     carte duplicate dentro near/far (necessarie per il ritaglio a due
+     meta', vedi .binder-flip-window) sarebbero brevemente cliccabili
+     anche loro durante il gesto. */
+  pointer-events: none;
 }
 .binder-flip-single {
   left: 0;
   width: 100%;
 }
-.binder-flip[data-direction="next"] {
-  right: 0;
-  transform-origin: left center;
+.binder-flip[data-direction="next"] { right: 0; }
+.binder-flip[data-direction="prev"] { left: 0; }
+
+.binder-flip-near,
+.binder-flip-far {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 50%;
+  transform-style: preserve-3d;
+  transition: transform 680ms cubic-bezier(.45, .05, .18, 1);
 }
-.binder-flip[data-direction="prev"] {
-  left: 0;
-  transform-origin: right center;
+.binder-flip[data-direction="next"] .binder-flip-near { left: 0; transform-origin: left center; }
+.binder-flip[data-direction="prev"] .binder-flip-near { right: 0; transform-origin: right center; }
+.binder-flip[data-direction="next"] .binder-flip-far { left: 100%; transform-origin: left center; }
+.binder-flip[data-direction="prev"] .binder-flip-far { right: 100%; transform-origin: right center; }
+
+/* L'intensita' di ombra/piega/luce segue --flip-shadow (0-1, scritta ad
+   ogni frame dal trascinamento in BinderBook.tsx - stessa curva sin(),
+   picco a meta' gesto) - a riposo/0 non produce alcun effetto visibile.
+   Impostata su .binder-flip-near: eredita su .binder-flip-far (nidificato)
+   e su tutti i layer decorativi dentro entrambi. */
+.binder-flip-near {
+  box-shadow: 0 0 calc(var(--flip-shadow, 0) * 40px) calc(var(--flip-shadow, 0) * 6px) rgba(0, 0, 0, calc(var(--flip-shadow, 0) * 0.5));
 }
+
 /* Durante il trascinamento attivo il transform e' scritto ad ogni frame
    via ref (segue il dito/cursore 1:1) - nessuna transizione CSS deve
    interpolare quei valori, altrimenti la pagina "insegue" il gesto con
    un ritardo percepibile invece di aderirvi. Rimossa al rilascio, cosi'
    la transizione torna attiva per la fase di assestamento. */
-.binder-flip-live {
+.binder-flip-live .binder-flip-near,
+.binder-flip-live .binder-flip-far {
   transition: none;
 }
+
 .binder-flip-face {
   position: absolute;
   inset: 0;
   backface-visibility: hidden;
-  transform-style: preserve-3d;
+  overflow: hidden;
 }
 .binder-flip-back {
   transform: rotateY(180deg);
@@ -715,6 +767,63 @@ body::after {
      dal verso: il retro (rivelato a meta' del giro) e' appena piu' scuro. */
   filter: brightness(0.92);
 }
+
+/* Il contenuto reale (ScreenView) di una pagina in sfoglio viene renderizzato
+   per intero dentro ciascuna meta' (near/far), a doppia larghezza, e
+   ritagliato dalla finestra overflow:hidden - cosi' near mostra solo la
+   meta' sinistra della pagina e far solo la destra, ricostruendo il tutto
+   quando sono piatte (progress 0/1) esattamente come oggi. */
+.binder-flip-window {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.binder-flip-slice {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 200%;
+}
+.binder-flip[data-direction="next"] .binder-flip-near .binder-flip-slice { left: 0; }
+.binder-flip[data-direction="next"] .binder-flip-far .binder-flip-slice { left: -100%; }
+.binder-flip[data-direction="prev"] .binder-flip-near .binder-flip-slice { left: -100%; }
+.binder-flip[data-direction="prev"] .binder-flip-far .binder-flip-slice { left: 0; }
+
+/* Luce/ombra dinamica che spazza la pagina mentre si piega (il lato che si
+   solleva verso la luce si schiarisce, quello che si allontana si scurisce)
+   + la linea di piega vera e propria al bordo interno di "near" - copre
+   anche l'eventuale scarto di un frame tra le due meta', che su un foglio
+   vero avrebbe comunque un'ombra li'. */
+.binder-flip-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, calc(var(--flip-shadow, 0) * .5)),
+    transparent 55%,
+    rgba(0, 0, 0, calc(var(--flip-shadow, 0) * .4))
+  );
+}
+.binder-flip[data-direction="prev"] .binder-flip-shade {
+  background: linear-gradient(270deg,
+    rgba(255, 255, 255, calc(var(--flip-shadow, 0) * .5)),
+    transparent 55%,
+    rgba(0, 0, 0, calc(var(--flip-shadow, 0) * .4))
+  );
+}
+.binder-flip-crease {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  pointer-events: none;
+  opacity: var(--flip-shadow, 0);
+  background: linear-gradient(180deg, rgba(0, 0, 0, .4), rgba(255, 255, 255, .55) 50%, rgba(0, 0, 0, .4));
+  filter: blur(.5px);
+}
+.binder-flip[data-direction="next"] .binder-flip-near .binder-flip-crease { right: 0; }
+.binder-flip[data-direction="prev"] .binder-flip-near .binder-flip-crease { left: 0; }
 @keyframes binder-page-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -751,7 +860,8 @@ body::after {
   .brand-card,
   .brand-wave,
   .binder-pocket-caption,
-  .binder-flip,
+  .binder-flip-near,
+  .binder-flip-far,
   .filter-panel-anim {
     transition: none !important;
   }
