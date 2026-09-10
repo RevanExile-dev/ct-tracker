@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { CardRow, fetchCards } from "@/lib/db";
+import { CardRow, fetchCards, fetchCardsTrend } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
 import { formatCents } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
@@ -26,6 +26,7 @@ function BinderContent() {
   const [error, setError] = useState<string | null>(null);
   const { data: session } = useSession();
   const [valueHistory, setValueHistory] = useState<BinderValuePoint[] | null>(null);
+  const [trends, setTrends] = useState<Record<number, { avgCents: number; days: number }>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +40,20 @@ function BinderContent() {
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    // Batch su tutte le carte del binder in una sola richiesta (vedi
+    // fetchCardsTrend) invece di uno storico per carta - dato pubblico di
+    // catalogo, nessun bisogno di login (a differenza di valueHistory
+    // sotto). Solo per la vista tabella (BinderTable), ma calcolato appena
+    // le carte sono pronte per non ritardare il cambio di layout.
+    if (!cards || cards.length === 0) return;
+    let cancelled = false;
+    fetchCardsTrend(cards.map((c) => c.id))
+      .then((result) => { if (!cancelled) setTrends(result); })
+      .catch(() => { /* best-effort: la tabella cade sul "—" per riga */ });
+    return () => { cancelled = true; };
+  }, [cards]);
 
   useEffect(() => {
     // Lo storico del valore esiste solo lato server (binder_value_snapshots,
@@ -129,7 +144,7 @@ function BinderContent() {
       {cards && cards.length === 0 && <div className="rounded-card border border-base-border bg-base-surface/60 py-20 px-5 text-center text-ink-muted">Il Binder è ancora vuoto. Dal catalogo usa la stella su una carta per aggiungerla.</div>}
 
       {cards && cards.length > 0 && view === "collection" && (
-        layout === "table" ? <BinderTable cards={cards} returnTo={returnTo} /> : (
+        layout === "table" ? <BinderTable cards={cards} trends={trends} returnTo={returnTo} /> : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
             {cards.map((card, index) => (
               // priceProfile="best" (non il default "esatto" IT+NM+Zero):

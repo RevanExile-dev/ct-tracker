@@ -371,6 +371,43 @@ export async function fetchPriceHistory(blueprintId: number): Promise<PricePoint
   return rows;
 }
 
+/**
+ * Media mobile degli ultimi `days` giorni per piu' carte in una sola query
+ * (batch su blueprint_id), invece di scaricare lo storico completo di ognuna
+ * come fa fetchPriceHistory - usata per il confronto "vs media Ngg" su liste
+ * intere (es. la tabella del Binder) dove uno storico per carta sarebbe un
+ * problema N+1 reale con decine di carte. Stessa semantica di
+ * trendVsMovingAverage in web/lib/format.ts (COALESCE su best_price_cents
+ * poi min_price_cents, cosi' gli snapshot precedenti all'introduzione della
+ * colonna best_price_cents restano comunque utilizzabili), ricalcolata qui
+ * lato SQL invece che in JS sull'intero array scaricato.
+ */
+export async function fetchCardsTrend(
+  blueprintIds: number[],
+  days = 30,
+): Promise<Record<number, { avgCents: number; days: number }>> {
+  if (blueprintIds.length === 0) return {};
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `
+    SELECT blueprint_id,
+           AVG(COALESCE(best_price_cents, min_price_cents))::float AS avg_cents,
+           COUNT(*)::int AS days
+    FROM price_snapshots
+    WHERE blueprint_id = ANY($1)
+      AND captured_at >= (CURRENT_DATE - $2::int)
+      AND COALESCE(best_price_cents, min_price_cents) IS NOT NULL
+    GROUP BY blueprint_id
+    `,
+    [blueprintIds, days],
+  );
+  const result: Record<number, { avgCents: number; days: number }> = {};
+  for (const row of rows) {
+    result[row.blueprint_id] = { avgCents: row.avg_cents, days: row.days };
+  }
+  return result;
+}
+
 /** Le migliori (piu' economiche) inserzioni live per una carta (fino a 25,
  * vedi replace_price_listings in scripts/db.py). */
 export async function fetchBestListings(blueprintId: number): Promise<Listing[]> {
