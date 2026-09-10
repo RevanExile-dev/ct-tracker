@@ -15,6 +15,11 @@ export type CardRow = {
   latest_price_currency: string | null;
   latest_listings: number | null;
   latest_language: string | null;
+  // Condizione dell'inserzione piu' economica in ASSOLUTO (latest_price_cents),
+  // qualunque lingua/Zero - va mostrata ogni volta che quel prezzo compare da
+  // solo (es. fallback in CardTile quando non esiste un'offerta migliore),
+  // altrimenti un'inserzione Poor sembra equivalente a una Near Mint vera.
+  latest_condition: string | null;
   prev_price_cents: number | null;
   languages_available: string | null;
   // Prezzo "migliore" (Near Mint + CardTrader Zero quando esiste, altrimenti
