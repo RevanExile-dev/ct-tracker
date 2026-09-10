@@ -113,6 +113,21 @@ export async function fetchBestListings(blueprintId: number): Promise<Listing[]>
   return apiFetch<Listing[]>(`/api/cards/${blueprintId}/listings`);
 }
 
+/** Media mobile degli ultimi `days` giorni per piu' carte in una sola
+ * richiesta (es. tutte le carte del Binder) - vedi fetchCardsTrend lato
+ * server, evita una fetchPriceHistory per carta (N+1) solo per calcolare
+ * un confronto "vs media Ngg" su una lista. */
+export async function fetchCardsTrend(
+  blueprintIds: number[],
+  days = 30
+): Promise<Record<number, { avgCents: number; days: number }>> {
+  if (blueprintIds.length === 0) return {};
+  return apiFetch<Record<number, { avgCents: number; days: number }>>("/api/cards/trend", {
+    ids: blueprintIds,
+    days,
+  });
+}
+
 export async function fetchExpansions(): Promise<ExpansionInfo[]> {
   return apiFetch<ExpansionInfo[]>("/api/expansions");
 }
