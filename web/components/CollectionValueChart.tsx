@@ -82,14 +82,29 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
   // bloccata fuori, senza modo di tornare a "Tutto" se non ricaricando).
   const hasChartData = filteredPoints.length >= 2;
 
-  const active = hoverIdx !== null ? filteredPoints[hoverIdx] : filteredPoints[filteredPoints.length - 1];
-  const first = filteredPoints[0];
+  // filteredPoints e' garantito non-vuoto quando points.length >= 2 (il
+  // cutoff del range e' sempre calcolato dall'ultimo punto di points, che
+  // quindi supera sempre il proprio stesso filtro) - MA solo se
+  // captured_at e' sempre una data valida. Fallback difensivo su points
+  // (mai vuoto qui, per il guard sopra) per non far mai leggere una
+  // proprieta' di undefined se quell'assunzione si rivelasse falsa
+  // (rilievo review Groq su PR #43).
+  const active =
+    filteredPoints.length > 0
+      ? (hoverIdx !== null ? filteredPoints[hoverIdx] : filteredPoints[filteredPoints.length - 1])
+      : points[points.length - 1];
+  const first = filteredPoints[0] ?? points[points.length - 1];
   const deltaCents = active.total_cents - first.total_cents;
   const deltaPct = first.total_cents !== 0 ? (deltaCents / first.total_cents) * 100 : null;
   const activeCoord = {
     x: xForDate(Date.parse(active.captured_at), minMs, maxMs),
     y: yForValue(active.total_cents, min, max),
   };
+  // A differenza di active/first sopra, coords puo' legittimamente essere
+  // vuoto (e' la geometria calcolata su filteredPoints, non su points) -
+  // lastCoord resta undefined in quel caso, va controllato prima di
+  // leggere .x/.y invece di forzare un fallback che disegnerebbe un punto
+  // fuori posto.
   const lastCoord = coords[coords.length - 1];
 
   function indexFromClientX(clientX: number): number {
@@ -237,7 +252,7 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
             strokeLinejoin="round"
             style={{ "--line-length": 1 } as React.CSSProperties}
           />
-          {hoverIdx === null && (
+          {hoverIdx === null && lastCoord && (
             <>
               <circle cx={lastCoord.x} cy={lastCoord.y} r="3" fill="none" stroke="#5FF0E3" strokeWidth="1.5" className="chart-pulse-ring" />
               <circle cx={lastCoord.x} cy={lastCoord.y} r="1.8" fill="#5FF0E3" />
