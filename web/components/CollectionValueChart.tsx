@@ -61,10 +61,11 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
     return { path, areaFillPath: areaPath(path, coords), coords, min, max, minMs, maxMs };
   }, [filteredPoints]);
 
-  // Meno di 2 punti: non c'e' ancora un andamento da disegnare (un punto
-  // solo, o nessuno il primissimo giorno prima del sync notturno) - un
-  // messaggio invece di un grafico vuoto/piatto che sembrerebbe un bug.
-  if (filteredPoints.length < 2) {
+  // Meno di 2 punti in ASSOLUTO (non solo nel periodo filtrato): non c'e'
+  // ancora nessun andamento da disegnare in nessuna vista, quindi niente
+  // da guadagnare a mostrare comunque il selettore di periodo (sarebbe
+  // vuoto - availablePresets richiede anch'esso points.length >= 2).
+  if (points.length < 2) {
     return (
       <div className="rounded-card border border-base-border bg-base-surface p-5 text-center text-ink-muted text-sm">
         {points.length === 0
@@ -73,6 +74,13 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
       </div>
     );
   }
+
+  // Il periodo filtrato invece PUO' scendere sotto i 2 punti (es. "30g" su
+  // un binder che ha aggiunto la prima carta 10 giorni fa) pur avendo
+  // punti sufficienti nello storico completo: qui la barra dei periodi
+  // resta visibile (rilievo review Gemini su PR #43 - prima restava
+  // bloccata fuori, senza modo di tornare a "Tutto" se non ricaricando).
+  const hasChartData = filteredPoints.length >= 2;
 
   const active = hoverIdx !== null ? filteredPoints[hoverIdx] : filteredPoints[filteredPoints.length - 1];
   const first = filteredPoints[0];
@@ -158,7 +166,13 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
         </div>
       )}
 
-      <div className="flex items-baseline justify-between mb-4 flex-wrap gap-x-4 gap-y-2">
+      {!hasChartData && (
+        <p className="text-center text-xs text-ink-faint py-8">
+          Solo un punto in questo periodo — prova &quot;Tutto&quot; o un periodo più ampio.
+        </p>
+      )}
+
+      <div className={hasChartData ? "flex items-baseline justify-between mb-4 flex-wrap gap-x-4 gap-y-2" : "hidden"}>
         <div>
           <div className="text-xs uppercase tracking-wider text-ink-muted font-mono">
             {hoverIdx !== null ? formatDateLong(active.captured_at) : "Valore più recente"}
@@ -185,6 +199,7 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
       </div>
 
       <svg
+        style={{ display: hasChartData ? undefined : "none" }}
         ref={svgRef}
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
@@ -242,13 +257,17 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
         )}
       </svg>
 
-      <div className="flex justify-between mt-2 text-[11px] font-mono text-ink-faint">
-        <span>{formatDate(first.captured_at)}</span>
-        <span>{formatDate(filteredPoints[filteredPoints.length - 1].captured_at)}</span>
-      </div>
-      <p className="sm:hidden mt-2 text-center text-[10px] text-ink-faint">
-        Trascina sul grafico per scorrere lo storico
-      </p>
+      {hasChartData && (
+        <>
+          <div className="flex justify-between mt-2 text-[11px] font-mono text-ink-faint">
+            <span>{formatDate(first.captured_at)}</span>
+            <span>{formatDate(filteredPoints[filteredPoints.length - 1].captured_at)}</span>
+          </div>
+          <p className="sm:hidden mt-2 text-center text-[10px] text-ink-faint">
+            Trascina sul grafico per scorrere lo storico
+          </p>
+        </>
+      )}
     </div>
   );
 }
