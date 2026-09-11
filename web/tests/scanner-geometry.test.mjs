@@ -102,6 +102,29 @@ test('absorbCandidate purges every already-kept smaller region absorbed by a lar
   assert.equal(kept[0].id, 'outer-correct');
 });
 
+test('absorbCandidate never discards an already-kept region that is larger than the incoming candidate, even if it overlaps it', () => {
+  // Rilievo review Groq sul fix precedente: la pulizia di kept[i+1...] non
+  // controllava che candidate fosse effettivamente PIU' GRANDE del box da
+  // rimuovere, solo che lo sovrapponesse per copertura/IoU. Scenario reale:
+  // kept = [medium, large] (medium e large non si sovrappongono tra loro -
+  // altrimenti sarebbero gia' stati fusi in precedenza), e arriva un
+  // candidate di taglia intermedia (piu' grande di medium, piu' piccolo di
+  // large) che sovrappone significativamente ENTRAMBI per pura geometria
+  // (un angolo del candidate cade dentro large, l'altro contiene medium per
+  // intero). Senza il controllo di dimensione, large verrebbe scartato al
+  // posto del candidate piu' piccolo solo perche' overlapCoverage(large,
+  // candidate) supera la soglia - esattamente l'errore che absorbCandidate
+  // esiste per evitare.
+  const medium = region('medium', 0.35, 0.4, 0.05, 0.1, 0.9);
+  const large = region('large', 0.4, 0, 0.6, 1, 0.5);
+  const candidate = region('candidate', 0.35, 0.4, 0.25, 0.2, 0.6);
+  const kept = [medium, large];
+  assert.equal(image.absorbCandidate(kept, candidate, 0.58), true);
+  assert.equal(kept.length, 2);
+  assert.equal(kept[0].id, 'candidate');
+  assert.equal(kept[1].id, 'large');
+});
+
 test('withFrameMargins seeds near-edge coordinates only when nothing organic is already there', () => {
   // Reported real-world bug (Samurott V, 2026-09-10): a single surviving
   // region that does not track the card's true border. pickPeaks only keeps

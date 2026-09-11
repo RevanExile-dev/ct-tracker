@@ -104,8 +104,17 @@ export function absorbCandidate(kept: ScanRegion[], candidate: ScanRegion, iouTh
         // match (i), lasciando gli altri box piu' piccoli - anch'essi
         // contenuti nello stesso candidate piu' grande - non ripuliti in
         // kept[i+1...]. Rilevato dalla review Gemini su questa stessa PR.
+        // La rimozione richiede ANCHE che candidate sia piu' grande di
+        // kept[j], non solo che lo sovrapponga: senza questo controllo di
+        // dimensione (rilievo review Groq sul fix precedente) un kept[j]
+        // piu' grande di candidate ma che lo contiene per coincidenza
+        // geometrica verrebbe scartato al posto suo, violando la stessa
+        // regola "tieni sempre il piu' grande" che questa funzione esiste
+        // per applicare.
         for (let j = kept.length - 1; j > i; j -= 1) {
-          if (overlapCoverage(kept[j], candidate) > 0.7 || iou(kept[j], candidate) > iouThreshold) {
+          const other = kept[j];
+          const candidateIsLarger = candidate.width * candidate.height > other.width * other.height;
+          if (candidateIsLarger && (overlapCoverage(other, candidate) > 0.7 || iou(other, candidate) > iouThreshold)) {
             kept.splice(j, 1);
           }
         }
