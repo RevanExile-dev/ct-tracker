@@ -729,7 +729,7 @@ body::after {
   height: 100%;
   width: 50%;
   transform-style: preserve-3d;
-  transition: transform 680ms cubic-bezier(.45, .05, .18, 1);
+  transition: none; /* BinderBook animates curved progress via rAF. */
 }
 .binder-flip[data-direction="next"] .binder-flip-near { left: 0; transform-origin: left center; }
 .binder-flip[data-direction="prev"] .binder-flip-near { right: 0; transform-origin: right center; }
@@ -748,8 +748,8 @@ body::after {
 /* Durante il trascinamento attivo il transform e' scritto ad ogni frame
    via ref (segue il dito/cursore 1:1) - nessuna transizione CSS deve
    interpolare quei valori, altrimenti la pagina "insegue" il gesto con
-   un ritardo percepibile invece di aderirvi. Rimossa al rilascio, cosi'
-   la transizione torna attiva per la fase di assestamento. */
+   un ritardo percepibile invece di aderirvi. Anche l'assestamento segue
+   la stessa curva via rAF: gli estremi CSS piatti non curvavano la pagina. */
 .binder-flip-live .binder-flip-near,
 .binder-flip-live .binder-flip-far {
   transition: none;

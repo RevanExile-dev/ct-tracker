@@ -128,7 +128,7 @@ function FlipFace({ screen, returnTo, back = false }: { screen: Screen | undefin
 // Fase dello sfoglio in corso:
 // - "live": trascinamento attivo, il transform e' scritto ad ogni frame via
 //   ref (segue dito/cursore 1:1), nessuna transizione CSS.
-// - "completing"/"cancelling": la transizione CSS e' riabilitata e anima
+// - "completing"/"cancelling": il progress viene animato via rAF
 //   verso il traguardo (rispettivamente pagina girata del tutto o tornata
 //   a piatta) - usata sia al rilascio di un drag sia da un turn() discreto
 //   (bottone/tastiera, che salta direttamente qui con progress=0).
@@ -197,6 +197,8 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const [singlePage, setSinglePage] = useState(false);
   const [page, setPage] = useState(Math.max(0, initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
+  const bookRef = useRef<HTMLDivElement>(null);
+  const settlingRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const flipNearRef = useRef<HTMLDivElement>(null);
   const flipFarRef = useRef<HTMLDivElement>(null);
@@ -281,7 +283,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   }
 
   // Risolve definitivamente lo sfoglio in corso (chiamata sia da
-  // onTransitionEnd sia dalla rete di sicurezza a timeout): se completing
+  // completamento rAF sia dalla rete di sicurezza a timeout): se completing
   // avanza la pagina, altrimenti la lascia invariata. Ripulisce sempre gli
   // stili imperativi cosi' il prossimo sfoglio riparte da uno stato pulito.
   //
@@ -294,7 +296,11 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   // (dal chiamante, che ce l'ha gia' in scope) le due setState restano
   // pure e indipendenti, nessun doppio incremento possibile.
   function resolveFlip(direction: "next" | "prev", completing: boolean) {
+    // Frame completion and timeout must never advance the page twice.
+    if (!settlingRef.current) return;
+    settlingRef.current = false;
     clearFlipTimeout();
+    cancelRaf();
     if (completing) {
       setPage((page) => Math.max(0, Math.min(screens.length - 1, page + (direction === "next" ? step : -step))));
     }
@@ -317,33 +323,39 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     flipTimeoutRef.current = setTimeout(() => resolveFlip(direction, completing), durationMs + SETTLE_SAFETY_MARGIN_MS);
   }
 
-  // Anima dallo stato corrente (che sia in mezzo a un drag o a riposo) fino
-  // al traguardo (girata del tutto o tornata piatta), riabilitando la
-  // transizione CSS - usata sia al rilascio di un drag sia da turn().
+  // Interpolate progress through the existing bend curve. CSS interpolation
+  // between two flat endpoints skipped the bend entirely on button turns.
   function settleTo(direction: "next" | "prev", fromProgress: number, completing: boolean) {
+    cancelRaf();
+    settlingRef.current = true;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      resolveFlip(direction, completing);
+      return;
+    }
     const remaining = completing ? 1 - fromProgress : fromProgress;
     const duration = Math.max(SETTLE_MIN_MS, remaining * SETTLE_BASE_MS);
+    const targetProgress = completing ? 1 : 0;
     setFlip({ direction, phase: completing ? "completing" : "cancelling" });
-    // Doppio rAF: il primo lascia che la rimozione della classe
-    // "binder-flip-live" (che disattiva transition:none) sia dipinta, il
-    // secondo cambia davvero il target - altrimenti browser puo' fondere
-    // le due modifiche in un solo frame e saltare la transizione.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const near = flipNearRef.current;
-        const far = flipFarRef.current;
-        if (!near || !far) return;
-        near.style.transitionDuration = `${duration}ms`;
-        far.style.transitionDuration = `${duration}ms`;
-        const targetProgress = completing ? 1 : 0;
-        paintProgress(direction, targetProgress);
-      });
-    });
+    let startedAt: number | null = null;
+    function animate(now: number) {
+      if (!settlingRef.current) return;
+      if (!flipNearRef.current || !flipFarRef.current) {
+        rafRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      if (startedAt === null) startedAt = now;
+      const t = Math.min(1, (now - startedAt) / duration);
+      const eased = t * t * (3 - 2 * t);
+      paintProgress(direction, fromProgress + (targetProgress - fromProgress) * eased);
+      if (t === 1) resolveFlip(direction, completing);
+      else rafRef.current = requestAnimationFrame(animate);
+    }
+    rafRef.current = requestAnimationFrame(animate);
     armSettleTimeout(direction, duration, completing);
   }
 
   function turn(direction: "next" | "prev") {
-    if (flip || (direction === "next" ? !canNext : !canPrev)) return;
+    if (flip || settlingRef.current || (direction === "next" ? !canNext : !canPrev)) return;
     settleTo(direction, 0, true);
   }
 
@@ -353,12 +365,27 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   // quando drag.locked torna false) e continuerebbe a girare a vuoto ad
   // ogni frame, e il timeout di sicurezza chiamerebbe comunque
   // resolveFlip su un componente ormai smontato.
-  useEffect(() => () => { clearFlipTimeout(); cancelRaf(); }, []);
+  //
+  // settlingRef.current = false e' altrettanto necessario qui (rilievo
+  // review Gemini su PR #52): senza, un frame di settleTo/animate() gia'
+  // schedulato PRIMA dello smontaggio puo' eseguire dopo che React ha
+  // azzerato flipNearRef/flipFarRef ma con settlingRef.current ancora
+  // true - rientra nel ramo "ref nulli" di animate(), rischedula un
+  // altro requestAnimationFrame, e quello non verra' mai piu' cancellato
+  // da questo cleanup (gia' eseguito una volta): loop infinito che non
+  // si ferma finche' la pagina non viene ricaricata. Con settlingRef
+  // azzerato qui, quel frame residuo si ferma al primo controllo
+  // `if (!settlingRef.current) return;` in cima ad animate().
+  useEffect(() => () => { settlingRef.current = false; clearFlipTimeout(); cancelRaf(); }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
-      if (event.key === "ArrowRight" || event.key === "PageDown") turn("next");
-      if (event.key === "ArrowLeft" || event.key === "PageUp") turn("prev");
+      const target = event.target;
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey
+        || !(target instanceof HTMLElement) || !bookRef.current?.contains(target)
+        || target.closest("input, select, textarea, [contenteditable='true'], [role='slider']")) return;
+      if (event.key === "ArrowRight" || event.key === "PageDown") { event.preventDefault(); turn("next"); }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") { event.preventDefault(); turn("prev"); }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -372,7 +399,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
     // questo handler) - dragRef e' un ref, sempre aggiornato in modo
     // sincrono, quindi non soggetto a questo scarto (trovato in review,
     // scenario multi-touch non coperto dal solo controllo su flip).
-    if (flip || dragRef.current) return;
+    if (flip || settlingRef.current || dragRef.current || !event.isPrimary || event.button !== 0) return;
     const now = performance.now();
     dragRef.current = {
       pointerId: event.pointerId,
@@ -468,11 +495,12 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const flipBackScreen = flip ? (flip.direction === "next" ? screens[nextStart] : screens[prevStart + (singlePage ? 0 : 1)]) : undefined;
 
   return (
-    <div className="w-full">
+    <div ref={bookRef} className="w-full">
       <div
         ref={stageRef}
         className={`binder-stage ${singlePage ? "binder-stage-single" : "binder-stage-spread"} ${flip?.phase === "live" ? "binder-stage-dragging" : ""}`}
         aria-label="Binder sfogliabile"
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -507,14 +535,11 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
               className={`binder-flip ${singlePage ? "binder-flip-single" : ""} ${flip.phase === "live" ? "binder-flip-live" : ""}`}
               data-direction={flip.direction}
               aria-hidden
+              inert
             >
               <div
                 ref={flipNearRef}
                 className="binder-flip-near"
-                onTransitionEnd={(event) => {
-                  if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
-                  resolveFlip(flip.direction, flip.phase === "completing");
-                }}
               >
                 <FlipFace screen={flipFrontScreen} returnTo={returnTo} />
                 <FlipFace screen={flipBackScreen} returnTo={returnTo} back />

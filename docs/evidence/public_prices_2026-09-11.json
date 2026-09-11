@@ -1,0 +1,118 @@
+{
+  "started_at": "2026-09-11T04:59:25.962030+00:00",
+  "base_url": "https://ct-tracker-eight.vercel.app",
+  "scope": "Public API sample, not full-market or live-CardTrader certification",
+  "cards": [
+    {
+      "id": 122678,
+      "name": "Professor Elm's Lecture",
+      "version": "Ultra Rare | 213/214",
+      "cardtrader_url": "https://www.cardtrader.com/cards/122678",
+      "minimum_cents": 7564,
+      "best_cents": 1000164,
+      "best_profile": {
+        "best_language": "it",
+        "best_condition": "Near Mint",
+        "best_can_sell_via_hub": 1
+      },
+      "exact_it_nm_zero_cents": 1000164,
+      "exact_listings_reported": 1,
+      "visible_listings": 7,
+      "exact_visible_minimum_cents": 1000164,
+      "latest_history_date": "2026-09-06",
+      "history_points": 3,
+      "issues": [],
+      "limitation": "Listings endpoint is capped; missing exact offers do not prove absence. No per-card update timestamp in CardRow."
+    },
+    {
+      "id": 351655,
+      "name": "Shuckle",
+      "version": "Illustration Rare | 136/132",
+      "cardtrader_url": "https://www.cardtrader.com/cards/351655",
+      "minimum_cents": 95,
+      "best_cents": 198,
+      "best_profile": {
+        "best_language": "it",
+        "best_condition": "Near Mint",
+        "best_can_sell_via_hub": 1
+      },
+      "exact_it_nm_zero_cents": 198,
+      "exact_listings_reported": 32,
+      "visible_listings": 25,
+      "exact_visible_minimum_cents": 198,
+      "latest_history_date": "2026-09-10",
+      "history_points": 12,
+      "issues": [],
+      "limitation": "Listings endpoint is capped; missing exact offers do not prove absence. No per-card update timestamp in CardRow."
+    },
+    {
+      "id": 110911,
+      "name": "Mewtwo ex",
+      "version": "Ultra Rare | 157/162",
+      "cardtrader_url": "https://www.cardtrader.com/cards/110911",
+      "minimum_cents": 1371,
+      "best_cents": 8438,
+      "best_profile": {
+        "best_language": "en",
+        "best_condition": "Near Mint",
+        "best_can_sell_via_hub": 1
+      },
+      "exact_it_nm_zero_cents": 300064,
+      "exact_listings_reported": 1,
+      "visible_listings": 25,
+      "exact_visible_minimum_cents": null,
+      "latest_history_date": "2026-09-06",
+      "history_points": 3,
+      "issues": [],
+      "limitation": "Listings endpoint is capped; missing exact offers do not prove absence. No per-card update timestamp in CardRow."
+    },
+    {
+      "id": 166453,
+      "name": "Umbreon VMAX",
+      "version": "Special Illustration Rare | 215/203",
+      "cardtrader_url": "https://www.cardtrader.com/cards/166453",
+      "minimum_cents": 105064,
+      "best_cents": 280289,
+      "best_profile": {
+        "best_language": "en",
+        "best_condition": "Near Mint",
+        "best_can_sell_via_hub": 1
+      },
+      "exact_it_nm_zero_cents": 306059,
+      "exact_listings_reported": 4,
+      "visible_listings": 20,
+      "exact_visible_minimum_cents": 306059,
+      "latest_history_date": "2026-09-06",
+      "history_points": 3,
+      "issues": [],
+      "limitation": "Listings endpoint is capped; missing exact offers do not prove absence. No per-card update timestamp in CardRow."
+    },
+    {
+      "id": 234316,
+      "name": "Hisuian Decidueye VSTAR",
+      "version": "Hisuian Samurott VSTAR086/067",
+      "cardtrader_url": "https://www.cardtrader.com/cards/234316",
+      "minimum_cents": 710,
+      "best_cents": 710,
+      "best_profile": {
+        "best_language": "jp",
+        "best_condition": "Near Mint",
+        "best_can_sell_via_hub": 1
+      },
+      "exact_it_nm_zero_cents": null,
+      "exact_listings_reported": 0,
+      "visible_listings": 3,
+      "exact_visible_minimum_cents": null,
+      "latest_history_date": "2026-09-06",
+      "history_points": 3,
+      "issues": [],
+      "limitation": "Listings endpoint is capped; missing exact offers do not prove absence. No per-card update timestamp in CardRow."
+    }
+  ],
+  "errors": [],
+  "meta": {
+    "last_catalog_sync": "2026-09-09T20:15:10.428274+00:00",
+    "last_price_sync": "2026-09-10T20:34:41.716335+00:00"
+  },
+  "finished_at": "2026-09-11T05:01:39.006522+00:00"
+}

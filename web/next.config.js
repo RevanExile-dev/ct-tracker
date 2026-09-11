@@ -9,8 +9,9 @@ const nextConfig = {
     // Transformations, 5K/5K). Le immagini arrivano gia' pronte da
     // CardTrader; disattivare l'ottimizzazione le serve cosi' come sono
     // (nessuna conversione webp/avif ne' resize lato Vercel) invece di
-    // continuare a esaurire quel tetto - costo assorbito facilmente dal
-    // margine ampio su Fast Data Transfer (1,7% del limite).
+    // continuare a esaurire quel tetto. Con URL esterni e unoptimized,
+    // il browser scarica direttamente da CardTrader: le immagini non
+    // transitano dall'Image Optimizer ne' dal traffico dati di Vercel.
     unoptimized: true,
     remotePatterns: [
       {
