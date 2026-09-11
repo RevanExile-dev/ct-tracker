@@ -196,7 +196,14 @@ export function recognizeText(image: string): Promise<OcrResult> {
     const crops = await prepareOcrCrops(image);
 
     const name = await runField(worker, crops.name, "7").catch(() => ({ text: "", confidence: 0 }));
-    const number = await runField(worker, crops.number, "7", true).catch(() => ({ text: "", confidence: 0 }));
+    // PSM "7" (riga singola forzata) e' sbagliato per questo crop: con il
+    // margine di sicurezza aggiunto in expandRegionForOcr() puo' contenere
+    // piu' di una riga fisica (fascia weakness/resistance/retreat sopra,
+    // credito illustratore/numero sotto). Verificato su una foto reale: PSM
+    // "7" produceva testo illeggibile anche su un ritaglio già ben
+    // posizionato, mentre PSM "6" (blocco) leggeva correttamente l'inizio
+    // del numero di collezione nello stesso identico ritaglio.
+    const number = await runField(worker, crops.number, "6", true).catch(() => ({ text: "", confidence: 0 }));
     const body = await runField(worker, crops.body, "6").catch(() => ({ text: "", confidence: 0 }));
 
     let text = [name.text, number.text, body.text].filter(Boolean).join("\n");

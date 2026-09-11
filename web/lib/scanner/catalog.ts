@@ -266,7 +266,24 @@ export function rankScannerCandidates(
       // non deve MAI poter superare un altro candidato il cui numero e'
       // stato verificato (branch hasNumberEvidence sopra, tetto ~0.94 con
       // numberScore=1) - l'assenza di un dato non e' evidenza a favore.
-      score = (nameScore * 0.72 + visualScore * 0.28) * 0.92;
+      //
+      // Il nome pesa MOLTO meno del visivo (0.3 contro 0.7) quando manca il
+      // numero, non il contrario come nella versione precedente (0.72/0.28).
+      // Caso reale che ha rivelato il problema (foto vera, Hisuian Samurott
+      // V GG51/GG70): l'OCR su un font decorativo (contorno sottile, corsivo)
+      // ha prodotto un nome completamente illeggibile, MA per puro rumore
+      // due parole corte di una carta sbagliata ("Weakness"/"Aron") hanno
+      // combaciato per intero con l'unico frammento di testo letto -
+      // nameScore=1 su una carta del tutto scorrelata. L'hash visivo della
+      // carta giusta era invece nettamente il piu' vicino fra tutti i
+      // candidati (distanza Hamming sull'artwork 11/32, il piu' vicino fra
+      // gli altri era 28/32) - un hash cosi' vicino e' molto piu' difficile
+      // da ottenere per puro caso di quanto lo sia un nameScore=1 da rumore
+      // OCR su nomi brevi. Con il peso 0.72/0.28 precedente la carta
+      // sbagliata vinceva comunque; verificato con Hamming distance reali
+      // (non supposizione) che 0.3/0.7 la ribalta con margine anche nel
+      // caso peggiore (nameScore=0 per la carta giusta).
+      score = (nameScore * 0.3 + visualScore * 0.7) * 0.92;
     } else {
       score = nameScore * 0.92;
     }
