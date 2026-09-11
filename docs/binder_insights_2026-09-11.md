@@ -27,7 +27,7 @@ durante il lavoro. Nessuno dei loro file è modificato da questa PR.
 |---|---|---|
 | 1. Acquisto/provenienza e rendimento | Modello e criteri sotto; grafico potenziato sui dati esistenti | Claude: inventario per lotti, costi, valutazione coerente |
 | 2. Ordinamento in euro | Pulsanti “Variazione € / %” e spiegazione esplicita | Nessuna modifica alla query |
-| 3. Sfoglio più reale | Corretto il salto della curvatura con pulsanti/tastiera; input tastiera circoscritto al libro | QA desktop/touch; eventuale modello di pagina continuo |
+| 3. Sfoglio più reale | Corretto il salto della curvatura con pulsanti/tastiera; input tastiera circoscritto al libro; test CI riusciti | QA visiva di fluidità/realismo; prototipo di pagina continua sotto |
 | 4. Sync prioritario | Audit e piano con priorità, budget e checkpoint | Claude: implementazione e misurazione della latenza |
 | 5. Allarmi Telegram | Verificata implementazione esistente e specificato flusso per carta | Claude: persistenza, UI, outbox, collegamento chat |
 | 6. Affidabilità dati | Script audit pubblico, campione API e confronto effettivo CardTrader | Completare profili e timestamp; correggere rischi sotto |
@@ -257,11 +257,17 @@ misurare prima/dopo. [Image Optimization](https://vercel.com/docs/image-optimiza
 - [x] Audit codice e confronto CardTrader live dei due casi sopra.
 - [ ] QA locale browser: `ERR_BLOCKED_BY_CLIENT` verso localhost; Chromium
   locale assente e download in timeout. Nessun bypass dei limiti ambiente.
-- [ ] Esecuzione delle nuove interazioni in CI: controllare il run della PR,
-  distinguendo test con API simulate da verifica del database/account reale.
+- [x] [CI UI: 17/17 prove riuscite](https://github.com/RevanExile-dev/ct-tracker/actions/runs/34586820056),
+  incluse tutte le 6 nuove, sul commit `2ebf4c8e1fa8179cc97b24557604b7fd5ce12ef9`.
+  Verificati intervalli/date, tastiera, baseline, zoom, CSV, retry errore,
+  singolo punto, valute diverse, curvatura intermedia e tap con emulazione
+  touch a 390px. API del binder simulate: non è una verifica del login o
+  della persistenza dell'account reale, né una review visiva del realismo.
   Il [primo run](https://github.com/RevanExile-dev/ct-tracker/actions/runs/34586353027)
   ha passato 16/17 prove (5/6 nuove): corretta l'ambiguità del selettore
-  dell'alert, che intercettava anche l'announcer di Next.js. Rerun richiesto.
+  dell'alert, che intercettava anche l'announcer di Next.js; il run sopra
+  verifica anche il recupero dopo errore.
+- [x] [CI Python e configurazione riuscita](https://github.com/RevanExile-dev/ct-tracker/actions/runs/34586820072).
 - [ ] Review finale Gemini/Groq tramite `ai_review.yml` provider `auto`.
   Tool di dispatch non esposto nella sessione: usare workflow esistente,
   non creare un secondo sistema di review.
