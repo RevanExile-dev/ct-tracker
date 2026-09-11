@@ -85,6 +85,23 @@ test('absorbCandidate still promotes the larger box when the inner/outer area ra
   assert.equal(kept[0].id, 'outer-correct');
 });
 
+test('absorbCandidate purges every already-kept smaller region absorbed by a larger outer candidate, not just the first match', () => {
+  // Rilievo review Gemini: una carta puo' avere piu' di un dettaglio interno
+  // ad alto contrasto gia' in kept (es. cornice illustrazione E riquadro
+  // testo attacco) quando arriva il vero bordo esterno, che li contiene
+  // entrambi. Un `return true` al primo match (i=0) lascerebbe il secondo
+  // (kept[1]) intatto, anche se anch'esso e' contenuto nello stesso box piu'
+  // grande - violando l'invariante che i box tenuti non si sovrappongono.
+  const kept = [
+    region('inner-art', 0.2, 0.2, 0.3, 0.3, 0.95),
+    region('inner-text', 0.2, 0.6, 0.3, 0.3, 0.9),
+  ];
+  const outerCorrect = region('outer-correct', 0.05, 0.05, 0.9, 0.9, 0.5);
+  assert.equal(image.absorbCandidate(kept, outerCorrect, 0.58), true);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].id, 'outer-correct');
+});
+
 test('withFrameMargins seeds near-edge coordinates only when nothing organic is already there', () => {
   // Reported real-world bug (Samurott V, 2026-09-10): a single surviving
   // region that does not track the card's true border. pickPeaks only keeps

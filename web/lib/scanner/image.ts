@@ -95,7 +95,21 @@ export function absorbCandidate(kept: ScanRegion[], candidate: ScanRegion, iouTh
     // esistente usava un rapporto di area 0.41, sotto la soglia 0.58 dove
     // il bug si manifesta).
     if (overlapCoverage(existing, candidate) > 0.7) {
-      if (candidate.width * candidate.height > existing.width * existing.height) kept[i] = candidate;
+      if (candidate.width * candidate.height > existing.width * existing.height) {
+        kept[i] = candidate;
+        // Una carta puo' avere piu' di un dettaglio interno ad alto
+        // contrasto gia' tenuto (es. cornice illustrazione E riquadro
+        // testo attacco, entrambi inseriti in kept prima che arrivi il
+        // vero bordo esterno). Il return sotto uscirebbe subito al primo
+        // match (i), lasciando gli altri box piu' piccoli - anch'essi
+        // contenuti nello stesso candidate piu' grande - non ripuliti in
+        // kept[i+1...]. Rilevato dalla review Gemini su questa stessa PR.
+        for (let j = kept.length - 1; j > i; j -= 1) {
+          if (overlapCoverage(kept[j], candidate) > 0.7 || iou(kept[j], candidate) > iouThreshold) {
+            kept.splice(j, 1);
+          }
+        }
+      }
       return true;
     }
     if (iou(existing, candidate) > iouThreshold) return true;
