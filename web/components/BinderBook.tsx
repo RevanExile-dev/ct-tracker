@@ -365,7 +365,18 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   // quando drag.locked torna false) e continuerebbe a girare a vuoto ad
   // ogni frame, e il timeout di sicurezza chiamerebbe comunque
   // resolveFlip su un componente ormai smontato.
-  useEffect(() => () => { clearFlipTimeout(); cancelRaf(); }, []);
+  //
+  // settlingRef.current = false e' altrettanto necessario qui (rilievo
+  // review Gemini su PR #52): senza, un frame di settleTo/animate() gia'
+  // schedulato PRIMA dello smontaggio puo' eseguire dopo che React ha
+  // azzerato flipNearRef/flipFarRef ma con settlingRef.current ancora
+  // true - rientra nel ramo "ref nulli" di animate(), rischedula un
+  // altro requestAnimationFrame, e quello non verra' mai piu' cancellato
+  // da questo cleanup (gia' eseguito una volta): loop infinito che non
+  // si ferma finche' la pagina non viene ricaricata. Con settlingRef
+  // azzerato qui, quel frame residuo si ferma al primo controllo
+  // `if (!settlingRef.current) return;` in cima ad animate().
+  useEffect(() => () => { settlingRef.current = false; clearFlipTimeout(); cancelRaf(); }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {

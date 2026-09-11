@@ -9,7 +9,16 @@ export function normalizeCollectionHistory(points: BinderValuePoint[]): BinderVa
     if (!Number.isFinite(timestamp) || !Number.isFinite(point.total_cents)
       || point.total_cents < 0 || !Number.isFinite(point.cards_count)
       || !Number.isFinite(point.priced_count)) continue;
-    const date = new Date(timestamp).toISOString().slice(0, 10);
+    // Se captured_at e' gia' una data pura (es. "2026-09-11" dalla colonna
+    // Postgres DATE, vedi web/lib/account.server.ts), usarla cosi' com'e':
+    // passare per Date/toISOString() la sposterebbe di un giorno per un
+    // timestamp con offset orario positivo (rilievo review Gemini su PR
+    // #52) - non riproducibile con i dati reali di oggi, ma un input futuro
+    // con offset non deve poter rompere silenziosamente l'aggregazione per
+    // giorno sotto. Fallback a toISOString() solo per formati non standard.
+    const date = /^\d{4}-\d{2}-\d{2}/.test(point.captured_at)
+      ? point.captured_at.slice(0, 10)
+      : new Date(timestamp).toISOString().slice(0, 10);
     byDate.set(date, { ...point, captured_at: date });
   }
   return [...byDate.values()].sort((a, b) => a.captured_at.localeCompare(b.captured_at));
