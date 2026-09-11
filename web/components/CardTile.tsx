@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import ConditionBadge from "./ConditionBadge";
 import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
 import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
@@ -49,6 +50,21 @@ export default function CardTile({
   // entrambi i profili - se hai scelto tu un filtro, il prezzo mostrato
   // deve rispettarlo indipendentemente dal profilo di default.
   const hasFilter = card.filtered_price_cents !== undefined;
+  // Profilo "best" a cascata: quando non esiste un'inserzione Near Mint +
+  // CardTrader Zero, ripiega su latest_price_cents - il piu' economico in
+  // ASSOLUTO, qualunque condizione/lingua/Zero (es. un'inserzione Poor a
+  // 7,13€ mentre il vero prezzo Near Mint/Zero e' 44,63€). Prima questo
+  // fallback restava senza badge di condizione (best_condition/
+  // best_can_sell_via_hub descrivono l'inserzione di best_price_cents, non
+  // quella di latest_price_cents - quando la prima e' null lo sono in
+  // genere anche loro): un prezzo Poor finiva mostrato identico a uno
+  // Near Mint vero, senza alcun modo per distinguerli a colpo d'occhio
+  // (bug reale segnalato dall'utente su una carta reale). usingAbsoluteFloor
+  // segna esplicitamente questo caso, cosi' sotto si puo' usare
+  // latest_condition (la condizione VERA di quel prezzo) invece di un
+  // best_condition che descriverebbe un'inserzione diversa/inesistente.
+  const usingAbsoluteFloor =
+    !hasFilter && isBest && card.best_price_cents == null && card.latest_price_cents != null;
   const priceCents: number | null = hasFilter
     ? card.filtered_price_cents ?? null
     : isBest
@@ -74,15 +90,26 @@ export default function CardTile({
   const shownCondition = hasFilter
     ? card.filtered_condition
     : isBest
-      ? card.best_condition
+      ? (usingAbsoluteFloor ? card.latest_condition : card.best_condition)
       : priceCents != null ? "Near Mint" : undefined;
+  // Nel fallback non sappiamo se quell'inserzione sia vendibile via
+  // CardTrader Zero (nessuna colonna la traccia per il prezzo "assoluto",
+  // solo per quello "best") - undefined (mai 1) invece di ereditare
+  // best_can_sell_via_hub, che descriverebbe un'inserzione diversa.
   const shownZero = hasFilter
     ? card.filtered_can_sell_via_hub
     : isBest
-      ? card.best_can_sell_via_hub
+      ? (usingAbsoluteFloor ? undefined : card.best_can_sell_via_hub)
       : priceCents != null ? 1 : undefined;
-  const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
+  // Prezzo piu' economico in assoluto, mostrato ACCANTO a quello principale
+  // solo quando e' davvero piu' basso (mai ridondante) - risponde alla
+  // richiesta esplicita di vedere sia il prezzo CardTrader Zero sia quello
+  // non-Zero, non solo il primo che si trova aprendo la carta.
+  const showsAbsoluteFloor =
+    !hasFilter && !usingAbsoluteFloor &&
+    card.latest_price_cents != null && priceCents != null &&
+    card.latest_price_cents < priceCents;
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -168,15 +195,26 @@ export default function CardTile({
                   {languageFlag(priceLanguage)}
                 </span>
               )}
-              {isNmZero && (
+              {/* Condizione SEMPRE visibile quando nota (non solo quando e'
+                  Near Mint): un'inserzione Poor/Played deve leggersi diversa
+                  da una Near Mint a colpo d'occhio, mai un numero nudo
+                  indistinguibile da un'offerta vagliata. */}
+              {shownCondition && <ConditionBadge condition={shownCondition} />}
+              {shownZero === 1 && (
                 <span
                   className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
-                  title="Near Mint, CardTrader Zero"
+                  title="Vendibile via CardTrader Zero (spedizione gestita/garantita)"
                 >
-                  NM Zero
+                  Zero
                 </span>
               )}
             </div>
+            {showsAbsoluteFloor && (
+              <div className="text-[10px] font-mono text-ink-faint mt-0.5 flex flex-wrap items-center gap-1">
+                <span>non-Zero da {formatCents(card.latest_price_cents, card.latest_price_currency ?? "EUR")}</span>
+                {card.latest_condition && <ConditionBadge condition={card.latest_condition} />}
+              </div>
+            )}
             {delta !== null && (
               <div
                 className={`text-xs font-mono whitespace-nowrap mt-0.5 ${

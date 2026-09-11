@@ -41,6 +41,15 @@ function cardRowSelect(): string {
   lp.min_price_currency AS latest_price_currency,
   lp.listings_count AS latest_listings,
   lp.cheapest_language AS latest_language,
+  -- Condizione della stessa inserzione di latest_price_cents (il piu'
+  -- economico in ASSOLUTO, qualunque condizione/lingua/Zero) - mai esposta
+  -- finora nonostante la colonna esista gia' in latest_prices. Serve per
+  -- non mostrare mai quel prezzo "nudo" in CardTile: senza un'etichetta di
+  -- condizione visibile, un'inserzione Poor/Heavily Played si confondeva a
+  -- colpo d'occhio con un'offerta Near Mint vera (segnalato dall'utente su
+  -- una carta reale: tile a 7,13€ senza badge, in realta' Poor - il prezzo
+  -- Near Mint/Zero vero era 44,63€).
+  lp.cheapest_condition AS latest_condition,
   lp.prev_price_cents AS prev_price_cents,
   lp.languages_available AS languages_available,
   lp.best_price_cents AS best_price_cents,
