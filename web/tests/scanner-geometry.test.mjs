@@ -67,6 +67,24 @@ test('absorbCandidate keeps the larger already-kept region when a smaller nested
   assert.equal(kept[0].id, 'outer');
 });
 
+test('absorbCandidate still promotes the larger box when the inner/outer area ratio alone already exceeds the IoU threshold', () => {
+  // Real gap found by Gemini review on this same PR: for two boxes in a
+  // containment relationship, IoU = area(inner) / area(outer) (union is
+  // dominated by the outer box). Once the inner box covers more than the
+  // IoU threshold's fraction of the outer one's area (very common - an
+  // illustration frame often covers 60-70% of a card), IoU alone already
+  // exceeds iouThreshold. Checking IoU before overlapCoverage would return
+  // early on that branch and never reach the size-based replacement - the
+  // container fix has to run for EVERY containment ratio, not just the ones
+  // below the IoU threshold. Inner here covers 70% of outer's area
+  // (0.9*0.9=0.81 vs 0.7*0.7=0.49, ratio 0.605 > iouThreshold 0.58).
+  const kept = [region('inner-wrong', 0.15, 0.15, 0.7, 0.7, 0.95)];
+  const outerCorrect = region('outer-correct', 0.05, 0.05, 0.9, 0.9, 0.5);
+  assert.equal(image.absorbCandidate(kept, outerCorrect, 0.58), true);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].id, 'outer-correct');
+});
+
 test('withFrameMargins seeds near-edge coordinates only when nothing organic is already there', () => {
   // Reported real-world bug (Samurott V, 2026-09-10): a single surviving
   // region that does not track the card's true border. pickPeaks only keeps
@@ -135,6 +153,35 @@ test('a large card with a weak true border beats a smaller but higher-contrast i
   const height = 140;
   const cardBox = { x: 4, y: 6, width: 92, height: 128, color: [40, 40, 40] };
   const innerBox = { x: 20, y: 28, width: 60, height: 80, color: [250, 250, 250] };
+  const rgba = makeFrame(width, height, [30, 30, 30], [cardBox, innerBox]);
+  const regions = image.detectBorderRectangles(rgba, width, height);
+  assert.ok(regions.length > 0, 'should find at least one region');
+  const expectedOuter = {
+    x: cardBox.x / width, y: cardBox.y / height,
+    width: cardBox.width / width, height: cardBox.height / height,
+  };
+  const expectedInner = {
+    x: innerBox.x / width, y: innerBox.y / height,
+    width: innerBox.width / width, height: innerBox.height / height,
+  };
+  const best = regions[0];
+  assert.ok(
+    iouOf(best, expectedOuter) > iouOf(best, expectedInner),
+    `top region should track the true (larger, weak-edged) card, not the smaller high-contrast internal box`,
+  );
+});
+
+test('same weak-border-vs-strong-internal case, with the internal box covering a majority of the card (real gap found by review)', () => {
+  // Same scenario as above, but innerBox/cardBox area ratio is ~0.67 - above
+  // the IoU dedup threshold (0.58). This is the case a first version of
+  // absorbCandidate got wrong: checking IoU before overlapCoverage let the
+  // IoU branch return early (since IoU = area(inner)/area(outer) already
+  // exceeds 0.58 once the inner box is this large) without ever reaching
+  // the size-based containment replacement, so the wrong smaller box won.
+  const width = 100;
+  const height = 140;
+  const cardBox = { x: 4, y: 6, width: 92, height: 128, color: [40, 40, 40] };
+  const innerBox = { x: 14, y: 15, width: 75, height: 105, color: [250, 250, 250] };
   const rgba = makeFrame(width, height, [30, 30, 30], [cardBox, innerBox]);
   const regions = image.detectBorderRectangles(rgba, width, height);
   assert.ok(regions.length > 0, 'should find at least one region');

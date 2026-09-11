@@ -83,11 +83,22 @@ function overlapCoverage(a: ScanRegion, b: ScanRegion) {
 export function absorbCandidate(kept: ScanRegion[], candidate: ScanRegion, iouThreshold: number): boolean {
   for (let i = 0; i < kept.length; i += 1) {
     const existing = kept[i];
-    if (iou(existing, candidate) > iouThreshold) return true;
+    // Il contenimento va controllato PRIMA dell'IoU, non dopo: quando il
+    // rettangolo interno copre piu' del 58% dell'area di quello esterno
+    // (frequente - un'illustrazione occupa spesso gran parte della carta),
+    // IoU = area_interno/area_esterno supera GIA' da solo iouThreshold,
+    // quindi un `return true` sul ramo IoU prima di arrivare qui uscirebbe
+    // senza mai controllare/applicare la sostituzione col piu' grande -
+    // vanificando silenziosamente il fix per ogni coppia con quel rapporto
+    // di area, esattamente il caso che il primo giro di test non copriva
+    // (rilievo review Gemini su questa stessa PR, verificato: il test
+    // esistente usava un rapporto di area 0.41, sotto la soglia 0.58 dove
+    // il bug si manifesta).
     if (overlapCoverage(existing, candidate) > 0.7) {
       if (candidate.width * candidate.height > existing.width * existing.height) kept[i] = candidate;
       return true;
     }
+    if (iou(existing, candidate) > iouThreshold) return true;
   }
   return false;
 }
