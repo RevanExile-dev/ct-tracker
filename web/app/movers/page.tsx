@@ -354,7 +354,7 @@ function MoversContent() {
                 : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
             }`}
           >
-            Ordina per %
+            Variazione %
           </button>
           <button
             type="button"
@@ -366,7 +366,7 @@ function MoversContent() {
                 : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
             }`}
           >
-            Ordina per €
+            Variazione €
           </button>
         </div>
 
@@ -380,6 +380,13 @@ function MoversContent() {
           </button>
         )}
       </div>
+
+      <p className="mt-3 text-xs text-ink-muted" aria-live="polite">
+        {sort === "abs"
+          ? "Ordine per differenza in euro dalla rilevazione precedente: prima i maggiori aumenti o ribassi. Esempio: −10 € precede −2 €."
+          : "Ordine per variazione percentuale dalla rilevazione precedente: prima i maggiori aumenti o ribassi in proporzione al prezzo."}
+        {" "}Profilo confrontato: italiano · Near Mint · CardTrader Zero.
+      </p>
 
       {error && (
         <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 text-signal-down p-5 font-mono text-sm">

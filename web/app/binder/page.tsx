@@ -25,7 +25,13 @@ function BinderContent() {
   const [cards, setCards] = useState<CardRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { data: session } = useSession();
-  const [valueHistory, setValueHistory] = useState<BinderValuePoint[] | null>(null);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
+  const historyKey = `${session?.user?.email ?? "anonymous"}:${historyAttempt}`;
+  const [historyResponse, setHistoryResponse] = useState<{
+    key: string; points: BinderValuePoint[] | null; error: string | null;
+  } | null>(null);
+  const valueHistory = historyResponse?.key === historyKey ? historyResponse.points : null;
+  const historyError = historyResponse?.key === historyKey ? historyResponse.error : null;
   const [trends, setTrends] = useState<Record<number, { avgCents: number; days: number }>>({});
 
   useEffect(() => {
@@ -64,15 +70,16 @@ function BinderContent() {
     if (!session) return;
     let cancelled = false;
     fetch("/api/account/binder/value-history")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((points: BinderValuePoint[]) => { if (!cancelled) setValueHistory(points); })
-      // Un array vuoto, non null: altrimenti valueHistory resta null per
-      // sempre su un errore di rete e lo scheletro animato non sparisce
-      // mai - un array vuoto fa cadere sul messaggio "nessuno storico
-      // ancora" di CollectionValueChart, non ideale ma mai bloccato.
-      .catch(() => { if (!cancelled) setValueHistory([]); });
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Storico non disponibile (${res.status}).`);
+        const body: unknown = await res.json();
+        if (!Array.isArray(body)) throw new Error("Risposta dello storico non valida.");
+        return body;
+      })
+      .then((points: BinderValuePoint[]) => { if (!cancelled) setHistoryResponse({ key: historyKey, points, error: null }); })
+      .catch(() => { if (!cancelled) setHistoryResponse({ key: historyKey, points: null, error: "Non riesco a caricare lo storico. Riprova tra poco." }); });
     return () => { cancelled = true; };
-  }, [session]);
+  }, [session, historyKey]);
 
   const summary = useMemo(() => {
     if (!cards) return null;
@@ -129,10 +136,19 @@ function BinderContent() {
         </div>
       )}
 
+      {cards && cards.length > 0 && <p className="mb-5 text-xs text-ink-faint">
+        La stima attuale considera una copia per tipo e prezzi di riferimento, che possono avere lingua o condizione diverse dalle tue carte.
+      </p>}
+
       {session && cards && cards.length > 0 && (
         <div className="mb-7">
-          {valueHistory === null ? (
-            <div className="rounded-card border border-base-border bg-base-surface p-5 h-40 animate-pulse" />
+          {historyError ? (
+            <div role="alert" className="rounded-card border border-signal-down/30 bg-base-surface p-5 text-sm">
+              <p>{historyError}</p>
+              <button type="button" onClick={() => setHistoryAttempt((attempt) => attempt + 1)} className="min-h-11 mt-2 text-accent-bright underline">Riprova storico</button>
+            </div>
+          ) : valueHistory === null ? (
+            <div role="status" aria-label="Caricamento storico" className="rounded-card border border-base-border bg-base-surface p-5 h-40 animate-pulse" />
           ) : (
             <CollectionValueChart points={valueHistory} />
           )}
