@@ -513,46 +513,20 @@ export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
   return [{ id: "region-full", x: 0, y: 0, width: 1, height: 1, score: 0.2, fallback: true }];
 }
 
-// Caso reale (foto vera, Hisuian Samurott V): la carta vera veniva rilevata
-// correttamente COME regione piu' grande, ma restavano comunque 3 regioni
-// spurie in piu' ("4 carte rilevate" su una foto con una sola carta) -
-// frammenti della fascia weakness/resistance/retreat e del riquadro V rule,
-// scambiati per carte a se stanti. Causa: quella regione piu' grande e'
-// leggermente piu' corta del vero bordo fisico (stesso bug gia' corretto per
-// l'OCR in expandRegionForOcr), quindi i frammenti - che sporgono di pochi
-// punti percentuali oltre il suo bordo inferiore rilevato - hanno
-// overlapCoverage < 0.7 rispetto ad essa e sfuggono al controllo di
-// contenimento gia' fatto da absorbCandidate durante il rilevamento (che
-// valuta la regione COSI' COM'E' rilevata, non con un margine di sicurezza).
-// Riapplicare qui lo stesso margine come ultimo controllo, non per
-// sostituire absorbCandidate - basta confermato sui numeri reali della foto
-// (regione principale h=0.898, frammenti che arrivano fino a y=0.979).
-export function consolidateRegions(regions: ScanRegion[]): ScanRegion[] {
-  const sorted = [...regions].sort((a, b) => b.width * b.height - a.width * a.height);
-  const kept: ScanRegion[] = [];
-  for (const candidate of sorted) {
-    const alreadyCovered = kept.some((existing) => overlapCoverage(expandRegionForOcr(existing), candidate) > 0.6);
-    if (!alreadyCovered) kept.push(candidate);
-  }
-  return kept;
-}
-
 // Il rilevamento del bordo puo' tagliare la carta un po' troppo corta,
 // tipicamente sul lato con meno contrasto fisico: un caso reale (foto vera,
 // Hisuian Samurott V) ha mostrato un'altezza rilevata dello 0.898 invece del
 // quasi-1.0 atteso per una foto gia' ritagliata sulla carta - l'algoritmo
 // aveva agganciato il bordo inferiore della fascia weakness/resistance/
 // retreat (un bordo interno molto piu' contrastato) invece del vero bordo
-// fisico della carta, perdendo cosi' tutta la striscia sotto (credito
-// illustratore, numero di collezione). Qualunque frazione di crop OCR
-// relativa alla regione rilevata non puo' MAI recuperare pixel che stanno
-// FUORI da essa: allargare le percentuali in ocr.ts non basta se la
-// regione stessa e' gia' tagliata corta. Il margine va aggiunto qui, PRIMA
-// del ritaglio, non nelle frazioni OCR - che restano relative alla regione
-// espansa. Il margine e' sbilanciato verso il basso perche' e' li' che il
-// caso reale si e' manifestato; il margine laterale/superiore e' minore, per
-// tollerare una rotazione leggera senza includere troppo sfondo.
-export function expandRegionForOcr(region: ScanRegion): ScanRegion {
+// fisico della carta. Il margine e' sbilanciato verso il basso perche' e'
+// li' che il caso reale si e' manifestato; il margine laterale/superiore e'
+// minore, per tollerare una rotazione leggera senza includere troppo sfondo.
+// Generica (non specifica all'OCR) apposta: usata sia per il ritaglio OCR
+// (expandRegionForOcr) sia per la deduplica di regioni residue
+// (consolidateRegions) - un cambiamento ai margini per un uso non deve
+// alterare silenziosamente il comportamento dell'altro.
+function expandRegionWithSafetyMargin(region: ScanRegion): ScanRegion {
   const padTop = region.height * 0.02;
   const padBottom = region.height * 0.12;
   const padSide = region.width * 0.02;
@@ -561,6 +535,39 @@ export function expandRegionForOcr(region: ScanRegion): ScanRegion {
   const width = Math.min(1 - x, region.width + padSide * 2);
   const height = Math.min(1 - y, region.height + padTop + padBottom);
   return { ...region, x, y, width, height };
+}
+
+// Qualunque frazione di crop OCR relativa alla regione rilevata non puo' MAI
+// recuperare pixel che stanno FUORI da essa: allargare le percentuali in
+// ocr.ts non basta se la regione stessa e' gia' tagliata corta. Il margine
+// va aggiunto qui, PRIMA del ritaglio, non nelle frazioni OCR - che restano
+// relative alla regione espansa.
+export function expandRegionForOcr(region: ScanRegion): ScanRegion {
+  return expandRegionWithSafetyMargin(region);
+}
+
+// Caso reale (foto vera, Hisuian Samurott V): la carta vera veniva rilevata
+// correttamente COME regione piu' grande, ma restavano comunque 3 regioni
+// spurie in piu' ("4 carte rilevate" su una foto con una sola carta) -
+// frammenti della fascia weakness/resistance/retreat e del riquadro V rule,
+// scambiati per carte a se stanti. Causa: quella regione piu' grande e'
+// leggermente piu' corta del vero bordo fisico (stesso bug di
+// expandRegionForOcr sopra), quindi i frammenti - che sporgono di pochi
+// punti percentuali oltre il suo bordo inferiore rilevato - hanno
+// overlapCoverage < 0.7 rispetto ad essa e sfuggono al controllo di
+// contenimento gia' fatto da absorbCandidate durante il rilevamento (che
+// valuta la regione COSI' COM'E' rilevata, non con un margine di sicurezza).
+// Riapplicare qui lo stesso margine come ultimo controllo, non per
+// sostituire absorbCandidate - confermato sui numeri reali della foto
+// (regione principale h=0.898, frammenti che arrivano fino a y=0.979).
+export function consolidateRegions(regions: ScanRegion[]): ScanRegion[] {
+  const sorted = [...regions].sort((a, b) => b.width * b.height - a.width * a.height);
+  const kept: ScanRegion[] = [];
+  for (const candidate of sorted) {
+    const alreadyCovered = kept.some((existing) => overlapCoverage(expandRegionWithSafetyMargin(existing), candidate) > 0.6);
+    if (!alreadyCovered) kept.push(candidate);
+  }
+  return kept;
 }
 
 export async function cropRegion(src: string, region: ScanRegion): Promise<string> {
