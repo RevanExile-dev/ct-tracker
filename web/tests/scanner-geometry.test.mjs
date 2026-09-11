@@ -125,6 +125,35 @@ test('absorbCandidate never discards an already-kept region that is larger than 
   assert.equal(kept[1].id, 'large');
 });
 
+test('consolidateRegions drops fragments of the weakness/retreat bar left over after border detection (real bug: 4 carte rilevate su una foto sola)', () => {
+  // Segnalato dall'utente con uno screenshot reale: la carta vera veniva
+  // rilevata correttamente come regione piu' grande, ma "4 carte rilevate"
+  // su una foto con una sola carta - 3 riquadri spuri in piu', frammenti
+  // della fascia weakness/resistance/retreat e del riquadro "V rule".
+  // Causa: la regione vincente (gia' nota da un altro caso reale, la stessa
+  // foto usata per expandRegionForOcr) e' leggermente piu' corta del vero
+  // bordo fisico (altezza 0.898 invece di ~1.0) - i tre frammenti sporgono
+  // di pochi punti percentuali oltre il suo bordo inferiore rilevato e
+  // hanno quindi overlapCoverage < 0.7 rispetto ad essa COSI' COM'E'
+  // rilevata, sfuggendo al controllo di contenimento gia' fatto da
+  // absorbCandidate durante il rilevamento. Numeri reali misurati su quella
+  // foto (non inventati).
+  const main = region('border-2254', 0.0266, 0.0073, 0.9699, 0.8979, 0.494);
+  const frag1 = region('border-17076', 0.5668, 0.7566, 0.2402, 0.2223, 0.516);
+  const frag2 = region('border-18518', 0.7235, 0.7566, 0.2342, 0.2223, 0.540);
+  const frag3 = region('border-7598', 0.3379, 0.7567, 0.2372, 0.2137, 0.534);
+  const kept = image.consolidateRegions([main, frag1, frag2, frag3]);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].id, 'border-2254');
+});
+
+test('consolidateRegions keeps two genuinely separate cards in a batch photo', () => {
+  const left = region('left', 0.02, 0.05, 0.45, 0.9, 0.6);
+  const right = region('right', 0.53, 0.05, 0.45, 0.9, 0.55);
+  const kept = image.consolidateRegions([left, right]);
+  assert.equal(kept.length, 2);
+});
+
 test('withFrameMargins seeds near-edge coordinates only when nothing organic is already there', () => {
   // Reported real-world bug (Samurott V, 2026-09-10): a single surviving
   // region that does not track the card's true border. pickPeaks only keeps

@@ -505,12 +505,36 @@ export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
   const rgba = ctx.getImageData(0, 0, width, height).data;
 
   const borderRegions = detectBorderRectangles(rgba, width, height);
-  if (borderRegions.length) return borderRegions.sort((a, b) => a.y - b.y || a.x - b.x);
+  if (borderRegions.length) return consolidateRegions(borderRegions).sort((a, b) => a.y - b.y || a.x - b.x);
 
   const componentRegions = detectConnectedComponents(rgba, width, height);
-  if (componentRegions.length) return componentRegions.sort((a, b) => a.y - b.y || a.x - b.x);
+  if (componentRegions.length) return consolidateRegions(componentRegions).sort((a, b) => a.y - b.y || a.x - b.x);
 
   return [{ id: "region-full", x: 0, y: 0, width: 1, height: 1, score: 0.2, fallback: true }];
+}
+
+// Caso reale (foto vera, Hisuian Samurott V): la carta vera veniva rilevata
+// correttamente COME regione piu' grande, ma restavano comunque 3 regioni
+// spurie in piu' ("4 carte rilevate" su una foto con una sola carta) -
+// frammenti della fascia weakness/resistance/retreat e del riquadro V rule,
+// scambiati per carte a se stanti. Causa: quella regione piu' grande e'
+// leggermente piu' corta del vero bordo fisico (stesso bug gia' corretto per
+// l'OCR in expandRegionForOcr), quindi i frammenti - che sporgono di pochi
+// punti percentuali oltre il suo bordo inferiore rilevato - hanno
+// overlapCoverage < 0.7 rispetto ad essa e sfuggono al controllo di
+// contenimento gia' fatto da absorbCandidate durante il rilevamento (che
+// valuta la regione COSI' COM'E' rilevata, non con un margine di sicurezza).
+// Riapplicare qui lo stesso margine come ultimo controllo, non per
+// sostituire absorbCandidate - basta confermato sui numeri reali della foto
+// (regione principale h=0.898, frammenti che arrivano fino a y=0.979).
+export function consolidateRegions(regions: ScanRegion[]): ScanRegion[] {
+  const sorted = [...regions].sort((a, b) => b.width * b.height - a.width * a.height);
+  const kept: ScanRegion[] = [];
+  for (const candidate of sorted) {
+    const alreadyCovered = kept.some((existing) => overlapCoverage(expandRegionForOcr(existing), candidate) > 0.6);
+    if (!alreadyCovered) kept.push(candidate);
+  }
+  return kept;
 }
 
 // Il rilevamento del bordo puo' tagliare la carta un po' troppo corta,
