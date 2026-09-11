@@ -1,7 +1,9 @@
 # Binder, prezzi e allarmi — richiesta del 11 settembre 2026
 
-Base verificata: `24ceaff61038bcf7e10b70b745c8aa157a476e9b`.
+Base dell'audit: `24ceaff61038bcf7e10b70b745c8aa157a476e9b`.
+Riallineamento verificato su main `32b435c25907be004e4b5239ec59982f100f3279`.
 Branch: `chatgpt/task-20260911-binder-insights`.
+[Draft PR #52](https://github.com/RevanExile-dev/ct-tracker/pull/52).
 
 ## Stato e confini del lavoro
 
@@ -143,6 +145,38 @@ profilo/cambio valuta non confrontabile escluso con copertura; aggiunta
 senza movimento prezzi non crea rendimento; modifica quantità e rimozione
 conservano lo storico; roundtrip locale/account e migrazione reversibile.
 
+## Proposta visiva: un raccoglitore ad anelli
+
+Lo sfoglio corretto qui risolve un difetto preciso; non dimostra ancora
+che il binder sembri un oggetto fisico. La direzione proposta per il
+prototipo di Claude è un raccoglitore ad anelli con copertina rigida e
+fogli trasparenti a nove tasche. Carta, tasca e foglio devono restare
+allineati durante la rotazione; dorso, fori e anelli rendono leggibile il
+punto di aggancio. Riflessi e ombre seguono la superficie del foglio.
+
+Per eliminare la piega visibile fra i due pannelli attuali, prototipare una
+superficie continua suddivisa in segmenti con tangenti raccordate, vincolata
+al bordo degli anelli. Il trascinamento controlla un solo progress condiviso
+da curvatura, fronte/retro, ombra e riflesso; pulsanti e tastiera percorrono
+la stessa traiettoria. Prima confrontare il prototipo con lo sfoglio attuale
+su un telefono reale, poi scegliere il renderer in base a fluidità e costo.
+Le dipendenze 3D già presenti non sono da sole un motivo per introdurre WebGL.
+
+Criteri: nessun salto a inizio/fine; retro corretto e carte leggibili a
+pagina ferma; nessuna carta fantasma cliccabile; rilascio/cancellazione e
+gesti rapidi avanzano esattamente il numero previsto di pagine; scroll
+verticale utilizzabile; reduced motion con passaggio immediato; navigazione
+sempre possibile anche tramite pulsanti. Misurare frame persi su desktop e
+touch durante uno sfoglio completo: la sola presenza di una curva non è QA
+del realismo né della fluidità.
+
+Per il grafico economico successivo: serie selezionabili di valore totale,
+valore delle copie acquistate e relativo costo; eventi di acquisto/rimozione
+selezionabili sulla linea temporale; dettaglio del punto con quantità,
+copertura dei prezzi e data di osservazione. Carte da pacchetti in una vista
+separata. Le nuove serie richiedono il modello dati sopra: non ricostruirle
+artificialmente dalle snapshot aggregate attuali.
+
 ## Implementazione proposta: sync e notifiche
 
 Ordine: allarmi attivi → desideri → binder → catalogo generale. Deduplicare
@@ -218,13 +252,16 @@ misurare prima/dopo. [Image Optimization](https://vercel.com/docs/image-optimiza
 ## Verifiche
 
 - [x] Lint e build Next.js con TypeScript riusciti prima della pubblicazione.
-- [x] 25 test unitari, inclusi 5 nuovi test sullo storico/CSV.
+- [x] 30 test unitari dopo il riallineamento a main, inclusi 5 nuovi sullo storico/CSV.
 - [x] Test browser raccolti correttamente da Playwright; inclusi nel workflow UI esistente.
 - [x] Audit codice e confronto CardTrader live dei due casi sopra.
 - [ ] QA locale browser: `ERR_BLOCKED_BY_CLIENT` verso localhost; Chromium
   locale assente e download in timeout. Nessun bypass dei limiti ambiente.
 - [ ] Esecuzione delle nuove interazioni in CI: controllare il run della PR,
   distinguendo test con API simulate da verifica del database/account reale.
+  Il [primo run](https://github.com/RevanExile-dev/ct-tracker/actions/runs/34586353027)
+  ha passato 16/17 prove (5/6 nuove): corretta l'ambiguità del selettore
+  dell'alert, che intercettava anche l'announcer di Next.js. Rerun richiesto.
 - [ ] Review finale Gemini/Groq tramite `ai_review.yml` provider `auto`.
   Tool di dispatch non esposto nella sessione: usare workflow esistente,
   non creare un secondo sistema di review.

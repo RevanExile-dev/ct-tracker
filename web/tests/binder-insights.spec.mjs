@@ -67,7 +67,7 @@ test('date ranges, keyboard comparison, zoom and CSV use actual selected observa
 test('a failed history request is an error with retry, never an empty-history success', async ({ page }) => {
   await arrange(page, { historyStatus: 503 });
   await page.goto(`${BASE}/binder`);
-  await expect(page.getByRole('alert')).toContainText('Non riesco a caricare lo storico');
+  await expect(page.getByRole('alert').filter({ hasText: 'Non riesco a caricare lo storico' })).toBeVisible();
   await page.route('**/api/account/binder/value-history', (route) => route.fulfill({ json: points }));
   await page.getByRole('button', { name: 'Riprova storico' }).click();
   await expect(page.getByRole('slider', { name: 'Esplora lo storico' })).toBeVisible();
