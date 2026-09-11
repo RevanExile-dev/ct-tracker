@@ -43,6 +43,34 @@ function iou(a: ScanRegion, b: ScanRegion) {
   return union > 0 ? intersection / union : 0;
 }
 
+// IoU normalizza per l'UNIONE: due rettangoli di dimensione molto diversa
+// dove il piccolo e' quasi interamente dentro il grande hanno IoU basso
+// (l'unione resta ~grande quanto il box grande) anche se sono chiaramente
+// "lo stesso oggetto" a scale diverse. Su una carta foil/full-art reale,
+// bordo illustrazione, riquadro testo attacco e pattern del foil hanno
+// tutti un'aspect ratio abbastanza vicina a quella della carta da superare
+// la soglia dei candidati (vedi tolleranza aspect qui sotto) - senza questo
+// secondo controllo, il dedup solo-IoU li lascia passare come "carte"
+// distinte innestate una nell'altra invece di scartarli come texture
+// interna della stessa carta gia' rilevata. Rilevato da una foto reale
+// (Pikachu foil, 12 riquadri annidati su un'unica carta) - non un caso
+// sintetico raro.
+function overlapCoverage(a: ScanRegion, b: ScanRegion) {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const smaller = Math.min(a.width * a.height, b.width * b.height);
+  return smaller > 0 ? intersection / smaller : 0;
+}
+
+export function overlapsExisting(kept: ScanRegion[], candidate: ScanRegion, iouThreshold: number) {
+  return kept.some(
+    (existing) => iou(existing, candidate) > iouThreshold || overlapCoverage(existing, candidate) > 0.7,
+  );
+}
+
 function smoothProfile(source: Float32Array, radius = 2) {
   const out = new Float32Array(source.length);
   let rolling = 0;
@@ -267,7 +295,7 @@ function detectBorderRectangles(
 
   const kept: ScanRegion[] = [];
   for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
-    if (kept.some((existing) => iou(existing, candidate) > 0.58)) continue;
+    if (overlapsExisting(kept, candidate, 0.58)) continue;
     kept.push(candidate);
     if (kept.length >= MAX_REGIONS) break;
   }
@@ -385,7 +413,7 @@ function detectConnectedComponents(
 
   const kept: ScanRegion[] = [];
   for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
-    if (kept.some((existing) => iou(existing, candidate) > 0.5)) continue;
+    if (overlapsExisting(kept, candidate, 0.5)) continue;
     kept.push(candidate);
     if (kept.length >= MAX_REGIONS) break;
   }

@@ -413,6 +413,66 @@ def prune_old_history(conn, keep_daily_days: int = RETENTION_DAILY_DAYS):
     return deleted
 
 
+def snapshot_binder_values(conn, captured_at: str) -> int:
+    """Salva un punto di storico del valore totale del Binder per ogni
+    utente che ne ha uno: somma best_price_cents (stesso campo e stessa
+    euristica di "Valore stimato" nel Binder web, vedi
+    web/app/binder/page.tsx) sulle carte possedute in QUESTO momento -
+    cattura lo stato reale del binder al momento del sync, non una
+    ricostruzione a ritroso: una carta rimossa dal binder dopo oggi non
+    sparisce dai punti passati gia' salvati. Idempotente come
+    insert_price_snapshot: se rilanciato lo stesso giorno (es. sync daily +
+    full nella stessa giornata), sovrascrive il punto invece di duplicarlo.
+    Ritorna il numero di utenti con un binder non vuoto."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO binder_value_snapshots
+                (user_id, captured_at, total_cents, currency, cards_count, priced_count)
+            SELECT
+                bc.user_id,
+                %(captured_at)s,
+                COALESCE(SUM(lp.best_price_cents), 0),
+                MAX(lp.best_price_currency),
+                COUNT(*),
+                COUNT(lp.best_price_cents)
+            FROM binder_cards bc
+            LEFT JOIN latest_prices lp ON lp.blueprint_id = bc.blueprint_id
+            GROUP BY bc.user_id
+            ON CONFLICT (user_id, captured_at) DO UPDATE SET
+                total_cents = EXCLUDED.total_cents,
+                currency = EXCLUDED.currency,
+                cards_count = EXCLUDED.cards_count,
+                priced_count = EXCLUDED.priced_count
+            """,
+            {"captured_at": captured_at},
+        )
+        return cur.rowcount
+
+
+def prune_old_binder_value_history(conn, keep_daily_days: int = RETENTION_DAILY_DAYS):
+    """Stessa compressione di prune_old_history (1 punto/settimana oltre
+    keep_daily_days), applicata per utente invece che per carta: la PK di
+    binder_value_snapshots e' gia' (user_id, captured_at), niente id
+    surrogato da confrontare come in price_snapshots."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_daily_days)).strftime("%Y-%m-%d")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM binder_value_snapshots
+            WHERE captured_at < %(cutoff)s
+            AND (user_id, captured_at) NOT IN (
+                SELECT user_id, MIN(captured_at) FROM binder_value_snapshots
+                WHERE captured_at < %(cutoff)s
+                GROUP BY user_id, to_char(captured_at, 'IYYY-IW')
+            )
+            """,
+            {"cutoff": cutoff},
+        )
+        return cur.rowcount
+
+
 def set_meta(conn, key: str, value: str):
     with conn.cursor() as cur:
         cur.execute(

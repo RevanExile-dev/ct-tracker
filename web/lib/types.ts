@@ -110,6 +110,14 @@ export type PricePoint = {
   it_nm_zero_price_cents: number | null;
 };
 
+export type BinderValuePoint = {
+  captured_at: string;
+  total_cents: number;
+  currency: string | null;
+  cards_count: number;
+  priced_count: number;
+};
+
 export type Listing = {
   price_cents: number;
   price_currency: string | null;
