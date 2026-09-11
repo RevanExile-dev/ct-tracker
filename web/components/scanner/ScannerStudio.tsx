@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCents, languageFlag } from "@/lib/format";
 import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
-import { ARTWORK_BOX, assessQuality, cropRegion, detectCardRegions, dhash } from "@/lib/scanner/image";
+import { ARTWORK_BOX, assessQuality, cropRegion, detectCardRegions, dhash, expandRegionForOcr } from "@/lib/scanner/image";
 import {
   hydrateScannerCard,
   loadScannerCatalog,
@@ -27,6 +27,7 @@ import styles from "@/app/scan/Scanner.module.css";
 type ScanItem = {
   id: string;
   cropUrl: string;
+  ocrCropUrl: string;
   region: ScanRegion;
   quality: ScanQuality;
   status: ScanStatus;
@@ -185,7 +186,7 @@ export default function ScannerStudio() {
             let text = "";
             let ocrConfidence = 0;
             try {
-              const ocr = await recognizeText(item.cropUrl);
+              const ocr = await recognizeText(item.ocrCropUrl);
               text = ocr.text;
               ocrConfidence = ocr.confidence;
             } catch (ocrError) {
@@ -254,10 +255,12 @@ export default function ScannerStudio() {
       setRegions(detected);
       const prepared = await Promise.all(detected.map(async (region, index) => {
         const cropUrl = await cropRegion(url, region);
+        const ocrCropUrl = await cropRegion(url, expandRegionForOcr(region));
         const quality = await assessQuality(cropUrl);
         return {
           id: `${Date.now()}-${index}`,
           cropUrl,
+          ocrCropUrl,
           region,
           quality,
           status: "queued" as ScanStatus,

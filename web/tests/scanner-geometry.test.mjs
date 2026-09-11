@@ -146,6 +146,31 @@ test('withFrameMargins seeds near-edge coordinates only when nothing organic is 
   assert.equal(asStr(image.withFrameMargins([5, 94], 100)), '5,94');
 });
 
+test('expandRegionForOcr pads mostly downward and clamps to the frame', () => {
+  // Rilievo da una foto reale (Hisuian Samurott V, GG51/GG70): il bordo
+  // rilevato taglia la carta all'89.8% dell'altezza invece del quasi-100%
+  // atteso su una foto gia' ritagliata sulla carta, agganciandosi al bordo
+  // interno della fascia weakness/resistance/retreat (molto piu' contrastato
+  // del vero bordo fisico) invece del vero bordo. Qualunque frazione di crop
+  // OCR relativa alla regione rilevata non puo' MAI vedere pixel fuori da
+  // essa: il margine va aggiunto ALLA REGIONE, prima del ritaglio.
+  const region = { id: 'r', x: 0.05, y: 0.02, width: 0.9, height: 0.88, score: 0.5 };
+  const padded = image.expandRegionForOcr(region);
+  assert.ok(padded.height > region.height, 'deve estendere l\'altezza');
+  const addedBottom = (padded.y + padded.height) - (region.y + region.height);
+  const addedTop = region.y - padded.y;
+  assert.ok(addedBottom > addedTop, 'il margine deve essere sbilanciato verso il basso');
+  assert.ok(padded.x >= 0 && padded.y >= 0, 'non deve uscire dal frame');
+  assert.ok(padded.x + padded.width <= 1.0001 && padded.y + padded.height <= 1.0001, 'non deve uscire dal frame');
+});
+
+test('expandRegionForOcr clamps padding when the region already touches the frame edge', () => {
+  const region = { id: 'r', x: 0, y: 0, width: 1, height: 0.95, score: 0.5 };
+  const padded = image.expandRegionForOcr(region);
+  assert.ok(padded.x >= 0 && padded.y >= 0);
+  assert.ok(padded.x + padded.width <= 1.0001 && padded.y + padded.height <= 1.0001);
+});
+
 function makeFrame(width, height, bg, boxes) {
   const rgba = new Uint8ClampedArray(width * height * 4);
   const setPixel = (x, y, [r, g, b]) => {
