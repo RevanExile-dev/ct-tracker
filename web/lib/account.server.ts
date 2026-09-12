@@ -2,7 +2,7 @@ import "server-only";
 import { getPgPool } from "./pgPool";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
-import type { BinderValuePoint, Lot, LotInput, LotProvenance } from "./types";
+import type { BinderValuePoint, Lot, LotEvent, LotInput, LotProvenance } from "./types";
 
 // Query Postgres per i dati collegati all'account (binder/wishlist/filtri
 // salvati) - solo lato server (Route Handler in web/app/api/account/**),
@@ -252,27 +252,63 @@ export async function getLots(userId: string): Promise<Lot[]> {
   return rows.map(toLot);
 }
 
+/** Registra un evento di lotto (docs/binder_reserved_work_plan_2026-09-11.md,
+ * punto 2) - va SEMPRE chiamata dentro la stessa transazione della modifica
+ * a binder_lots che rappresenta, mai come scrittura separata: un evento
+ * "add"/"remove"/"quantity_change" che finisse per esistere senza la
+ * modifica corrispondente (o viceversa) sarebbe uno storico bugiardo. */
+async function recordLotEvent(
+  client: { query: (sql: string, values: unknown[]) => Promise<unknown> },
+  event: { lotId: string | null; userId: string; blueprintId: number; eventType: "add" | "remove" | "quantity_change"; delta: number }
+): Promise<void> {
+  await client.query(
+    `INSERT INTO binder_lot_events (lot_id, user_id, blueprint_id, event_type, delta)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [event.lotId, event.userId, event.blueprintId, event.eventType, event.delta]
+  );
+}
+
 export async function createLot(userId: string, input: LotInput): Promise<Lot> {
   const pool = getPgPool();
-  const { rows } = await pool.query(
-    `INSERT INTO binder_lots
-       (user_id, blueprint_id, quantity, language, condition, finish, provenance, acquired_at, cost_total_cents, cost_currency, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE), $9, $10, $11)
-     RETURNING ${LOT_COLUMNS}`,
-    [
-      userId, input.blueprintId, input.quantity,
-      input.language ?? null, input.condition ?? null, input.finish ?? null,
-      input.provenance ?? "non_specificata", input.acquiredAt ?? null,
-      input.costTotalCents ?? null, input.costCurrency ?? null, input.note ?? null,
-    ]
-  );
-  return toLot(rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `INSERT INTO binder_lots
+         (user_id, blueprint_id, quantity, language, condition, finish, provenance, acquired_at, cost_total_cents, cost_currency, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE), $9, $10, $11)
+       RETURNING ${LOT_COLUMNS}`,
+      [
+        userId, input.blueprintId, input.quantity,
+        input.language ?? null, input.condition ?? null, input.finish ?? null,
+        input.provenance ?? "non_specificata", input.acquiredAt ?? null,
+        input.costTotalCents ?? null, input.costCurrency ?? null, input.note ?? null,
+      ]
+    );
+    const lot = toLot(rows[0]);
+    await recordLotEvent(client, {
+      lotId: lot.id, userId, blueprintId: input.blueprintId, eventType: "add", delta: input.quantity,
+    });
+    await client.query("COMMIT");
+    return lot;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** Patch parziale: solo i campi presenti in `patch` vengono aggiornati
  * (stesso principio "mai un rimpiazzo totale" di upsertBinderEntry sopra) -
  * ma qui il whitelist di colonne e' fisso (non un JSONB), quindi costruito
- * qui invece che affidato a una singola query statica come per binder_cards. */
+ * qui invece che affidato a una singola query statica come per binder_cards.
+ *
+ * Quando il patch include "quantity" ed e' diversa da quella attuale,
+ * registra anche un evento "quantity_change" (SELECT ... FOR UPDATE prima
+ * dell'UPDATE per leggere la quantita' precedente senza una race se due
+ * richieste concorrenti modificano lo stesso lotto) - un valore identico
+ * al presente non genera un evento, non e' un cambiamento reale. */
 export async function updateLot(
   userId: string,
   lotId: string,
@@ -296,16 +332,90 @@ export async function updateLot(
     const { rows } = await pool.query(`SELECT ${LOT_COLUMNS} FROM binder_lots WHERE id = $1 AND user_id = $2`, [lotId, userId]);
     return rows[0] ? toLot(rows[0]) : null;
   }
-  values.push(lotId, userId);
-  const { rows } = await pool.query(
-    `UPDATE binder_lots SET ${sets.join(", ")} WHERE id = $${values.length - 1} AND user_id = $${values.length}
-     RETURNING ${LOT_COLUMNS}`,
-    values
-  );
-  return rows[0] ? toLot(rows[0]) : null;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let previousQuantity: number | null = null;
+    if (patch.quantity !== undefined) {
+      const { rows } = await client.query(
+        "SELECT quantity, blueprint_id FROM binder_lots WHERE id = $1 AND user_id = $2 FOR UPDATE",
+        [lotId, userId]
+      );
+      if (!rows[0]) { await client.query("ROLLBACK"); return null; }
+      previousQuantity = rows[0].quantity;
+    }
+    values.push(lotId, userId);
+    const { rows } = await client.query(
+      `UPDATE binder_lots SET ${sets.join(", ")} WHERE id = $${values.length - 1} AND user_id = $${values.length}
+       RETURNING ${LOT_COLUMNS}`,
+      values
+    );
+    if (!rows[0]) { await client.query("ROLLBACK"); return null; }
+    const lot = toLot(rows[0]);
+    if (previousQuantity !== null && previousQuantity !== lot.quantity) {
+      await recordLotEvent(client, {
+        lotId: lot.id, userId, blueprintId: lot.blueprintId,
+        eventType: "quantity_change", delta: lot.quantity - previousQuantity,
+      });
+    }
+    await client.query("COMMIT");
+    return lot;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function deleteLot(userId: string, lotId: string): Promise<void> {
   const pool = getPgPool();
-  await pool.query("DELETE FROM binder_lots WHERE id = $1 AND user_id = $2", [lotId, userId]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      "DELETE FROM binder_lots WHERE id = $1 AND user_id = $2 RETURNING quantity, blueprint_id",
+      [lotId, userId]
+    );
+    if (rows[0]) {
+      // lot_id NULL fin da subito (non l'id appena eliminato): il lotto non
+      // esiste piu' nella stessa transazione in cui lo cancelliamo, un
+      // riferimento FK a quell'id fallirebbe il vincolo immediatamente
+      // (Postgres verifica i FK non differiti riga per riga, non a fine
+      // transazione) - coerente comunque con ON DELETE SET NULL sulla
+      // colonna, che esiste apposta per questo caso.
+      await recordLotEvent(client, {
+        lotId: null, userId, blueprintId: rows[0].blueprint_id,
+        eventType: "remove", delta: -rows[0].quantity,
+      });
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Storico eventi di lotto per questo utente, piu' recenti prima - nessun
+ * consumatore UI ancora (il grafico che separa apporti/rimozioni dalla
+ * variazione di mercato e' lavoro futuro, vedi il piano), ma i dati vanno
+ * gia' accumulati in avanti da ora: ricostruirli a ritroso dal binder di
+ * oggi non sarebbe possibile ne' corretto. */
+export async function getLotEvents(userId: string): Promise<LotEvent[]> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `SELECT id, lot_id, blueprint_id, event_type, delta, occurred_at
+     FROM binder_lot_events WHERE user_id = $1 ORDER BY occurred_at DESC, id DESC`,
+    [userId]
+  );
+  return rows.map((row) => ({
+    id: Number(row.id),
+    lotId: row.lot_id,
+    blueprintId: row.blueprint_id,
+    eventType: row.event_type,
+    delta: row.delta,
+    occurredAt: row.occurred_at instanceof Date ? row.occurred_at.toISOString() : row.occurred_at,
+  }));
 }
