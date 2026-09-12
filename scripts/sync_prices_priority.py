@@ -96,7 +96,7 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
         try:
             resp = requests.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": payload, "parse_mode": "Markdown"},
+                json={"chat_id": chat_id, "text": payload, "parse_mode": "HTML"},
                 timeout=15,
             )
             ok_response = resp.ok and resp.json().get("ok")

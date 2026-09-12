@@ -19,6 +19,7 @@ per intero ad ogni avvio (idempotente: IF NOT EXISTS ovunque, e in futuro
 eventuali ALTER TABLE ADD COLUMN IF NOT EXISTS per nuove colonne), stesso
 principio delle migrazioni incrementali gia' in uso prima con SQLite.
 """
+import html
 import os
 import sys
 from datetime import datetime, timezone
@@ -675,6 +676,14 @@ def _alert_target_met(alert: dict, current_price_cents: int) -> bool:
 
 def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
                            current_price_cents: int, currency: str | None) -> str:
+    """HTML (non Markdown legacy, rilievo di review su questa PR): il nome
+    di una carta/espansione arriva da CardTrader, fuori dal nostro
+    controllo - un singolo "_"/"*"/"`" non accoppiato in Markdown fa
+    rifiutare l'intero messaggio da Telegram con 400 "Can't parse
+    entities", bloccando l'allarme per tutti i tentativi di retry (mai
+    recapitato). HTML con html.escape() sui soli valori dinamici evita il
+    problema alla radice - il resto del testo (etichette fisse) non
+    contiene caratteri da escapare."""
     profile_bits = [
         f"lingua {alert['language']}" if alert["language"] else "qualunque lingua",
         f"condizione {alert['condition']}" if alert["condition"] else "qualunque condizione",
@@ -693,8 +702,10 @@ def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
         baseline_str = f"{baseline_cents / 100:.2f}{symbol}" if baseline_cents is not None else "?"
         target_str = f"calo del {alert['target_value']}% (partito da {baseline_str})"
 
+    safe_card_name = html.escape(card_name)
+    safe_expansion_name = html.escape(expansion_name)
     text = (
-        f"🔔 *{card_name}* ({expansion_name})\n"
+        f"🔔 <b>{safe_card_name}</b> ({safe_expansion_name})\n"
         f"Prezzo attuale: {price_str} — {target_str}\n"
         f"Profilo: {', '.join(profile_bits)}"
     )
