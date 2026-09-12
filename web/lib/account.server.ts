@@ -1,8 +1,9 @@
 import "server-only";
+import { randomBytes } from "crypto";
 import { getPgPool } from "./pgPool";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
-import type { BinderValuePoint, Lot, LotEvent, LotInput, LotProvenance } from "./types";
+import type { BinderValuePoint, Lot, LotEvent, LotInput, LotProvenance, TelegramLinkStatus } from "./types";
 
 // Query Postgres per i dati collegati all'account (binder/wishlist/filtri
 // salvati) - solo lato server (Route Handler in web/app/api/account/**),
@@ -418,4 +419,112 @@ export async function getLotEvents(userId: string): Promise<LotEvent[]> {
     delta: row.delta,
     occurredAt: row.occurred_at instanceof Date ? row.occurred_at.toISOString() : row.occurred_at,
   }));
+}
+
+// --- Collegamento account<->chat Telegram (punto 4a del piano) ---
+
+const LINK_CODE_TTL_MINUTES = 15; // stessa durata del link magico via email (web/lib/auth.ts)
+const LINK_CODE_MAX_ATTEMPTS = 5; // ritenta solo su collisione di codice (rara, vedi sotto)
+
+export async function getTelegramLinkStatus(userId: string): Promise<TelegramLinkStatus> {
+  const pool = getPgPool();
+  const { rows } = await pool.query("SELECT linked_at FROM telegram_links WHERE user_id = $1", [userId]);
+  if (rows.length === 0) return { linked: false, linkedAt: null };
+  const linkedAt = rows[0].linked_at;
+  return { linked: true, linkedAt: linkedAt instanceof Date ? linkedAt.toISOString() : linkedAt };
+}
+
+export async function unlinkTelegram(userId: string): Promise<void> {
+  const pool = getPgPool();
+  await pool.query("DELETE FROM telegram_links WHERE user_id = $1", [userId]);
+}
+
+function generateLinkCode(): string {
+  // 10 caratteri esadecimali maiuscoli: abbastanza corti da scrivere a
+  // mano in una chat Telegram ("/start A1B2C3D4E5"), abbastanza lunghi da
+  // rendere trascurabile un tentativo di indovinarli nei 15 minuti di
+  // validita'.
+  return randomBytes(5).toString("hex").toUpperCase();
+}
+
+/** Genera (sostituendo un eventuale codice precedente per lo stesso utente
+ * - una sola riga per utente, vedi schema) un codice mono-uso da mandare
+ * al bot Telegram con "/start <codice>", consumato dal webhook in
+ * web/app/api/telegram/webhook/route.ts. */
+export async function createTelegramLinkCode(userId: string): Promise<{ code: string; expiresAt: string }> {
+  const pool = getPgPool();
+  for (let attempt = 0; attempt < LINK_CODE_MAX_ATTEMPTS; attempt++) {
+    const code = generateLinkCode();
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO telegram_link_codes (user_id, code, expires_at)
+         VALUES ($1, $2, now() + interval '${LINK_CODE_TTL_MINUTES} minutes')
+         ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at
+         RETURNING expires_at`,
+        [userId, code]
+      );
+      const expiresAt = rows[0].expires_at;
+      return { code, expiresAt: expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt };
+    } catch (err) {
+      // 23505 = violazione UNIQUE - solo sul vincolo di "code" (quello su
+      // "user_id" e' la chiave primaria, gia' gestita da ON CONFLICT
+      // sopra): un altro utente ha gia', per pura coincidenza, lo stesso
+      // codice attivo in questo momento. Riprovare con un codice nuovo e'
+      // corretto e sufficiente, non serve altro.
+      if ((err as { code?: string }).code === "23505") continue;
+      throw err;
+    }
+  }
+  throw new Error("Impossibile generare un codice di collegamento univoco, riprova.");
+}
+
+export type TelegramLinkCodeResolution =
+  | { ok: true }
+  | { ok: false; reason: "invalid_or_expired" }
+  | { ok: false; reason: "chat_already_linked_elsewhere" };
+
+/** Consuma un codice di collegamento e collega chat_id all'utente
+ * corrispondente - chiamata solo dal webhook Telegram dopo aver
+ * verificato l'header segreto (web/app/api/telegram/webhook/route.ts).
+ * Transazione con FOR UPDATE sulle righe lette: senza, due update
+ * concorrenti sullo stesso codice o sulla stessa chat (es. un doppio
+ * invio dell'update da parte di Telegram) potrebbero entrambi superare i
+ * controlli prima che l'altro scriva, collegando la chat al posto
+ * sbagliato o lasciando un codice consumato due volte. */
+export async function consumeTelegramLinkCode(code: string, chatId: number): Promise<TelegramLinkCodeResolution> {
+  const pool = getPgPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      "SELECT user_id FROM telegram_link_codes WHERE code = $1 AND expires_at > now() FOR UPDATE",
+      [code]
+    );
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "invalid_or_expired" };
+    }
+    const userId = rows[0].user_id as string;
+
+    const existing = await client.query("SELECT user_id FROM telegram_links WHERE chat_id = $1 FOR UPDATE", [chatId]);
+    if (existing.rows.length > 0 && existing.rows[0].user_id !== userId) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "chat_already_linked_elsewhere" };
+    }
+
+    await client.query(
+      `INSERT INTO telegram_links (user_id, chat_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id, linked_at = now()`,
+      [userId, chatId]
+    );
+    await client.query("DELETE FROM telegram_link_codes WHERE code = $1", [code]);
+    await client.query("COMMIT");
+    return { ok: true };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }

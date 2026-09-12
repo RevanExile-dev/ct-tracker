@@ -389,3 +389,34 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- --- Allarmi Telegram (punto 4 del piano,
+-- docs/binder_reserved_work_plan_2026-09-11.md, sotto-parte 4a: solo il
+-- collegamento account<->chat qui - price_alerts/telegram_outbox arrivano
+-- con 4b/4c). ---
+
+-- Un chat_id per utente, verificato tramite un codice a tempo
+-- (telegram_link_codes sotto) invece di accettare un chat_id inserito a
+-- mano nella UI: altrimenti chiunque conoscesse (o indovinasse) il
+-- chat_id di un altro utente potrebbe rivendicarlo e ricevere i suoi
+-- allarmi prezzo. UNIQUE su chat_id: una stessa chat Telegram non puo'
+-- restare collegata a due account CartaViva insieme (altrimenti a chi
+-- mandare gli allarmi di entrambi diventerebbe ambiguo).
+CREATE TABLE IF NOT EXISTS telegram_links (
+  user_id UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  chat_id BIGINT NOT NULL UNIQUE,
+  linked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Codice mono-uso a scadenza breve (15 minuti, vedi
+-- web/lib/account.server.ts) generato da POST
+-- /api/account/telegram/link-code e consumato dal webhook Telegram
+-- (POST /api/telegram/webhook) quando l'utente manda "/start <codice>" al
+-- bot. Una sola riga per utente (PRIMARY KEY su user_id, non su code):
+-- richiedere un nuovo codice sovrascrive quello precedente invece di
+-- accumulare codici scaduti.
+CREATE TABLE IF NOT EXISTS telegram_link_codes (
+  user_id UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  code TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL
+);

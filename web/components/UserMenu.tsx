@@ -86,11 +86,19 @@ export default function UserMenu() {
           <div className="px-4 py-3 border-b border-base-border">
             <div className="text-sm text-ink-primary truncate">{label}</div>
           </div>
+          <Link
+            href="/account/telegram"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block w-full text-left px-4 py-3 text-sm text-ink-muted hover:text-accent-bright hover:bg-base-surface2 transition-colors"
+          >
+            Notifiche Telegram
+          </Link>
           <button
             type="button"
             role="menuitem"
             onClick={() => signOut()}
-            className="w-full text-left px-4 py-3 text-sm text-ink-muted hover:text-signal-down hover:bg-base-surface2 transition-colors"
+            className="w-full text-left px-4 py-3 text-sm text-ink-muted hover:text-signal-down hover:bg-base-surface2 transition-colors border-t border-base-border"
           >
             Esci
           </button>
