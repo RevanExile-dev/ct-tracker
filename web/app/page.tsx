@@ -8,10 +8,11 @@ import {
   fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
 } from "@/lib/db";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
+import { getWishlistIds } from "@/lib/wishlist";
 import { FilterPreset } from "@/lib/filterPreset";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
+import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import CardTile from "@/components/CardTile";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
@@ -80,6 +81,7 @@ function HomeContent() {
   );
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
+  const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const [visibleCount, setVisibleCount] = useState(() => {
     const shown = Number(searchParams.get("shown"));
     return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
@@ -226,8 +228,8 @@ function HomeContent() {
     setBinderIds(new Set(toggleBinder(id)));
   }
 
-  function handleToggleWishlistCard(id: number) {
-    setWishlistIds(new Set(toggleWishlist(id)));
+  function handleToggleWishlistCard(card: CardRow) {
+    setWishlistIds((prev) => new Set(promptWishlistToggle(card, prev.has(card.id))));
   }
 
   const hasActiveFilters = Boolean(
@@ -429,7 +431,7 @@ function HomeContent() {
                   inBinder={binderIds.has(card.id)}
                   onToggleBinder={() => handleToggleBinderCard(card.id)}
                   inWishlist={wishlistIds.has(card.id)}
-                  onToggleWishlist={() => handleToggleWishlistCard(card.id)}
+                  onToggleWishlist={() => handleToggleWishlistCard(card)}
                   returnTo={returnTo}
                 />
               ))}
@@ -448,6 +450,7 @@ function HomeContent() {
           )}
         </>
       )}
+      {wishlistPromptOverlay}
     </main>
   );
 }
