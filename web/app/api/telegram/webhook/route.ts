@@ -39,11 +39,21 @@ export async function POST(req: NextRequest) {
   // codice sbagliato non e' un errore del webhook (si risolve mandando un
   // messaggio di risposta all'utente), e Telegram ritenta - fino a
   // disabilitare il webhook - un endpoint che risponde con errori HTTP.
-  if (!text || chatId === undefined) {
+  // "typeof chatId !== 'number'" (non solo "=== undefined", rilievo di
+  // review su questa PR): un payload malformato con chat.id = null
+  // supererebbe un controllo solo su undefined, arrivando fino a
+  // consumeTelegramLinkCode con un chat_id non valido (violazione del
+  // NOT NULL su telegram_links.chat_id, mai gestita da nessuna parte).
+  if (!text || typeof chatId !== "number") {
     return NextResponse.json({ ok: true });
   }
 
-  const match = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?/i);
+  // Ancorato con "$" (rilievo di review su questa PR): senza, "/start_help"
+  // o "/starting" combacerebbero comunque con il solo prefisso "/start" (il
+  // testo e' gia' stato "trim()-ato" sopra, quindi l'ancora di fine
+  // stringa non esclude nessun caso legittimo), facendo rispondere con il
+  // messaggio "manda /start <codice>" a un comando che non c'entra nulla.
+  const match = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?$/i);
   if (!match) {
     return NextResponse.json({ ok: true });
   }
