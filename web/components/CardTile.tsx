@@ -25,6 +25,7 @@ export default function CardTile({
   priceProfile,
   quantity,
   onQuantityChange,
+  ownedLanguageMatch,
 }: {
   card: CardRow;
   index?: number;
@@ -54,6 +55,14 @@ export default function CardTile({
    * sono passati insieme. */
   quantity?: number;
   onQuantityChange?: (next: number) => void;
+  /** Passato SOLO dal binder quando la copia posseduta ha una lingua nota
+   * (BinderEntry.language): sovrascrive il prezzo "best" con quello trovato
+   * nella lingua posseduta, quando disponibile - `cents: null` significa
+   * lingua nota ma nessuna inserzione trovata in quella lingua, mostrato
+   * comunque con un badge esplicito (mai un fallback silenzioso). Prop
+   * assente del tutto = lingua non nota, nessun cambiamento rispetto a
+   * prima di questa funzionalita'. */
+  ownedLanguageMatch?: { language: string; cents: number | null; currency: string | null } | null;
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -61,38 +70,57 @@ export default function CardTile({
   // entrambi i profili - se hai scelto tu un filtro, il prezzo mostrato
   // deve rispettarlo indipendentemente dal profilo di default.
   const hasFilter = card.filtered_price_cents !== undefined;
+  // ownedLanguageMatch con un match reale (cents non null) ha la precedenza
+  // subito dopo un filtro esplicito dell'utente: e' un dato piu' preciso
+  // sulla copia REALMENTE posseduta, non un filtro generico di ricerca.
+  const hasOwnedMatch = !hasFilter && ownedLanguageMatch?.cents != null;
   const priceCents: number | null = hasFilter
     ? card.filtered_price_cents ?? null
-    : isBest
-      ? card.best_price_cents ?? card.latest_price_cents
-      : card.it_nm_zero_price_cents;
+    : hasOwnedMatch
+      ? ownedLanguageMatch!.cents
+      : isBest
+        ? card.best_price_cents ?? card.latest_price_cents
+        : card.it_nm_zero_price_cents;
   const priceCurrency = hasFilter
     ? card.filtered_price_currency
-    : isBest
-      ? card.best_price_currency ?? card.latest_price_currency
-      : card.it_nm_zero_price_currency ?? "EUR";
+    : hasOwnedMatch
+      ? ownedLanguageMatch!.currency ?? "EUR"
+      : isBest
+        ? card.best_price_currency ?? card.latest_price_currency
+        : card.it_nm_zero_price_currency ?? "EUR";
   // "!= null" (non "!== null"): intercetta anche un eventuale undefined,
   // non solo null - altrimenti "IT/Near Mint/Zero" comparirebbero come
   // badge anche con un prezzo mancante (segnalato in review, "undefined
   // !== null" e' true in JS/TS).
   const priceLanguage = hasFilter
     ? card.filtered_language
+    : hasOwnedMatch
+      ? ownedLanguageMatch!.language
+      : isBest
+        ? card.best_language ?? card.latest_language
+        : priceCents != null ? "it" : undefined;
+  // Nessuno storico salvato per il prezzo nella lingua posseduta (solo per
+  // best/esatto/filtrato): mostrare comunque una variazione sarebbe
+  // confrontare due profili diversi, non lo stesso nel tempo.
+  const prevPriceCents = hasOwnedMatch
+    ? null
     : isBest
-      ? card.best_language ?? card.latest_language
-      : priceCents != null ? "it" : undefined;
-  const prevPriceCents = isBest
-    ? card.prev_best_price_cents ?? card.prev_price_cents
-    : card.prev_it_nm_zero_price_cents;
+      ? card.prev_best_price_cents ?? card.prev_price_cents
+      : card.prev_it_nm_zero_price_cents;
   const shownCondition = hasFilter
     ? card.filtered_condition
-    : isBest
-      ? card.best_condition
-      : priceCents != null ? "Near Mint" : undefined;
+    : hasOwnedMatch
+      ? undefined
+      : isBest
+        ? card.best_condition
+        : priceCents != null ? "Near Mint" : undefined;
   const shownZero = hasFilter
     ? card.filtered_can_sell_via_hub
-    : isBest
-      ? card.best_can_sell_via_hub
-      : priceCents != null ? 1 : undefined;
+    : hasOwnedMatch
+      ? undefined
+      : isBest
+        ? card.best_can_sell_via_hub
+        : priceCents != null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
   const [popping, setPopping] = useState(false);
@@ -188,7 +216,20 @@ export default function CardTile({
                   NM Zero
                 </span>
               )}
+              {hasOwnedMatch && (
+                <span
+                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
+                  title="Prezzo trovato nella lingua della copia posseduta"
+                >
+                  tua lingua
+                </span>
+              )}
             </div>
+            {ownedLanguageMatch && ownedLanguageMatch.cents == null && (
+              <div className="text-[10px] text-ink-faint mt-0.5">
+                Nessuna inserzione in {languageFlag(ownedLanguageMatch.language)} {ownedLanguageMatch.language.toUpperCase()}: prezzo generale
+              </div>
+            )}
             {delta !== null && (
               <div
                 className={`text-xs font-mono whitespace-nowrap mt-0.5 ${

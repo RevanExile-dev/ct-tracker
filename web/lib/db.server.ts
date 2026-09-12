@@ -408,6 +408,54 @@ export async function fetchCardsTrend(
   return result;
 }
 
+/** Prezzo piu' economico nella lingua POSSEDUTA di ogni carta del binder,
+ * una per blueprint - non "esatto" nel senso di it_nm_zero_price_cents
+ * (qui si ignorano condizione e Zero, l'unico filtro e' la lingua
+ * registrata sulla copia posseduta, vedi BinderEntry.language in
+ * web/lib/binder.ts): "condition" non ha oggi NESSUN punto del codice che
+ * la imposti su una entry reale (verificato: scanner e stella nel
+ * catalogo non la toccano mai), quindi filtrare anche su quella
+ * renderebbe questa funzione sempre a vuoto - resta un miglioramento
+ * onesto e limitato a cio' che e' davvero disponibile, non una stima
+ * "esatta" sul profilo completo (schema/UI per condizione: lavoro
+ * futuro separato).
+ *
+ * Batch in una sola query invece di N (una per carta del binder) tramite
+ * una VALUES list - self-join su price_listings filtrato per lingua.
+ * Il chiamante deve gia' aver escluso le entry senza lingua nota (per
+ * quelle non c'e' nulla da interrogare, resta il "best" generale). */
+export async function fetchOwnedLanguagePrices(
+  entries: { blueprintId: number; language: string }[]
+): Promise<Record<number, { price_cents: number; price_currency: string | null; listings_count: number }>> {
+  if (entries.length === 0) return {};
+  const pool = getPgPool();
+  const p = new Params();
+  const values = entries
+    .map((e) => `(${p.add(e.blueprintId)}::int, ${p.add(e.language)}::text)`)
+    .join(", ");
+  const { rows } = await pool.query(
+    `
+    SELECT v.blueprint_id,
+           MIN(pl.price_cents) AS price_cents,
+           (ARRAY_AGG(pl.price_currency ORDER BY pl.price_cents ASC))[1] AS price_currency,
+           COUNT(*)::int AS listings_count
+    FROM (VALUES ${values}) AS v(blueprint_id, language)
+    JOIN price_listings pl ON pl.blueprint_id = v.blueprint_id AND pl.language = v.language
+    GROUP BY v.blueprint_id
+    `,
+    p.values
+  );
+  const result: Record<number, { price_cents: number; price_currency: string | null; listings_count: number }> = {};
+  for (const row of rows) {
+    result[row.blueprint_id] = {
+      price_cents: row.price_cents,
+      price_currency: row.price_currency,
+      listings_count: row.listings_count,
+    };
+  }
+  return result;
+}
+
 /** Le migliori (piu' economiche) inserzioni live per una carta (fino a 25,
  * vedi replace_price_listings in scripts/db.py). */
 export async function fetchBestListings(blueprintId: number): Promise<Listing[]> {

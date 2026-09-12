@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { CardRow, fetchCards, fetchCardsTrend } from "@/lib/db";
+import { CardRow, fetchCards, fetchCardsTrend, fetchOwnedLanguagePrices } from "@/lib/db";
 import { BinderEntry, getBinderEntries, setBinderQuantity, toggleBinder } from "@/lib/binder";
 import { formatCents } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
@@ -69,6 +69,81 @@ function BinderContent() {
     setEntries(setBinderQuantity(id, quantity));
   }
 
+  const entryById = useMemo(() => new Map(entries.map((entry) => [entry.blueprintId, entry])), [entries]);
+
+  // Solo le entry con una lingua nota vale la pena interrogare - "condition"
+  // non ha oggi nessun punto del codice che la imposti (verificato: scanner
+  // e stella nel catalogo non la toccano mai), quindi per ora la stima resta
+  // sulla sola lingua, non su un "profilo" completo (vedi commento su
+  // fetchOwnedLanguagePrices in web/lib/db.server.ts).
+  const languageEntries = useMemo(
+    () => entries.filter((entry): entry is BinderEntry & { language: string } => !!entry.language)
+      .map((entry) => ({ id: entry.blueprintId, language: entry.language })),
+    [entries]
+  );
+  // Chiave stabile per l'effetto sotto: cambia SOLO se cambia quali carte
+  // hanno una lingua nota o quale lingua e' registrata, non ad ogni render
+  // (languageEntries e' un nuovo array ad ogni chiamata di useMemo anche a
+  // contenuto invariato, ma qui serve solo il contenuto).
+  const languageEntriesKey = languageEntries.map((e) => `${e.id}:${e.language}`).sort().join(",");
+  const [languagePrices, setLanguagePrices] = useState<
+    Record<number, { price_cents: number; price_currency: string | null; listings_count: number }>
+  >({});
+
+  useEffect(() => {
+    // fetchOwnedLanguagePrices torna {} subito su un array vuoto (vedi
+    // web/lib/db.ts), senza fare rete - nessun bisogno di un ramo sincrono
+    // separato qui dentro (che l'effetto sarebbe stato scoraggiato dal
+    // fare: setState nel corpo dell'effetto, non in una callback asincrona).
+    let cancelled = false;
+    fetchOwnedLanguagePrices(languageEntries)
+      .then((result) => { if (!cancelled) setLanguagePrices(result); })
+      // Best-effort, come fetchCardsTrend: senza risposta le carte con
+      // lingua nota restano semplicemente sul "best" generale (nessuna
+      // regressione, e' lo stesso comportamento di prima di questo fix).
+      .catch(() => { if (!cancelled) setLanguagePrices({}); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [languageEntriesKey]);
+
+  // Prezzo risolto per carta: nella lingua posseduta quando nota E disponibile
+  // sul mercato, altrimenti il "best" generale - mai un fallback silenzioso
+  // quando una lingua ERA nota ma non ha trovato corrispondenza (matchedLanguage
+  // null ma triedLanguage valorizzato: la UI lo segnala esplicitamente).
+  const priceInfoById = useMemo(() => {
+    const map = new Map<number, {
+      cents: number | null; currency: string | null;
+      matchedLanguage: string | null; triedLanguage: string | null;
+    }>();
+    for (const card of cards ?? []) {
+      const bestCents = card.best_price_cents ?? card.latest_price_cents;
+      const bestCurrency = card.best_price_currency ?? card.latest_price_currency;
+      const ownedLanguage = entryById.get(card.id)?.language ?? null;
+      const languagePrice = ownedLanguage ? languagePrices[card.id] : undefined;
+      map.set(card.id, languagePrice
+        ? { cents: languagePrice.price_cents, currency: languagePrice.price_currency, matchedLanguage: ownedLanguage, triedLanguage: ownedLanguage }
+        : { cents: bestCents, currency: bestCurrency, matchedLanguage: null, triedLanguage: ownedLanguage });
+    }
+    return map;
+  }, [cards, entryById, languagePrices]);
+
+  // Forma passata a CardTile/BinderTable per il badge/fallback esplicito -
+  // derivata da priceInfoById, non ricalcolata: stessa fonte di verita' di
+  // "summary" sopra, cosi' il totale e i singoli prezzi mostrati non possono
+  // divergere.
+  const ownedLanguageMatchById = useMemo(() => {
+    const map = new Map<number, { language: string; cents: number | null; currency: string | null }>();
+    for (const [id, info] of priceInfoById) {
+      if (!info.triedLanguage) continue;
+      map.set(id, {
+        language: info.triedLanguage,
+        cents: info.matchedLanguage ? info.cents : null,
+        currency: info.matchedLanguage ? info.currency : null,
+      });
+    }
+    return map;
+  }, [priceInfoById]);
+
   useEffect(() => {
     // Batch su tutte le carte del binder in una sola richiesta (vedi
     // fetchCardsTrend) invece di uno storico per carta - dato pubblico di
@@ -105,19 +180,30 @@ function BinderContent() {
 
   const summary = useMemo(() => {
     if (!cards) return null;
-    const priced = cards.filter((card) => (card.best_price_cents ?? card.latest_price_cents) !== null);
+    const priced = cards.filter((card) => priceInfoById.get(card.id)?.cents !== null);
     // Stessa euristica di snapshot_binder_values() in scripts/db.py (che
     // scrive lo storico mostrato sopra): moltiplica per la quantita'
     // posseduta, non piu' una copia per tipo (bug corretto qui - 3 copie da
     // 10 euro risultavano 10, non 30). "totalCopies"/"pricedCopies" sono la
     // somma delle quantita', diversi da cards.length ("tipi di carta").
+    // "total" usa priceInfoById (prezzo nella lingua posseduta quando nota e
+    // disponibile, altrimenti il "best" generale, mai i due mischiati per la
+    // stessa carta) invece del solo best_price_cents.
+    const languageAttempted = cards.filter((card) => priceInfoById.get(card.id)?.triedLanguage).length;
+    const languageMatched = cards.filter((card) => priceInfoById.get(card.id)?.matchedLanguage).length;
     return {
-      total: priced.reduce((sum, card) => sum + (card.best_price_cents ?? card.latest_price_cents ?? 0) * (quantityById.get(card.id) ?? 1), 0),
+      total: priced.reduce((sum, card) => sum + (priceInfoById.get(card.id)?.cents ?? 0) * (quantityById.get(card.id) ?? 1), 0),
       priced: priced.length,
       totalCopies: cards.reduce((sum, card) => sum + (quantityById.get(card.id) ?? 1), 0),
-      currency: priced[0]?.best_price_currency ?? priced[0]?.latest_price_currency ?? "EUR",
+      // Dalla stessa fonte (priceInfoById) usata per "total" qui sopra, non
+      // di nuovo da best_price_currency: quella potrebbe differire dalla
+      // valuta EFFETTIVAMENTE usata per questa carta se il prezzo mostrato
+      // viene invece dalla lingua posseduta (languagePrices).
+      currency: (priced[0] && priceInfoById.get(priced[0].id)?.currency) ?? "EUR",
+      languageAttempted,
+      languageMatched,
     };
-  }, [cards, quantityById]);
+  }, [cards, quantityById, priceInfoById]);
 
   const setBookPage = useCallback((page: number) => {
     const params = new URLSearchParams(window.location.search);
@@ -164,6 +250,9 @@ function BinderContent() {
           </div>
           <div><div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Valore stimato</div><div className="font-display text-xl font-bold text-accent-bright">{formatCents(summary.total, summary.currency)}</div></div>
           {summary.priced < cards.length && <span className="text-xs text-ink-faint">{summary.priced}/{cards.length} con prezzo</span>}
+          {summary.languageAttempted > 0 && (
+            <span className="text-xs text-ink-faint">{summary.languageMatched}/{summary.languageAttempted} nella lingua posseduta</span>
+          )}
           {view === "collection" && (
             <div className="ml-auto inline-flex rounded-lg border border-base-border bg-base-surface2 p-1">
               <Link href="/binder?view=collection" className={`min-h-9 inline-flex items-center rounded-md px-3 text-xs ${layout === "grid" ? "bg-accent/15 text-accent-bright" : "text-ink-muted"}`}>Griglia</Link>
@@ -174,7 +263,7 @@ function BinderContent() {
       )}
 
       {cards && cards.length > 0 && <p className="mb-5 text-xs text-ink-faint">
-        La stima attuale considera la quantità posseduta di ogni carta, ma resta su prezzi di riferimento che possono avere lingua o condizione diverse dalle tue copie.
+        La stima attuale considera la quantità posseduta e, quando nota, la lingua della copia; resta comunque su prezzi di riferimento che possono avere una condizione diversa dalle tue carte.
       </p>}
 
       {session && cards && cards.length > 0 && (
@@ -198,7 +287,7 @@ function BinderContent() {
 
       {cards && cards.length > 0 && view === "collection" && (
         layout === "table" ? (
-          <BinderTable cards={cards} trends={trends} returnTo={returnTo} quantities={quantityById} onQuantityChange={changeQuantity} />
+          <BinderTable cards={cards} trends={trends} returnTo={returnTo} quantities={quantityById} onQuantityChange={changeQuantity} ownedLanguageMatches={ownedLanguageMatchById} />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
             {cards.map((card, index) => (
@@ -217,6 +306,7 @@ function BinderContent() {
                 priceProfile="best"
                 quantity={quantityById.get(card.id) ?? 1}
                 onQuantityChange={(quantity) => changeQuantity(card.id, quantity)}
+                ownedLanguageMatch={ownedLanguageMatchById.get(card.id) ?? undefined}
               />
             ))}
           </div>
