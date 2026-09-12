@@ -623,9 +623,16 @@ def record_sync_checkpoint(conn, started_at: str, finished_at: str, budget_secon
 # --- Allarmi prezzo (sotto-parte 4c del piano: valutatore + coda di invio
 # Telegram - le tabelle e il CRUD dell'account sono gia' arrivati con 4a/4b) ---
 
-MAX_TELEGRAM_MESSAGE_LENGTH = 4096  # limite reale dell'API Bot di Telegram
+MAX_TELEGRAM_MESSAGE_LENGTH = 4096  # limite reale dell'API Bot di Telegram (sendMessage)
+# sendPhoto ha un limite piu' stretto per la didascalia (caption) - usato
+# per il testo dell'allarme perche' e' la via preferita quando la carta ha
+# un'immagine, con sendMessage come fallback (testo identico, mai troncato
+# davvero nella pratica: un nome carta+espansione non si avvicina a 1024
+# caratteri).
+MAX_TELEGRAM_CAPTION_LENGTH = 1024
 MAX_OUTBOX_RETRIES = 8
 OUTBOX_BATCH_SIZE = 20
+CARDTRADER_CARD_URL = "https://www.cardtrader.com/cards/{}"  # stesso link di "Apri su CardTrader" in web/app/card/[id]/page.tsx
 
 
 def find_matching_listing_price(conn, blueprint_id: int, language: str | None,
@@ -675,7 +682,8 @@ def _alert_target_met(alert: dict, current_price_cents: int) -> bool:
 
 
 def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
-                           current_price_cents: int, currency: str | None) -> str:
+                           current_price_cents: int, currency: str | None,
+                           blueprint_id: int) -> str:
     """HTML (non Markdown legacy, rilievo di review su questa PR): il nome
     di una carta/espansione arriva da CardTrader, fuori dal nostro
     controllo - un singolo "_"/"*"/"`" non accoppiato in Markdown fa
@@ -704,12 +712,18 @@ def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
 
     safe_card_name = html.escape(card_name)
     safe_expansion_name = html.escape(expansion_name)
+    link = CARDTRADER_CARD_URL.format(blueprint_id)
     text = (
         f"🔔 <b>{safe_card_name}</b> ({safe_expansion_name})\n"
         f"Prezzo attuale: {price_str} — {target_str}\n"
-        f"Profilo: {', '.join(profile_bits)}"
+        f"Profilo: {', '.join(profile_bits)}\n"
+        f"{link}"
     )
-    return text[:MAX_TELEGRAM_MESSAGE_LENGTH]
+    # Limite piu' stretto (caption di sendPhoto): il testo e' lo stesso sia
+    # per la foto sia per il fallback sendMessage, quindi va bene entro il
+    # limite piu' restrittivo dei due - non si avvicina mai a 1024 caratteri
+    # nella pratica, ma la carta e' comunque tagliata qui e non nel worker.
+    return text[:MAX_TELEGRAM_CAPTION_LENGTH]
 
 
 def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str, expansion_name: str) -> int:
@@ -739,6 +753,11 @@ def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str,
     if not rows:
         return 0
 
+    with conn.cursor() as cur:
+        cur.execute("SELECT image_url FROM blueprints WHERE id = %s", (blueprint_id,))
+        row = cur.fetchone()
+        image_url = row[0] if row else None
+
     fired = 0
     now = datetime.now(timezone.utc)
     for (alert_id, user_id, language, condition, can_sell_via_hub,
@@ -765,7 +784,7 @@ def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str,
             if link:
                 text = _format_alert_message(
                     card_name, expansion_name, alert, matching["price_cents"],
-                    matching["currency"] or baseline_currency,
+                    matching["currency"] or baseline_currency, blueprint_id,
                 )
                 # Una riga per (allarme, giorno di scatto): protegge da un
                 # doppio accodamento se questa carta venisse rivalutata due
@@ -774,10 +793,10 @@ def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str,
                 # sulla tabella in web/db/schema.sql).
                 dedup_key = f"alert:{alert_id}:{now.date().isoformat()}"
                 cur.execute(
-                    """INSERT INTO telegram_outbox (alert_id, chat_id, dedup_key, payload)
-                       VALUES (%s, %s, %s, %s)
+                    """INSERT INTO telegram_outbox (alert_id, chat_id, dedup_key, payload, image_url)
+                       VALUES (%s, %s, %s, %s, %s)
                        ON CONFLICT (dedup_key) DO NOTHING""",
-                    (alert_id, link[0], dedup_key, text),
+                    (alert_id, link[0], dedup_key, text, image_url),
                 )
         fired += 1
     return fired
@@ -808,7 +827,7 @@ def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
     non inviato piuttosto che intasare la coda all'infinito)."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, chat_id, payload
+            """SELECT id, chat_id, payload, image_url
                FROM telegram_outbox
                WHERE sent_at IS NULL
                  AND retry_count < %s
