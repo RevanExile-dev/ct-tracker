@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -9,13 +9,17 @@ import {
   CardDetail, Listing, PricePoint,
   fetchBestListings, fetchCardDetail, fetchPriceHistory,
 } from "@/lib/db";
+import { useSession } from "next-auth/react";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
+import { getWishlistIds } from "@/lib/wishlist";
+import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import InteractiveCard from "@/components/InteractiveCard";
 import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
 import ConditionBadge from "@/components/ConditionBadge";
 import FilterDropdown from "@/components/FilterDropdown";
+import QuickAlertModal from "@/components/QuickAlertModal";
+import LoginToTrackToast from "@/components/LoginToTrackToast";
 import { countryFlag, formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
 
 // Spike Three.js isolato (PR #6): mai importato/scaricato nel percorso di
@@ -36,10 +40,19 @@ function CardDetailContent() {
   const [card, setCard] = useState<CardDetail | null | undefined>(undefined);
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const { data: session } = useSession();
+  const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const [inBinder, setInBinder] = useState(false);
   const [inWishlist, setInWishlist] = useState(false);
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
+  // Percorso "manuale" (bottone dedicato, indipendente dal cuore): stesso
+  // QuickAlertModal dell'overlay su desideri, ma senza toccare la wishlist -
+  // vedi CLAUDE.md, richiesta esplicita di poter creare un allarme aprendo
+  // la carta anche senza passare dal cuore.
+  const [manualAlertOpen, setManualAlertOpen] = useState(false);
+  const [manualLoginToast, setManualLoginToast] = useState(false);
+  const manualLoginToastTimerRef = useRef<number | null>(null);
   const [imgError, setImgError] = useState(false);
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [onlyZeroListings, setOnlyZeroListings] = useState(false);
@@ -266,7 +279,7 @@ function CardDetailContent() {
             </button>
             <button
               onClick={() => {
-                setInWishlist(new Set(toggleWishlist(id)).has(id));
+                setInWishlist(new Set(promptWishlistToggle(card, inWishlist)).has(id));
                 setPoppingWishlist(true);
               }}
               onAnimationEnd={() => setPoppingWishlist(false)}
@@ -279,6 +292,19 @@ function CardDetailContent() {
               }`}
             >
               {inWishlist ? "♥ nella lista desideri" : "♡ aggiungi ai desideri"}
+            </button>
+            <button
+              onClick={() => {
+                if (session) setManualAlertOpen(true);
+                else {
+                  if (manualLoginToastTimerRef.current !== null) window.clearTimeout(manualLoginToastTimerRef.current);
+                  setManualLoginToast(true);
+                  manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 5000);
+                }
+              }}
+              className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+            >
+              🔔 crea allarme
             </button>
           </div>
 
@@ -452,6 +478,11 @@ function CardDetailContent() {
           </a>
         </div>
       </div>
+      {wishlistPromptOverlay}
+      {manualAlertOpen && (
+        <QuickAlertModal card={card} onClose={() => setManualAlertOpen(false)} />
+      )}
+      {manualLoginToast && <LoginToTrackToast onDismiss={() => setManualLoginToast(false)} />}
     </main>
   );
 }

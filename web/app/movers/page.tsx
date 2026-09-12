@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  CardRow,
   MOVERS_PAGE_SIZE,
   MoversPageResult,
   MoversSort,
@@ -13,11 +14,12 @@ import {
 } from "@/lib/db";
 import { MOVERS_TIERS, findMoversTier } from "@/lib/moversTiers";
 import { getBinderIds, toggleBinder } from "@/lib/binder";
-import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
+import { getWishlistIds } from "@/lib/wishlist";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 
 function MoversSkeleton() {
   return (
@@ -119,6 +121,7 @@ function MoversContent() {
   const [error, setError] = useState<string | null>(null);
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
+  const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const [rarities, setRarities] = useState<string[]>([]);
   const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
     splitCsv(searchParams.get("rarity")).map(normalizeRarity)
@@ -198,8 +201,8 @@ function MoversContent() {
     setBinderIds(new Set(toggleBinder(id)));
   }
 
-  function handleToggleWishlistCard(id: number) {
-    setWishlistIds(new Set(toggleWishlist(id)));
+  function handleToggleWishlistCard(card: CardRow) {
+    setWishlistIds((prev) => new Set(promptWishlistToggle(card, prev.has(card.id))));
   }
 
   // Ogni handler di filtro riparte esplicitamente dalla prima pagina di
@@ -455,7 +458,7 @@ function MoversContent() {
                         inBinder={binderIds.has(card.id)}
                         onToggleBinder={() => handleToggleBinderCard(card.id)}
                         inWishlist={wishlistIds.has(card.id)}
-                        onToggleWishlist={() => handleToggleWishlistCard(card.id)}
+                        onToggleWishlist={() => handleToggleWishlistCard(card)}
                         returnTo={returnTo}
                       />
                     ))}
@@ -488,7 +491,7 @@ function MoversContent() {
                         inBinder={binderIds.has(card.id)}
                         onToggleBinder={() => handleToggleBinderCard(card.id)}
                         inWishlist={wishlistIds.has(card.id)}
-                        onToggleWishlist={() => handleToggleWishlistCard(card.id)}
+                        onToggleWishlist={() => handleToggleWishlistCard(card)}
                         returnTo={returnTo}
                       />
                     ))}
@@ -500,6 +503,7 @@ function MoversContent() {
           </div>
         </>
       )}
+      {wishlistPromptOverlay}
     </main>
   );
 }
