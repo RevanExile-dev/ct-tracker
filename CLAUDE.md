@@ -126,6 +126,21 @@ quel punto la review va chiesta all'utente direttamente (es. lui stesso su
 ChatGPT/Gemini) invece che eseguita in autonomia, oppure si prova l'altro
 provider se il suo secret esiste.
 
+## Metodo di lavoro autonomo per task multi-parte
+
+Quando l'utente scompone (o chiede di scomporre) un task in sotto-parti
+sequenziali con l'istruzione di procedere in autonomia, verificare a fondo
+ognuna con infrastruttura reale e mergiare solo se funziona: il ciclo da
+seguire (checklist esplicita, un worktree+branch per sotto-parte, verifica
+su Postgres/browser/server reali prima di ogni commit, review AI con
+rilievi verificati criticamente uno per uno, merge autonomo su `main`
+quando CI è verde e non restano rilievi pendenti) è descritto per intero
+in `docs/autonomous_implementation_method_2026-09-12.md` — non ripeterlo
+qui. Vale per qualunque task multi-parte in questo repo, non solo per il
+tipo di lavoro (schema/API/sync) da cui è stato ricavato: l'autorizzazione
+a mergiare in autonomia, senza chiedere conferma ad ogni sotto-parte, è
+inclusa quando quel ciclo è stato seguito per intero.
+
 ## Disciplina di verifica (non ripetere gli stessi errori)
 
 Regole nate da errori reali commessi in sessione, non teoria astratta —
