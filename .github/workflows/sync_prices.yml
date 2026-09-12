@@ -1,14 +1,11 @@
-name: Sync prezzi CardTrader
+name: Sync prezzi CardTrader (manuale, solo espansioni recenti)
 
 on:
-  schedule:
-    # Primo sync del giorno, 06:00 UTC (~08:00 in Italia in orario invernale, 07:00-08:00 estivo)
-    - cron: "0 6 * * *"
-    # Secondo sync dello stesso giorno, 18:00 UTC (~20:00 Italia inverno,
-    # 19:00-20:00 estate): a quell'ora le carte del run delle 06:00 hanno
-    # gia' uno snapshot datato oggi, quindi questo run va forzato (vedi lo
-    # step sotto) o sync_prices.py le salterebbe tutte senza aggiornare nulla.
-    - cron: "0 18 * * *"
+  # Niente piu' cron automatico (sostituito da sync_prices_priority.yml,
+  # vedi docs/binder_reserved_work_plan_2026-09-11.md punto 3): resta come
+  # strumento manuale per un resync mirato delle espansioni recenti, es.
+  # dopo aver aggiunto un campo nuovo da ripopolare (--force) senza aspettare
+  # che ci arrivi il batch prioritario nel suo ordine naturale.
   workflow_dispatch:
     inputs:
       force:
@@ -19,8 +16,9 @@ on:
 permissions:
   contents: read
 
-# Condiviso con sync_catalog.yml e sync_prices_full.yml (vedi li' per il
-# motivo): mai due sync in scrittura sul database Postgres in parallelo.
+# Condiviso con sync_catalog.yml, sync_prices_full.yml e
+# sync_prices_priority.yml: mai due sync in scrittura sul database Postgres
+# in parallelo.
 concurrency:
   group: ct-tracker-db-write
   cancel-in-progress: false
@@ -28,13 +26,11 @@ concurrency:
 jobs:
   sync-prices:
     runs-on: ubuntu-latest
-    # Sync 2x/giorno (06:00 e 18:00 UTC, vedi i due cron sopra): solo le
-    # espansioni recenti (daily_expansion_codes in config/tracked_sets.json,
-    # era Scarlet & Violet + Mega Evolution) per restare in tempi
-    # ragionevoli. Il sync completo su tutti i set gira invece una volta a
-    # settimana da sync_prices_full.yml. Timeout largo perche' il rate
-    # limit di 1 richiesta/secondo sul marketplace CardTrader e' il vero
-    # collo di bottiglia (~10.000+ carte -> 170+ minuti minimo), non il DB.
+    # Solo le espansioni recenti (daily_expansion_codes in
+    # config/tracked_sets.json, era Scarlet & Violet + Mega Evolution) per
+    # restare in tempi ragionevoli. Timeout largo perche' il rate limit di 1
+    # richiesta/secondo sul marketplace CardTrader e' il vero collo di
+    # bottiglia (~10.000+ carte -> 170+ minuti minimo), non il DB.
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
@@ -50,19 +46,4 @@ jobs:
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-        run: |
-          FORCE_FLAG="${{ inputs.force && '--force' || '' }}"
-          # Il run delle 18:00 UTC trova le carte gia' sincronizzate da
-          # quello delle 06:00 nello stesso giorno: senza --force
-          # sync_prices.py le salterebbe tutte (vedi commento sul cron sopra).
-          if [ "${{ github.event.schedule }}" = "0 18 * * *" ]; then
-            FORCE_FLAG="--force"
-          fi
-          python scripts/sync_prices.py --only-daily $FORCE_FLAG
-
-      - name: Notifica Telegram (cali di prezzo e watchlist)
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-        run: python scripts/notify_telegram.py
+        run: python scripts/sync_prices.py --only-daily ${{ inputs.force && '--force' || '' }}

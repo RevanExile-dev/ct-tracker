@@ -1,0 +1,41 @@
+name: Notifiche Telegram (cali di prezzo e watchlist)
+
+on:
+  schedule:
+    # Stessa cadenza di prima (2x/giorno), quando le notifiche giravano in
+    # coda al sync prezzi in sync_prices.yml/sync_prices_full.yml: ora e'
+    # un workflow separato perche' scripts/sync_prices_priority.py (il nuovo
+    # scheduler a batch, ogni 15 minuti) NON manda piu' notifiche ad ogni
+    # batch - lo farebbe fino a un centinaio di volte al giorno per la
+    # stessa carta, dato che scripts/notify_telegram.py non ha ancora
+    # (punto 4 del piano, non ancora fatto) uno stato di "soglia gia'
+    # segnalata" tra un run e l'altro.
+    - cron: "0 6 * * *"
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  notify-telegram:
+    runs-on: ubuntu-latest
+    # Sola lettura sul Postgres (nessuna scrittura, vedi scripts/notify_telegram.py):
+    # non serve condividere il concurrency group ct-tracker-db-write con i
+    # sync, puo' girare in qualunque momento senza rischio di conflitto.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Notifica Telegram (cali di prezzo e watchlist)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/notify_telegram.py

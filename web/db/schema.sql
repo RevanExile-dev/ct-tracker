@@ -181,6 +181,25 @@ CREATE TABLE IF NOT EXISTS latest_prices (
   prev_it_nm_zero_price_cents INTEGER
 );
 
+-- Aggiunta dopo la creazione iniziale della tabella (primo uso reale di
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS in questo schema, gia' anticipato nel
+-- commento in cima al file): "quando abbiamo provato l'ultima volta a
+-- sincronizzare questa carta", a prescindere dall'esito - diverso da
+-- captured_at_ts, che si aggiorna SOLO su un tentativo riuscito. Serve a
+-- scripts/sync_prices_priority.py per evitare un bug di starvation reale
+-- trovato in review su questa PR: senza questa colonna, una carta che fallisce
+-- SEMPRE (es. un blueprint rimosso da CardTrader) avrebbe captured_at_ts
+-- eternamente NULL/vecchio, quindi si ripresenterebbe in cima alla stessa
+-- fascia di priorita' ad ogni singolo run - con 15+ carte cosi', il circuit
+-- breaker (MAX_CONSECUTIVE_ERRORS) scatterebbe ad ogni run PRIMA di
+-- raggiungere qualunque altra carta, bloccando l'intero batch prioritario per
+-- sempre. Aggiornata ad ogni tentativo (successo O fallimento, in una
+-- scrittura separata e committata subito, PRIMA della chiamata a CardTrader
+-- che potrebbe fallire e fare rollback) cosi' anche una carta rotta scivola
+-- in fondo alla coda e lascia spazio alle altre, pur continuando ad essere
+-- ritentata periodicamente invece di essere ignorata per sempre.
+ALTER TABLE latest_prices ADD COLUMN IF NOT EXISTS last_attempted_at TIMESTAMPTZ;
+
 -- Le migliori inserzioni live per ogni carta (non storico: ad ogni sync le
 -- righe della carta vengono sostituite con le inserzioni piu' economiche
 -- del momento, vedi replace_price_listings in scripts/db.py).
@@ -337,6 +356,34 @@ CREATE TABLE IF NOT EXISTS binder_lot_events (
 
 CREATE INDEX IF NOT EXISTS idx_binder_lot_events_user ON binder_lot_events (user_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_binder_lot_events_lot ON binder_lot_events (lot_id);
+
+-- Storico dei run dello scheduler di sync prioritario a batch
+-- (scripts/sync_prices_priority.py, docs/binder_reserved_work_plan_2026-09-11.md
+-- punto 3) - una riga per run, non un cursore/checkpoint di ripresa: la
+-- priorita' viene RICALCOLATA da zero a ogni batch (mai continuata da un
+-- offset salvato), la ripresa naturale viene invece da
+-- latest_prices.captured_at_ts (gia' esistente, aggiornato incondizionatamente
+-- a ogni sync per carta - vedi upsert_latest_price in scripts/db.py): una
+-- carta appena sincronizzata ha il captured_at_ts piu' fresco della sua
+-- fascia, quindi scivola in fondo alla coda del prossimo giro da sola,
+-- senza bisogno di un puntatore separato. Questa tabella serve solo per
+-- osservabilita' (durata dei run, quante carte per fascia di priorita',
+-- quanti errori) - un log strutturato in Postgres invece che nei soli log
+-- testuali di GitHub Actions, che scadono e non sono interrogabili.
+CREATE TABLE IF NOT EXISTS sync_checkpoint (
+  id BIGSERIAL PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL,
+  finished_at TIMESTAMPTZ,
+  budget_seconds INTEGER NOT NULL,
+  wishlist_count INTEGER NOT NULL DEFAULT 0,
+  binder_count INTEGER NOT NULL DEFAULT 0,
+  catalog_count INTEGER NOT NULL DEFAULT 0,
+  cards_ok INTEGER NOT NULL DEFAULT 0,
+  cards_error INTEGER NOT NULL DEFAULT 0,
+  circuit_breaker_triggered BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_checkpoint_started ON sync_checkpoint (started_at DESC);
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,

@@ -1,11 +1,16 @@
-name: Sync prezzi CardTrader (completo, settimanale)
+name: Sync prezzi CardTrader (manuale, completo)
 
 on:
-  schedule:
-    # Ogni domenica alle 02:00 UTC. Sincronizza TUTTE le carte tracciate
-    # (~30.000+), non solo quelle recenti: puo' richiedere diverse ore per
-    # via del rate limit di 1 richiesta/secondo sul marketplace CardTrader.
-    - cron: "0 2 * * 0"
+  # Niente piu' cron automatico settimanale (sostituito da
+  # sync_prices_priority.yml, vedi docs/binder_reserved_work_plan_2026-09-11.md
+  # punto 3 - un sync completo su ~30.000+ carte al rate limit di 1
+  # richiesta/secondo di CardTrader superava le 8 ore, vicino al tetto di 6
+  # ore dei runner GitHub-hosted, bloccando per tutta la sua durata
+  # qualunque altro sync nello stesso concurrency group): resta come
+  # strumento manuale per un resync completo mirato, es. dopo aver aggiunto
+  # un campo nuovo da ripopolare su TUTTO il catalogo (--force) senza
+  # aspettare che il batch prioritario copra tutte le carte nel suo ordine
+  # naturale.
   workflow_dispatch:
     inputs:
       force:
@@ -16,11 +21,10 @@ on:
 permissions:
   contents: read
 
-# Condiviso con sync_catalog.yml e sync_prices.yml (vedi li' per il motivo):
-# mai due sync in scrittura sul database Postgres in parallelo. Con cron
-# alle 02:00 UTC di domenica e il giornaliero alle 06:00, un full lungo
-# poteva ancora essere in corso quando parte il giornaliero: ora il
-# secondo si accoda invece di scrivere in contemporanea.
+# Condiviso con sync_catalog.yml, sync_prices.yml e sync_prices_priority.yml:
+# mai due sync in scrittura sul database Postgres in parallelo. Con un
+# resync manuale completo che puo' durare ore, il batch prioritario
+# accodato dietro aspetta invece di scrivere in contemporanea.
 concurrency:
   group: ct-tracker-db-write
   cancel-in-progress: false
@@ -44,10 +48,3 @@ jobs:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: python scripts/sync_prices.py ${{ inputs.force && '--force' || '' }}
-
-      - name: Notifica Telegram (cali di prezzo e watchlist)
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-        run: python scripts/notify_telegram.py

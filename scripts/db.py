@@ -503,3 +503,110 @@ def set_meta(conn, key: str, value: str):
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
             (key, value),
         )
+
+
+def get_meta(conn, key: str) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT value FROM meta WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+# Fasce di priorita' per lo scheduler a batch (scripts/sync_prices_priority.py,
+# docs/binder_reserved_work_plan_2026-09-11.md punto 3): desideri -> binder ->
+# resto del catalogo. "allarmi attivi" (la fascia piu' alta nel piano) non e'
+# ancora implementabile: la tabella degli allarmi per-carta e' lavoro futuro
+# (punto 4, non ancora fatto) - quando esistera' andra' inserita qui SOPRA
+# la fascia 1, non in sostituzione.
+PRIORITY_WISHLIST = 1
+PRIORITY_BINDER = 2
+PRIORITY_CATALOG = 3
+
+
+def fetch_priority_batch(conn, limit: int):
+    """Le prossime `limit` carte da risincronizzare, ordinate PRIMA per fascia
+    di priorita' (desideri, poi binder, poi resto del catalogo - una carta di
+    fascia 1 gia' vista di recente passa comunque prima di una carta di fascia
+    3 mai vista) e SOLO ALL'INTERNO DI CIASCUNA FASCIA per "quanto e' vecchio
+    l'ultimo tentativo su questa carta" (COALESCE(last_attempted_at,
+    captured_at_ts), NULLS FIRST cosi' una carta mai nemmeno tentata viene
+    prima di qualunque carta gia' tentata almeno una volta nella sua fascia).
+    Nessun cursore/offset da passare: la carta appena tentata da QUESTA
+    chiamata avra' last_attempted_at piu' recente della sua fascia al
+    prossimo giro, quindi scivola in coda da sola (vedi commento su
+    sync_checkpoint in web/db/schema.sql).
+
+    Usa last_attempted_at (aggiornato ad OGNI tentativo, riuscito o no - vedi
+    mark_attempted) e non captured_at_ts (aggiornato SOLO sui successi, da
+    upsert_latest_price) apposta: una carta che fallisce sempre altrimenti
+    avrebbe captured_at_ts eternamente vecchio/NULL e si ripresenterebbe in
+    cima alla sua fascia ad ogni singolo run, rischiando di bloccare l'intero
+    batch (con 15+ carte cosi', il circuit breaker di
+    scripts/sync_prices_priority.py scatterebbe prima di raggiungere
+    qualunque altra carta) - bug di starvation reale, trovato in review su
+    questa PR."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT b.id, b.name, b.expansion_name,
+                   CASE
+                     WHEN EXISTS (SELECT 1 FROM wishlist_cards w WHERE w.blueprint_id = b.id) THEN %(p_wishlist)s
+                     WHEN EXISTS (SELECT 1 FROM binder_cards c WHERE c.blueprint_id = b.id) THEN %(p_binder)s
+                     ELSE %(p_catalog)s
+                   END AS priority
+            FROM blueprints b
+            LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
+            ORDER BY priority ASC, COALESCE(lp.last_attempted_at, lp.captured_at_ts) ASC NULLS FIRST, b.id ASC
+            LIMIT %(limit)s
+            """,
+            {"p_wishlist": PRIORITY_WISHLIST, "p_binder": PRIORITY_BINDER,
+             "p_catalog": PRIORITY_CATALOG, "limit": limit},
+        )
+        return cur.fetchall()
+
+
+def mark_attempted(conn, blueprint_id: int, attempted_at: str):
+    """Registra "abbiamo provato a sincronizzare questa carta adesso",
+    A PRESCINDERE dall'esito - va chiamata (e committata) PRIMA della
+    chiamata a CardTrader, cosi' resta valida anche se quella chiamata fallisce
+    e il resto della transazione va in rollback (vedi fetch_priority_batch sul
+    perche' serve: altrimenti una carta che fallisce sempre bloccherebbe la
+    coda per tutte le altre). Un semplice UPDATE non basta per una carta mai
+    vista prima (nessuna riga in latest_prices ancora): upsert minimale che
+    non tocca nessun campo di prezzo se la riga non esiste gia'."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO latest_prices (blueprint_id, last_attempted_at)
+            VALUES (%s, %s)
+            ON CONFLICT (blueprint_id) DO UPDATE SET last_attempted_at = EXCLUDED.last_attempted_at
+            """,
+            (blueprint_id, attempted_at),
+        )
+
+
+def record_sync_checkpoint(conn, started_at: str, finished_at: str, budget_seconds: int,
+                            tier_counts: dict, cards_ok: int, cards_error: int,
+                            circuit_breaker_triggered: bool):
+    """Una riga per run dello scheduler prioritario - solo osservabilita'
+    (vedi commento sulla tabella in web/db/schema.sql), mai letta per
+    decidere quali carte processare al prossimo giro."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sync_checkpoint
+                (started_at, finished_at, budget_seconds, wishlist_count, binder_count,
+                 catalog_count, cards_ok, cards_error, circuit_breaker_triggered)
+            VALUES (%(started_at)s, %(finished_at)s, %(budget_seconds)s, %(wishlist_count)s,
+                    %(binder_count)s, %(catalog_count)s, %(cards_ok)s, %(cards_error)s,
+                    %(circuit_breaker_triggered)s)
+            """,
+            {
+                "started_at": started_at, "finished_at": finished_at, "budget_seconds": budget_seconds,
+                "wishlist_count": tier_counts.get(PRIORITY_WISHLIST, 0),
+                "binder_count": tier_counts.get(PRIORITY_BINDER, 0),
+                "catalog_count": tier_counts.get(PRIORITY_CATALOG, 0),
+                "cards_ok": cards_ok, "cards_error": cards_error,
+                "circuit_breaker_triggered": circuit_breaker_triggered,
+            },
+        )
