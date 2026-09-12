@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -52,6 +52,7 @@ function CardDetailContent() {
   // la carta anche senza passare dal cuore.
   const [manualAlertOpen, setManualAlertOpen] = useState(false);
   const [manualLoginToast, setManualLoginToast] = useState(false);
+  const manualLoginToastTimerRef = useRef<number | null>(null);
   const [imgError, setImgError] = useState(false);
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [onlyZeroListings, setOnlyZeroListings] = useState(false);
@@ -296,8 +297,9 @@ function CardDetailContent() {
               onClick={() => {
                 if (session) setManualAlertOpen(true);
                 else {
+                  if (manualLoginToastTimerRef.current !== null) window.clearTimeout(manualLoginToastTimerRef.current);
                   setManualLoginToast(true);
-                  window.setTimeout(() => setManualLoginToast(false), 5000);
+                  manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 5000);
                 }
               }}
               className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"

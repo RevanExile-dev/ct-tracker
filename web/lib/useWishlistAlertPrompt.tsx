@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import type { CardRow } from "./types";
 import { toggleWishlist } from "./wishlist";
@@ -20,6 +20,12 @@ export function useWishlistAlertPrompt() {
   const { data: session } = useSession();
   const [promptCard, setPromptCard] = useState<CardRow | null>(null);
   const [showToast, setShowToast] = useState(false);
+  // Click ripetuti sul cuore da sloggato (es. su piu' carte in rapida
+  // successione) accodavano un setTimeout per volta senza cancellare il
+  // precedente: il primo timer scaduto nascondeva il toast anche se un
+  // click piu' recente lo aveva appena fatto ricomparire (rilievo review
+  // Gemini su questa PR, riprodotto e confermato).
+  const toastTimerRef = useRef<number | null>(null);
 
   const promptWishlistToggle = useCallback((card: CardRow, wasInWishlist: boolean): Set<number> => {
     const next = toggleWishlist(card.id);
@@ -28,8 +34,9 @@ export function useWishlistAlertPrompt() {
       if (session) {
         setPromptCard(card);
       } else {
+        if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
         setShowToast(true);
-        window.setTimeout(() => setShowToast(false), TOAST_MS);
+        toastTimerRef.current = window.setTimeout(() => setShowToast(false), TOAST_MS);
       }
     }
     return next;
