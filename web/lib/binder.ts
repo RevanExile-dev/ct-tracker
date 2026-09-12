@@ -31,10 +31,28 @@ export type BinderEntry = {
   addedAt: string;
 };
 
+// Stesso limite di MAX_BINDER_QUANTITY in web/lib/account.server.ts
+// (duplicato apposta, un lato client uno server: nessuna dipendenza a
+// runtime tra i due, vedi commento in account.server.ts sul motivo del
+// limite). Le due soglie vanno tenute allineate.
+const MAX_QUANTITY = 999;
+
+function isValidQuantity(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_QUANTITY;
+}
+
 function isValidEntry(value: unknown): value is BinderEntry {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
-  return typeof v.blueprintId === "number" && Number.isFinite(v.blueprintId) && typeof v.quantity === "number";
+  return typeof v.blueprintId === "number" && Number.isFinite(v.blueprintId);
+}
+
+// Non fa parte del "cosa rende un'entry valida" sopra: una quantita'
+// corrotta o fuori intervallo (es. scritta a mano in devtools, o un vecchio
+// bug) non deve far sparire l'intera carta dal binder - solo la sua
+// quantita' torna a 1, la carta resta posseduta.
+function normalizeQuantity(entry: BinderEntry): BinderEntry {
+  return isValidQuantity(entry.quantity) ? entry : { ...entry, quantity: 1 };
 }
 
 function readLegacyIds(): number[] {
@@ -71,7 +89,7 @@ function readEntries(): BinderEntry[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        const valid = parsed.filter(isValidEntry);
+        const valid = parsed.filter(isValidEntry).map(normalizeQuantity);
         // Anche solo UNA riga valida conta come "gia' migrato": non deve
         // rifondersi col legacy ogni volta che l'array v2 e' vuoto per un
         // motivo legittimo (l'utente ha svuotato il binder).
@@ -187,9 +205,15 @@ export function toggleBinder(id: number): Set<number> {
 
 /** Aggiunge la carta se assente (con i campi passati, il resto ai default),
  * oppure aggiorna solo i campi passati se gia' presente - MAI rimuove.
- * Usata dallo scanner per registrare la lingua rilevata della copia fisica. */
+ * Usata dallo scanner per registrare la lingua rilevata della copia fisica,
+ * e dallo stepper di quantita' nel binder (vedi setBinderQuantity sotto). */
 export function upsertBinderEntry(blueprintId: number, patch: Partial<Omit<BinderEntry, "blueprintId">>): BinderEntry[] {
   if (typeof window === "undefined") return [];
+  // Se passata, una quantita' fuori intervallo/non intera torna a 1 invece
+  // di propagarsi cosi' com'e' fino al server (dove verrebbe comunque
+  // rifiutata con 400, mai scartata in silenzio) - un chiamante qui non si
+  // aspetta un errore, solo un valore sempre valido.
+  const safePatch = "quantity" in patch ? { ...patch, quantity: isValidQuantity(patch.quantity) ? patch.quantity : 1 } : patch;
   const entries = readEntries();
   const idx = entries.findIndex((entry) => entry.blueprintId === blueprintId);
   let next: BinderEntry[];
@@ -200,7 +224,7 @@ export function upsertBinderEntry(blueprintId: number, patch: Partial<Omit<Binde
     // chiamante futuro che passi un campo non valorizzato invece di
     // ometterlo del tutto - non capita con le chiamate attuali (rilievo
     // review Gemini, difesa preventiva).
-    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const cleanPatch = Object.fromEntries(Object.entries(safePatch).filter(([, value]) => value !== undefined));
     next[idx] = { ...next[idx], ...cleanPatch };
     writeEntries(next);
     pushUpsert(blueprintId, cleanPatch);
@@ -208,10 +232,10 @@ export function upsertBinderEntry(blueprintId: number, patch: Partial<Omit<Binde
   } else {
     const created = {
       blueprintId,
-      language: patch.language ?? null,
-      quantity: patch.quantity ?? 1,
-      condition: patch.condition,
-      finish: patch.finish ?? "unknown",
+      language: safePatch.language ?? null,
+      quantity: safePatch.quantity ?? 1,
+      condition: safePatch.condition,
+      finish: safePatch.finish ?? "unknown",
       addedAt: new Date().toISOString(),
     };
     next = entries.concat([created]);
@@ -219,6 +243,18 @@ export function upsertBinderEntry(blueprintId: number, patch: Partial<Omit<Binde
     pushUpsert(blueprintId, { language: created.language, quantity: created.quantity, condition: created.condition, finish: created.finish });
     return next;
   }
+}
+
+/** Imposta la quantita' posseduta di una carta gia' nel binder (stepper in
+ * CardTile/BinderTable). Chiamare solo su una carta gia' presente - non
+ * aggiunge la carta se assente (a differenza di upsertBinderEntry
+ * generico), per evitare che uno stepper mostrato per errore su una carta
+ * non posseduta la aggiunga al binder come effetto collaterale. */
+export function setBinderQuantity(blueprintId: number, quantity: number): BinderEntry[] {
+  if (typeof window === "undefined") return [];
+  const entries = readEntries();
+  if (!entries.some((entry) => entry.blueprintId === blueprintId)) return entries;
+  return upsertBinderEntry(blueprintId, { quantity });
 }
 
 export function removeBinderEntry(blueprintId: number): BinderEntry[] {

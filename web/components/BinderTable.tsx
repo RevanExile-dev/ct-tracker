@@ -15,15 +15,27 @@ type CardTrend = { avgCents: number; days: number };
  * "migliore" da un giorno all'altro (caso comune, segnalato dall'utente
  * come "non dice niente di utile") - la media mobile mostra invece SEMPRE
  * un confronto significativo, anche a mercato fermo giorno per giorno. */
+// Stesso limite di MAX_BINDER_QUANTITY in web/lib/account.server.ts
+// (duplicato apposta lato client, vedi commento li' sul perche' del tetto).
+const MAX_QUANTITY = 999;
+
 export default function BinderTable({
   cards,
   trends,
   returnTo,
+  quantities,
+  onQuantityChange,
 }: {
   cards: CardRow[];
   trends?: Record<number, CardTrend>;
   returnTo?: string;
+  /** blueprintId -> quantita' posseduta. Insieme a onQuantityChange, mostra
+   * uno stepper +/- nella colonna dedicata - se assenti la colonna non
+   * compare (stessa convenzione di CardTile). */
+  quantities?: Map<number, number>;
+  onQuantityChange?: (id: number, next: number) => void;
 }) {
+  const showQuantity = quantities !== undefined && onQuantityChange !== undefined;
   return (
     <div className="mt-8 rounded-card border border-base-border bg-base-surface overflow-x-auto">
       <table className="w-full text-sm">
@@ -32,6 +44,7 @@ export default function BinderTable({
             <th className="px-4 py-3 font-normal">Carta</th>
             <th className="hidden sm:table-cell px-4 py-3 font-normal">Espansione</th>
             <th className="hidden sm:table-cell px-4 py-3 font-normal">Rarità</th>
+            {showQuantity && <th className="px-4 py-3 font-normal text-center">Q.tà</th>}
             <th className="px-4 py-3 font-normal text-right">Prezzo</th>
             <th className="px-4 py-3 font-normal text-right">vs media 30gg</th>
           </tr>
@@ -42,6 +55,7 @@ export default function BinderTable({
             const priceCurrency = card.filtered_price_currency ?? card.best_price_currency ?? card.latest_price_currency;
             const trend = trends?.[card.id];
             const delta = trend ? priceDeltaPct(priceCents, trend.avgCents) : null;
+            const quantity = quantities?.get(card.id) ?? 1;
             return (
               <tr key={card.id} className="hover:bg-base-surface2 transition-colors">
                 <td className="px-4 py-3">
@@ -67,8 +81,40 @@ export default function BinderTable({
                 <td className="hidden sm:table-cell px-4 py-3 text-ink-muted font-mono text-xs">
                   {card.rarity ?? "—"}
                 </td>
+                {showQuantity && (
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={quantity <= 1}
+                        onClick={() => onQuantityChange!(card.id, quantity - 1)}
+                        aria-label={`Diminuisci quantità di ${card.name}`}
+                        className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        −
+                      </button>
+                      <span className="font-mono text-xs text-ink-primary min-w-[1.5rem] text-center" aria-live="polite">
+                        {quantity}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={quantity >= MAX_QUANTITY}
+                        onClick={() => onQuantityChange!(card.id, quantity + 1)}
+                        aria-label={`Aumenta quantità di ${card.name}`}
+                        className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </td>
+                )}
                 <td className="px-4 py-3 text-right font-mono text-ink-primary">
                   {formatCents(priceCents, priceCurrency ?? "EUR")}
+                  {quantity > 1 && (
+                    <div className="text-[11px] text-ink-faint">
+                      = {formatCents(priceCents !== null ? priceCents * quantity : null, priceCurrency ?? "EUR")}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-xs">
                   {delta !== null ? (

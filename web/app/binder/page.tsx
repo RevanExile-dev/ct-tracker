@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { CardRow, fetchCards, fetchCardsTrend } from "@/lib/db";
-import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { BinderEntry, getBinderEntries, setBinderQuantity, toggleBinder } from "@/lib/binder";
 import { formatCents } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import type { BinderValuePoint } from "@/lib/types";
@@ -23,6 +23,12 @@ function BinderContent() {
   const layout = searchParams.get("layout") === "table" ? "table" : "grid";
   const initialPage = Math.max(0, Number(searchParams.get("page")) || 0);
   const [cards, setCards] = useState<CardRow[] | null>(null);
+  // Lazy initializer (non un effetto): getBinderEntries() e' gia' sicura in
+  // SSR (torna [] se window e' undefined, vedi web/lib/binder.ts), quindi
+  // puo' girare direttamente durante il render invece di passare da un
+  // useEffect + setState separato (che triggererebbe un render a cascata
+  // in piu' senza motivo).
+  const [entries, setEntries] = useState<BinderEntry[]>(() => getBinderEntries());
   const [error, setError] = useState<string | null>(null);
   const { data: session } = useSession();
   const [historyAttempt, setHistoryAttempt] = useState(0);
@@ -36,16 +42,32 @@ function BinderContent() {
 
   useEffect(() => {
     let cancelled = false;
-    const binderIds = getBinderIds();
     // Filtro SQL sugli ID salvati invece di scaricare l'intero catalogo per
     // poi tenerne solo una manciata in JS - stesso pattern del problema
     // principale trovato nell'audit (fetchCards senza limite sulla home),
-    // qui evitabile del tutto perche' gli ID voluti sono gia' noti.
-    fetchCards({ ids: Array.from(binderIds) })
+    // qui evitabile del tutto perche' gli ID voluti sono gia' noti. Legge
+    // "entries" dallo stato (gia' popolato dal lazy initializer sopra) solo
+    // per l'elenco iniziale di ID: un cambio di quantita'/rimozione
+    // successivo aggiorna "entries" ma non deve rifare il fetch (i prezzi
+    // non dipendono dalla quantita' posseduta), quindi resta [] come deps,
+    // non [entries].
+    fetchCards({ ids: entries.map((entry) => entry.blueprintId) })
       .then((cards) => { if (!cancelled) setCards(cards); })
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // blueprintId -> quantita' posseduta: usata sia per "Valore stimato" sotto
+  // sia per il badge/stepper mostrato su ogni carta (CardTile/BinderTable).
+  const quantityById = useMemo(
+    () => new Map(entries.map((entry) => [entry.blueprintId, entry.quantity])),
+    [entries]
+  );
+
+  function changeQuantity(id: number, quantity: number) {
+    setEntries(setBinderQuantity(id, quantity));
+  }
 
   useEffect(() => {
     // Batch su tutte le carte del binder in una sola richiesta (vedi
@@ -84,12 +106,18 @@ function BinderContent() {
   const summary = useMemo(() => {
     if (!cards) return null;
     const priced = cards.filter((card) => (card.best_price_cents ?? card.latest_price_cents) !== null);
+    // Stessa euristica di snapshot_binder_values() in scripts/db.py (che
+    // scrive lo storico mostrato sopra): moltiplica per la quantita'
+    // posseduta, non piu' una copia per tipo (bug corretto qui - 3 copie da
+    // 10 euro risultavano 10, non 30). "totalCopies"/"pricedCopies" sono la
+    // somma delle quantita', diversi da cards.length ("tipi di carta").
     return {
-      total: priced.reduce((sum, card) => sum + (card.best_price_cents ?? card.latest_price_cents ?? 0), 0),
+      total: priced.reduce((sum, card) => sum + (card.best_price_cents ?? card.latest_price_cents ?? 0) * (quantityById.get(card.id) ?? 1), 0),
       priced: priced.length,
+      totalCopies: cards.reduce((sum, card) => sum + (quantityById.get(card.id) ?? 1), 0),
       currency: priced[0]?.best_price_currency ?? priced[0]?.latest_price_currency ?? "EUR",
     };
-  }, [cards]);
+  }, [cards, quantityById]);
 
   const setBookPage = useCallback((page: number) => {
     const params = new URLSearchParams(window.location.search);
@@ -105,6 +133,7 @@ function BinderContent() {
   function removeFromBinder(id: number) {
     toggleBinder(id);
     setCards((current) => current?.filter((card) => card.id !== id) ?? current);
+    setEntries((current) => current.filter((entry) => entry.blueprintId !== id));
   }
 
   return (
@@ -124,7 +153,15 @@ function BinderContent() {
 
       {summary && cards && cards.length > 0 && (
         <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-card border border-base-border bg-base-surface/70 px-5 py-4">
-          <div><div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Carte</div><div className="font-display text-xl font-bold">{cards.length}</div></div>
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Carte</div>
+            <div className="font-display text-xl font-bold">
+              {cards.length}
+              {summary.totalCopies !== cards.length && (
+                <span className="text-sm font-normal text-ink-faint ml-1.5">({summary.totalCopies} copie)</span>
+              )}
+            </div>
+          </div>
           <div><div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Valore stimato</div><div className="font-display text-xl font-bold text-accent-bright">{formatCents(summary.total, summary.currency)}</div></div>
           {summary.priced < cards.length && <span className="text-xs text-ink-faint">{summary.priced}/{cards.length} con prezzo</span>}
           {view === "collection" && (
@@ -137,7 +174,7 @@ function BinderContent() {
       )}
 
       {cards && cards.length > 0 && <p className="mb-5 text-xs text-ink-faint">
-        La stima attuale considera una copia per tipo e prezzi di riferimento, che possono avere lingua o condizione diverse dalle tue carte.
+        La stima attuale considera la quantità posseduta di ogni carta, ma resta su prezzi di riferimento che possono avere lingua o condizione diverse dalle tue copie.
       </p>}
 
       {session && cards && cards.length > 0 && (
@@ -160,7 +197,9 @@ function BinderContent() {
       {cards && cards.length === 0 && <div className="rounded-card border border-base-border bg-base-surface/60 py-20 px-5 text-center text-ink-muted">Il Binder è ancora vuoto. Dal catalogo usa la stella su una carta per aggiungerla.</div>}
 
       {cards && cards.length > 0 && view === "collection" && (
-        layout === "table" ? <BinderTable cards={cards} trends={trends} returnTo={returnTo} /> : (
+        layout === "table" ? (
+          <BinderTable cards={cards} trends={trends} returnTo={returnTo} quantities={quantityById} onQuantityChange={changeQuantity} />
+        ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
             {cards.map((card, index) => (
               // priceProfile="best" (non il default "esatto" IT+NM+Zero):
@@ -168,7 +207,17 @@ function BinderContent() {
               // sempre un numero anche per le carte senza una inserzione
               // IT+NM+Zero disponibile - coerente con "valore stimato" qui
               // sopra, calcolato sullo stesso campo (best_price_cents).
-              <CardTile key={card.id} card={card} index={index} inBinder onToggleBinder={() => removeFromBinder(card.id)} returnTo={returnTo} priceProfile="best" />
+              <CardTile
+                key={card.id}
+                card={card}
+                index={index}
+                inBinder
+                onToggleBinder={() => removeFromBinder(card.id)}
+                returnTo={returnTo}
+                priceProfile="best"
+                quantity={quantityById.get(card.id) ?? 1}
+                onQuantityChange={(quantity) => changeQuantity(card.id, quantity)}
+              />
             ))}
           </div>
         )

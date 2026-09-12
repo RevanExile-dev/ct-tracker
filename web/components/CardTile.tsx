@@ -10,6 +10,10 @@ import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
 const STAGGER_MS = 25;
 const STAGGER_CAP = 16; // oltre questo indice niente piu' ritardo, altrimenti l'ultima riga aspetta troppo
 
+// Stesso limite di MAX_BINDER_QUANTITY in web/lib/account.server.ts (duplicato
+// apposta lato client, vedi commento li' sul perche' del tetto).
+const MAX_QUANTITY = 999;
+
 export default function CardTile({
   card,
   index = 0,
@@ -19,6 +23,8 @@ export default function CardTile({
   onToggleWishlist,
   returnTo,
   priceProfile,
+  quantity,
+  onQuantityChange,
 }: {
   card: CardRow;
   index?: number;
@@ -42,6 +48,12 @@ export default function CardTile({
   // vuole un prezzo/andamento che in realta' e' un'altra combinazione
   // spacciata per quella. Vale per catalogo, desideri e carte in movimento.
   priceProfile?: "best" | "exact";
+  /** Quantita' posseduta di questa copia - passata SOLO dal binder (mai da
+   * catalogo/desideri/movimenti, dove "quanti ne possiedi" non ha senso).
+   * Mostra uno stepper +/- solo quando entrambi quantity e onQuantityChange
+   * sono passati insieme. */
+  quantity?: number;
+  onQuantityChange?: (next: number) => void;
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -242,6 +254,32 @@ export default function CardTile({
             </div>
           )}
         </div>
+
+        {quantity !== undefined && onQuantityChange && (
+          <div className="px-3 pb-3 -mt-1 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={quantity <= 1}
+              onClick={() => onQuantityChange(quantity - 1)}
+              aria-label="Diminuisci quantità"
+              className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
+            >
+              −
+            </button>
+            <span className="font-mono text-xs text-ink-muted min-w-[2.5rem] text-center" aria-live="polite">
+              ×{quantity}
+            </span>
+            <button
+              type="button"
+              disabled={quantity >= MAX_QUANTITY}
+              onClick={() => onQuantityChange(quantity + 1)}
+              aria-label="Aumenta quantità"
+              className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
+            >
+              +
+            </button>
+          </div>
+        )}
       </InteractiveCard>
     </div>
   );

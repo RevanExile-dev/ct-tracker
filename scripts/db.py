@@ -415,15 +415,32 @@ def prune_old_history(conn, keep_daily_days: int = RETENTION_DAILY_DAYS):
 
 def snapshot_binder_values(conn, captured_at: str) -> int:
     """Salva un punto di storico del valore totale del Binder per ogni
-    utente che ne ha uno: somma best_price_cents (stesso campo e stessa
-    euristica di "Valore stimato" nel Binder web, vedi
+    utente che ne ha uno: somma best_price_cents PER LA QUANTITA' POSSEDUTA
+    (stessa euristica di "Valore stimato" nel Binder web, vedi
     web/app/binder/page.tsx) sulle carte possedute in QUESTO momento -
     cattura lo stato reale del binder al momento del sync, non una
     ricostruzione a ritroso: una carta rimossa dal binder dopo oggi non
     sparisce dai punti passati gia' salvati. Idempotente come
     insert_price_snapshot: se rilanciato lo stesso giorno (es. sync daily +
     full nella stessa giornata), sovrascrive il punto invece di duplicarlo.
-    Ritorna il numero di utenti con un binder non vuoto."""
+    Ritorna il numero di utenti con un binder non vuoto.
+
+    cards_count/priced_count restano il numero di TIPI di carta posseduti
+    (una riga per blueprint, vedi testo "tipi di carta" in
+    CollectionValueChart.tsx) - solo total_cents moltiplica per la
+    quantita', altrimenti 3 copie da 10 euro risultavano 10, non 30 (bug
+    trovato nel report docs/binder_insights_2026-09-11.md, verificato: qui
+    sotto sommava best_price_cents una volta per riga di binder_cards,
+    ignorando bc.data->>'quantity'). Estrazione della quantita' con un
+    controllo a regex invece di un CAST diretto: bc.data e' scritto da
+    web/lib/account.server.ts SENZA validare il contenuto del patch HTTP in
+    ingresso (nessun controllo lato API su tipo/intervallo di "quantity"
+    finche' non viene corretto anche li'), quindi una singola riga con un
+    valore non numerico o fuori intervallo (una stringa, un negativo, un
+    numero enorme) farebbe fallire un CAST diretto e romperebbe l'intero
+    sync per TUTTI gli utenti in quel run - qui invece cade silenziosamente
+    a 1 (comportamento gia' esistente prima di questa modifica) invece di
+    interrompere la query. Stesso limite 1-999 imposto lato API."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -432,7 +449,13 @@ def snapshot_binder_values(conn, captured_at: str) -> int:
             SELECT
                 bc.user_id,
                 %(captured_at)s,
-                COALESCE(SUM(lp.best_price_cents), 0),
+                COALESCE(SUM(
+                    lp.best_price_cents * CASE
+                        WHEN bc.data->>'quantity' ~ '^[1-9][0-9]{0,2}$'
+                        THEN (bc.data->>'quantity')::int
+                        ELSE 1
+                    END
+                ), 0),
                 MAX(lp.best_price_currency),
                 COUNT(*),
                 COUNT(lp.best_price_cents)

@@ -11,12 +11,22 @@ import type { BinderValuePoint } from "./types";
 // sicuro: e' eliminato del tutto in fase di compilazione, non porta
 // nessun import a runtime del codice client in questo modulo server.
 
+// Limite applicativo, non tecnico: previene sia un fat-finger (es. "99999"
+// per errore) sia un valore che spingerebbe (bc.data->>'quantity')::int in
+// scripts/db.py fuori dal range che il suo controllo a regex accetta
+// ('^[1-9][0-9]{0,2}$', 1-999) - le due soglie vanno tenute allineate.
+export const MAX_BINDER_QUANTITY = 999;
+
+export function isValidBinderQuantity(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_BINDER_QUANTITY;
+}
+
 function toBinderEntry(row: { blueprint_id: number; added_at: Date | string; data: Partial<BinderEntry> }): BinderEntry {
   const data = row.data ?? {};
   return {
     blueprintId: row.blueprint_id,
     language: data.language ?? null,
-    quantity: typeof data.quantity === "number" ? data.quantity : 1,
+    quantity: isValidBinderQuantity(data.quantity) ? data.quantity : 1,
     condition: data.condition,
     finish: data.finish ?? "unknown",
     addedAt: row.added_at instanceof Date ? row.added_at.toISOString() : row.added_at,
