@@ -626,10 +626,16 @@ def record_sync_checkpoint(conn, started_at: str, finished_at: str, budget_secon
 MAX_TELEGRAM_MESSAGE_LENGTH = 4096  # limite reale dell'API Bot di Telegram (sendMessage)
 # sendPhoto ha un limite piu' stretto per la didascalia (caption) - usato
 # per il testo dell'allarme perche' e' la via preferita quando la carta ha
-# un'immagine, con sendMessage come fallback (testo identico, mai troncato
-# davvero nella pratica: un nome carta+espansione non si avvicina a 1024
-# caratteri).
+# un'immagine, con sendMessage come fallback (testo identico).
 MAX_TELEGRAM_CAPTION_LENGTH = 1024
+# Cap sui nomi (unici valori dinamici di lunghezza non garantita, il resto
+# del messaggio e' testo fisso breve): tenerli ben sotto il limite della
+# caption evita che un troncamento a caldo di text[:MAX_TELEGRAM_CAPTION_LENGTH]
+# tagli a meta' un tag HTML aperto (es. </b> perso), che farebbe rifiutare
+# il messaggio da Telegram con "can't parse entities" - rilievo di review
+# su questa PR: un nome reale non si avvicina mai a questo valore, ma il
+# cap lo rende impossibile invece di solo improbabile.
+MAX_ALERT_NAME_LENGTH = 200
 MAX_OUTBOX_RETRIES = 8
 OUTBOX_BATCH_SIZE = 20
 CARDTRADER_CARD_URL = "https://www.cardtrader.com/cards/{}"  # stesso link di "Apri su CardTrader" in web/app/card/[id]/page.tsx
@@ -710,8 +716,8 @@ def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
         baseline_str = f"{baseline_cents / 100:.2f}{symbol}" if baseline_cents is not None else "?"
         target_str = f"calo del {alert['target_value']}% (partito da {baseline_str})"
 
-    safe_card_name = html.escape(card_name)
-    safe_expansion_name = html.escape(expansion_name)
+    safe_card_name = html.escape(card_name[:MAX_ALERT_NAME_LENGTH])
+    safe_expansion_name = html.escape(expansion_name[:MAX_ALERT_NAME_LENGTH])
     link = CARDTRADER_CARD_URL.format(blueprint_id)
     text = (
         f"🔔 <b>{safe_card_name}</b> ({safe_expansion_name})\n"
