@@ -215,7 +215,7 @@ export default function QuickAlertModal({
                 </div>
               </div>
 
-              {error && <p className="text-xs text-signal-down">{error}</p>}
+              {error && <p role="alert" className="text-xs text-signal-down">{error}</p>}
 
               <div className="flex gap-2 pt-1">
                 <button
