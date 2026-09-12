@@ -21,6 +21,7 @@ principio delle migrazioni incrementali gia' in uso prima con SQLite.
 """
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg2
@@ -513,11 +514,14 @@ def get_meta(conn, key: str) -> str | None:
 
 
 # Fasce di priorita' per lo scheduler a batch (scripts/sync_prices_priority.py,
-# docs/binder_reserved_work_plan_2026-09-11.md punto 3): desideri -> binder ->
-# resto del catalogo. "allarmi attivi" (la fascia piu' alta nel piano) non e'
-# ancora implementabile: la tabella degli allarmi per-carta e' lavoro futuro
-# (punto 4, non ancora fatto) - quando esistera' andra' inserita qui SOPRA
-# la fascia 1, non in sostituzione.
+# docs/binder_reserved_work_plan_2026-09-11.md punto 3): allarmi armati ->
+# desideri -> binder -> resto del catalogo. La fascia "allarmi attivi" (la
+# piu' alta nel piano originale) e' arrivata con la sotto-parte 4c, dopo che
+# la tabella price_alerts della sotto-parte 4b l'ha resa possibile - una
+# carta con un allarme 'armed' merita il prezzo piu' fresco possibile,
+# altrimenti l'utente rischia di scoprire un calo gia' passato con ore di
+# ritardo solo perche' quella carta non e' anche in wishlist/binder.
+PRIORITY_ALERT = 0
 PRIORITY_WISHLIST = 1
 PRIORITY_BINDER = 2
 PRIORITY_CATALOG = 3
@@ -525,12 +529,13 @@ PRIORITY_CATALOG = 3
 
 def fetch_priority_batch(conn, limit: int):
     """Le prossime `limit` carte da risincronizzare, ordinate PRIMA per fascia
-    di priorita' (desideri, poi binder, poi resto del catalogo - una carta di
-    fascia 1 gia' vista di recente passa comunque prima di una carta di fascia
-    3 mai vista) e SOLO ALL'INTERNO DI CIASCUNA FASCIA per "quanto e' vecchio
-    l'ultimo tentativo su questa carta" (COALESCE(last_attempted_at,
-    captured_at_ts), NULLS FIRST cosi' una carta mai nemmeno tentata viene
-    prima di qualunque carta gia' tentata almeno una volta nella sua fascia).
+    di priorita' (allarmi armati, poi desideri, poi binder, poi resto del
+    catalogo - una carta di fascia 0 gia' vista di recente passa comunque
+    prima di una carta di fascia 3 mai vista) e SOLO ALL'INTERNO DI CIASCUNA
+    FASCIA per "quanto e' vecchio l'ultimo tentativo su questa carta"
+    (COALESCE(last_attempted_at, captured_at_ts), NULLS FIRST cosi' una
+    carta mai nemmeno tentata viene prima di qualunque carta gia' tentata
+    almeno una volta nella sua fascia).
     Nessun cursore/offset da passare: la carta appena tentata da QUESTA
     chiamata avra' last_attempted_at piu' recente della sua fascia al
     prossimo giro, quindi scivola in coda da sola (vedi commento su
@@ -550,6 +555,7 @@ def fetch_priority_batch(conn, limit: int):
             """
             SELECT b.id, b.name, b.expansion_name,
                    CASE
+                     WHEN EXISTS (SELECT 1 FROM price_alerts pa WHERE pa.blueprint_id = b.id AND pa.state = 'armed') THEN %(p_alert)s
                      WHEN EXISTS (SELECT 1 FROM wishlist_cards w WHERE w.blueprint_id = b.id) THEN %(p_wishlist)s
                      WHEN EXISTS (SELECT 1 FROM binder_cards c WHERE c.blueprint_id = b.id) THEN %(p_binder)s
                      ELSE %(p_catalog)s
@@ -559,7 +565,7 @@ def fetch_priority_batch(conn, limit: int):
             ORDER BY priority ASC, COALESCE(lp.last_attempted_at, lp.captured_at_ts) ASC NULLS FIRST, b.id ASC
             LIMIT %(limit)s
             """,
-            {"p_wishlist": PRIORITY_WISHLIST, "p_binder": PRIORITY_BINDER,
+            {"p_alert": PRIORITY_ALERT, "p_wishlist": PRIORITY_WISHLIST, "p_binder": PRIORITY_BINDER,
              "p_catalog": PRIORITY_CATALOG, "limit": limit},
         )
         return cur.fetchall()
@@ -595,18 +601,223 @@ def record_sync_checkpoint(conn, started_at: str, finished_at: str, budget_secon
         cur.execute(
             """
             INSERT INTO sync_checkpoint
-                (started_at, finished_at, budget_seconds, wishlist_count, binder_count,
+                (started_at, finished_at, budget_seconds, alert_count, wishlist_count, binder_count,
                  catalog_count, cards_ok, cards_error, circuit_breaker_triggered)
-            VALUES (%(started_at)s, %(finished_at)s, %(budget_seconds)s, %(wishlist_count)s,
-                    %(binder_count)s, %(catalog_count)s, %(cards_ok)s, %(cards_error)s,
-                    %(circuit_breaker_triggered)s)
+            VALUES (%(started_at)s, %(finished_at)s, %(budget_seconds)s, %(alert_count)s,
+                    %(wishlist_count)s, %(binder_count)s, %(catalog_count)s, %(cards_ok)s,
+                    %(cards_error)s, %(circuit_breaker_triggered)s)
             """,
             {
                 "started_at": started_at, "finished_at": finished_at, "budget_seconds": budget_seconds,
+                "alert_count": tier_counts.get(PRIORITY_ALERT, 0),
                 "wishlist_count": tier_counts.get(PRIORITY_WISHLIST, 0),
                 "binder_count": tier_counts.get(PRIORITY_BINDER, 0),
                 "catalog_count": tier_counts.get(PRIORITY_CATALOG, 0),
                 "cards_ok": cards_ok, "cards_error": cards_error,
                 "circuit_breaker_triggered": circuit_breaker_triggered,
             },
+        )
+
+
+# --- Allarmi prezzo (sotto-parte 4c del piano: valutatore + coda di invio
+# Telegram - le tabelle e il CRUD dell'account sono gia' arrivati con 4a/4b) ---
+
+MAX_TELEGRAM_MESSAGE_LENGTH = 4096  # limite reale dell'API Bot di Telegram
+MAX_OUTBOX_RETRIES = 8
+OUTBOX_BATCH_SIZE = 20
+
+
+def find_matching_listing_price(conn, blueprint_id: int, language: str | None,
+                                 condition: str | None, can_sell_via_hub: int | None):
+    """Stesso identico algoritmo di findMatchingListingPrice in
+    web/lib/account.server.ts (TypeScript, usata li' per fissare il
+    baseline alla creazione di un allarme): inserzione piu' economica per
+    un profilo ESATTO, None = nessun vincolo su quel campo - MAI un
+    fallback su un profilo diverso da quello scelto dall'utente. Le due
+    implementazioni vivono in runtime separati (Python qui, TypeScript
+    li') e vanno tenute allineate a mano se la logica cambia."""
+    conditions = ["blueprint_id = %s"]
+    params: list = [blueprint_id]
+    if language is not None:
+        conditions.append("language = %s")
+        params.append(language)
+    if condition is not None:
+        conditions.append("condition = %s")
+        params.append(condition)
+    if can_sell_via_hub is not None:
+        conditions.append("can_sell_via_hub = %s")
+        params.append(can_sell_via_hub)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT price_cents, price_currency FROM price_listings
+                WHERE {' AND '.join(conditions)}
+                ORDER BY price_cents ASC LIMIT 1""",
+            params,
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {"price_cents": row[0], "currency": row[1]}
+
+
+def _alert_target_met(alert: dict, current_price_cents: int) -> bool:
+    if alert["target_type"] == "absolute_cents":
+        return current_price_cents <= alert["target_value"]
+    baseline = alert["baseline_price_cents"]
+    if baseline is None:
+        # Non dovrebbe mai succedere (vincolo CHECK in web/db/schema.sql
+        # impone un baseline per percent_drop), difesa in profondita' - un
+        # allarme senza riferimento non puo' scattare per calo percentuale.
+        return False
+    threshold = baseline * (100 - alert["target_value"]) / 100
+    return current_price_cents <= threshold
+
+
+def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
+                           current_price_cents: int, currency: str | None) -> str:
+    profile_bits = [
+        f"lingua {alert['language']}" if alert["language"] else "qualunque lingua",
+        f"condizione {alert['condition']}" if alert["condition"] else "qualunque condizione",
+    ]
+    if alert["can_sell_via_hub"] == 1:
+        profile_bits.append("solo CardTrader Zero")
+    elif alert["can_sell_via_hub"] == 0:
+        profile_bits.append("mai CardTrader Zero")
+
+    symbol = {"EUR": "€", "USD": "$", "GBP": "£"}.get(currency, currency or "")
+    price_str = f"{current_price_cents / 100:.2f}{symbol}"
+    if alert["target_type"] == "absolute_cents":
+        target_str = f"sotto la soglia di {alert['target_value'] / 100:.2f}{symbol}"
+    else:
+        baseline_cents = alert["baseline_price_cents"]
+        baseline_str = f"{baseline_cents / 100:.2f}{symbol}" if baseline_cents is not None else "?"
+        target_str = f"calo del {alert['target_value']}% (partito da {baseline_str})"
+
+    text = (
+        f"🔔 *{card_name}* ({expansion_name})\n"
+        f"Prezzo attuale: {price_str} — {target_str}\n"
+        f"Profilo: {', '.join(profile_bits)}"
+    )
+    return text[:MAX_TELEGRAM_MESSAGE_LENGTH]
+
+
+def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str, expansion_name: str) -> int:
+    """Da chiamare SUBITO dopo replace_price_listings() per la stessa
+    carta, nella stessa transazione per-carta (vedi scripts/sync_prices_priority.py):
+    legge i prezzi appena scritti, nessuna chiamata API aggiuntiva. Valuta
+    solo gli allarmi 'armed' per questa carta; su scatto, accoda un
+    messaggio in telegram_outbox (mai inviato direttamente da qui, vedi
+    drain_telegram_outbox sotto) e porta l'allarme a state='fired'
+    (fired_at=now()) - per fire_mode='rearm' torna 'armed' da solo dopo il
+    cooldown, vedi rearm_due_price_alerts. Un allarme senza un
+    collegamento Telegram attivo (nessuna riga in telegram_links per
+    l'utente) scatta comunque a livello di stato (l'utente ha comunque
+    raggiunto la sua soglia), ma nessun messaggio viene accodato: senza un
+    chat_id non c'e' nessun posto dove mandarlo. Ritorna quanti allarmi
+    sono scattati in questa chiamata."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, user_id, language, condition, can_sell_via_hub,
+                      target_type, target_value, baseline_price_cents,
+                      baseline_currency, fire_mode
+               FROM price_alerts
+               WHERE blueprint_id = %s AND state = 'armed'""",
+            (blueprint_id,),
+        )
+        rows = cur.fetchall()
+    if not rows:
+        return 0
+
+    fired = 0
+    now = datetime.now(timezone.utc)
+    for (alert_id, user_id, language, condition, can_sell_via_hub,
+         target_type, target_value, baseline_price_cents, baseline_currency, fire_mode) in rows:
+        alert = {
+            "language": language, "condition": condition, "can_sell_via_hub": can_sell_via_hub,
+            "target_type": target_type, "target_value": target_value,
+            "baseline_price_cents": baseline_price_cents, "baseline_currency": baseline_currency,
+        }
+        matching = find_matching_listing_price(conn, blueprint_id, language, condition, can_sell_via_hub)
+        if matching is None or not _alert_target_met(alert, matching["price_cents"]):
+            continue
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE price_alerts SET state = 'fired', fired_at = %s WHERE id = %s AND state = 'armed'",
+                (now, alert_id),
+            )
+            if cur.rowcount == 0:
+                continue  # gia' scattato nel frattempo (difesa in profondita', non doppio-accodare)
+
+            cur.execute("SELECT chat_id FROM telegram_links WHERE user_id = %s", (user_id,))
+            link = cur.fetchone()
+            if link:
+                text = _format_alert_message(
+                    card_name, expansion_name, alert, matching["price_cents"],
+                    matching["currency"] or baseline_currency,
+                )
+                # Una riga per (allarme, giorno di scatto): protegge da un
+                # doppio accodamento se questa carta venisse rivalutata due
+                # volte lo stesso giorno per qualche motivo, MAI da un
+                # doppio invio Telegram vero e proprio (vedi il commento
+                # sulla tabella in web/db/schema.sql).
+                dedup_key = f"alert:{alert_id}:{now.date().isoformat()}"
+                cur.execute(
+                    """INSERT INTO telegram_outbox (alert_id, chat_id, dedup_key, payload)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (dedup_key) DO NOTHING""",
+                    (alert_id, link[0], dedup_key, text),
+                )
+        fired += 1
+    return fired
+
+
+def rearm_due_price_alerts(conn) -> int:
+    """Riporta 'armed' gli allarmi fire_mode='rearm' il cui cooldown (ore)
+    dal precedente scatto e' scaduto - chiamata una volta per run (non per
+    carta, a differenza di evaluate_price_alerts_for_blueprint sopra),
+    stesso principio di prune_old_history: un controllo economico su
+    tutta la tabella, non serve farlo piu' spesso di una volta a batch."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE price_alerts
+               SET state = 'armed'
+               WHERE state = 'fired' AND fire_mode = 'rearm'
+                 AND fired_at IS NOT NULL
+                 AND fired_at + (rearm_cooldown_hours * interval '1 hour') <= now()"""
+        )
+        return cur.rowcount
+
+
+def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
+    """Messaggi non ancora confermati inviati, pronti per un nuovo
+    tentativo: backoff crescente (2^retry_count minuti, tetto 60) tra un
+    tentativo e il successivo sullo stesso messaggio, MAX_OUTBOX_RETRIES
+    oltre cui un messaggio smette di essere ritentato (resta per sempre
+    non inviato piuttosto che intasare la coda all'infinito)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, chat_id, payload
+               FROM telegram_outbox
+               WHERE sent_at IS NULL
+                 AND retry_count < %s
+                 AND (last_attempted_at IS NULL
+                      OR last_attempted_at <= now() - (LEAST(POWER(2, retry_count), 60) * interval '1 minute'))
+               ORDER BY created_at ASC
+               LIMIT %s""",
+            (MAX_OUTBOX_RETRIES, limit),
+        )
+        return cur.fetchall()
+
+
+def mark_outbox_sent(conn, outbox_id: int):
+    with conn.cursor() as cur:
+        cur.execute("UPDATE telegram_outbox SET sent_at = now() WHERE id = %s", (outbox_id,))
+
+
+def mark_outbox_failed(conn, outbox_id: int):
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE telegram_outbox SET retry_count = retry_count + 1, last_attempted_at = now() WHERE id = %s",
+            (outbox_id,),
         )

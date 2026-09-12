@@ -30,27 +30,38 @@ fascia, e con 15+ carte cosi' il circuit breaker scatterebbe ad ogni run
 prima di raggiungere qualunque altra carta - bug di starvation reale,
 trovato in review su questa PR e corretto qui.
 
-"allarmi attivi" (la fascia con priorita' piu' alta nel piano originale) non
-e' ancora implementabile: la tabella degli allarmi Telegram per-carta e'
-lavoro futuro (punto 4). Quando esistera' andra' aggiunta SOPRA la fascia 1
-qui sotto, non in sostituzione delle fasce attuali.
+"allarmi attivi" (la fascia con priorita' piu' alta nel piano originale) e'
+arrivata con la sotto-parte 4c: PRIORITY_ALERT in scripts/db.py, sopra la
+fascia desideri - una carta con un allarme prezzo 'armed' (vedi tabella
+price_alerts) ottiene il prezzo piu' fresco possibile ad ogni run.
 
-A differenza di scripts/sync_prices.py, questo script NON manda notifiche
-Telegram: farlo ad ogni batch (ogni 5-15 minuti anziche' 2 volte al giorno)
-amplificherebbe di molto il problema gia' noto di scripts/notify_telegram.py
-(nessuno stato di soglia-gia'-superata salvato tra un run e l'altro - lo
-stesso avviso puo' ripetersi ad ogni sync, vedi punto 4 del piano) - da
-"si ripete due volte al giorno" a "si ripete fino a un centinaio di volte al
-giorno" per qualunque carta il cui prezzo resti sotto quello del giorno
-prima. Le notifiche restano quindi su un cron separato e indipendente
-(.github/workflows/notify_telegram.yml, stessa cadenza 2x/giorno di prima),
-finche' il punto 4 non risolve il problema di fondo con uno stato per-utente.
+Subito dopo aver riscritto price_listings per una carta (db.replace_price_listings
+sotto), questo script valuta anche i suoi allarmi prezzo 'armed'
+(db.evaluate_price_alerts_for_blueprint) - nessuna chiamata API in piu',
+legge solo i prezzi appena scritti. Uno scatto accoda un messaggio in
+telegram_outbox invece di mandarlo subito: drain_telegram_outbox() qui
+sotto svuota la coda a fine run, con retry/backoff (MAI "inviato
+esattamente una volta", vedi il piano). A differenza della vecchia
+watchlist di scripts/notify_telegram.py (che non salva nessuno stato
+"soglia gia' segnalata" tra un run e l'altro, e quindi si limita
+deliberatamente a un cron 2x/giorno per non ripetere lo stesso avviso un
+centinaio di volte), un price_alert ha uno stato per-utente vero
+(state='fired' dopo lo scatto): puo' quindi essere valutato ad ogni batch
+(ogni 5-15 minuti) senza ripetersi, perche' semplicemente non e' piu'
+'armed' finche' non viene ri-armato (fire_mode='rearm', dopo il cooldown -
+db.rearm_due_price_alerts) o l'utente lo riattiva a mano. La vecchia
+watchlist (config/watchlist.json) resta com'era, sul suo cron separato
+(.github/workflows/notify_telegram.yml): i price_alerts sono un sistema
+nuovo e distinto, non una sua sostituzione.
 
 Uso:
   python scripts/sync_prices_priority.py
 """
+import os
 import sys
 from datetime import datetime, timezone
+
+import requests
 
 from api_client import CardTraderClient
 import db
@@ -66,6 +77,43 @@ FETCH_LIMIT = 1000
 # qui il danno di un giro sprecato e' comunque limitato al budget di 4 minuti,
 # non a ore, ma il segnale resta lo stesso.
 MAX_CONSECUTIVE_ERRORS = 15
+
+
+def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
+    """Svuota telegram_outbox (sotto-parte 4c del piano): un fallimento di
+    rete dopo che Telegram ha gia' recapitato il messaggio farebbe
+    ritentare (l'utente vede lo stesso avviso due volte) - MAI un allarme
+    scattato perso silenziosamente, mai "inviato esattamente una volta".
+    Backoff crescente tra un tentativo e il successivo sullo stesso
+    messaggio (db.fetch_pending_outbox), tetto massimo di tentativi oltre
+    cui un messaggio resta per sempre non inviato invece di essere
+    ritentato all'infinito - stesso principio del circuit breaker sopra,
+    applicato per-messaggio invece che per l'intero batch."""
+    pending = db.fetch_pending_outbox(conn)
+    sent, failed = 0, 0
+    for outbox_id, chat_id, payload in pending:
+        ok_response = False
+        try:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": payload, "parse_mode": "Markdown"},
+                timeout=15,
+            )
+            ok_response = resp.ok and resp.json().get("ok")
+            if not ok_response:
+                print(f"  [ATTENZIONE] invio Telegram fallito per outbox id={outbox_id}: "
+                      f"{resp.status_code} {resp.text}", file=sys.stderr)
+        except Exception as exc:
+            print(f"  [ATTENZIONE] invio Telegram fallito per outbox id={outbox_id}: {exc}", file=sys.stderr)
+
+        if ok_response:
+            db.mark_outbox_sent(conn, outbox_id)
+            sent += 1
+        else:
+            db.mark_outbox_failed(conn, outbox_id)
+            failed += 1
+        conn.commit()
+    return sent, failed
 
 
 def main():
@@ -87,6 +135,7 @@ def main():
     print(f"Batch prioritario: {len(batch)} carte candidate, budget {BUDGET_SECONDS}s.")
 
     ok, errors, consecutive_errors = 0, 0, 0
+    alerts_fired = 0
     tier_counts: dict[int, int] = {}
     circuit_breaker_triggered = False
     processed = 0
@@ -124,6 +173,15 @@ def main():
             db.insert_price_snapshot(conn, bp_id, today, now_iso, products)
             db.upsert_latest_price(conn, bp_id, today, now_iso, products)
             db.replace_price_listings(conn, bp_id, today, products)
+
+            # Subito dopo aver riscritto price_listings per QUESTA carta:
+            # legge i prezzi appena scritti, nessuna chiamata API in piu'.
+            # Nella stessa transazione per-carta cosi' un ROLLBACK su
+            # questa carta (es. l'update rarity sotto fallisse) annulla
+            # anche uno scatto di allarme basato su dati che non sono mai
+            # stati confermati - vedi il commento di modulo in cima al file.
+            fired = db.evaluate_price_alerts_for_blueprint(conn, bp_id, name, expansion_name)
+            alerts_fired += fired
 
             if products:
                 props = products[0].get("properties_hash", {}) or {}
@@ -164,6 +222,33 @@ def main():
     if binder_users:
         print(f"Valore Binder salvato per {binder_users} utenti.")
 
+    # Ri-arma gli allarmi 'rearm' il cui cooldown e' scaduto: economico
+    # (un solo UPDATE su tutta la tabella), va bene farlo ad ogni batch
+    # invece che una volta al giorno - un allarme ripetibile deve tornare
+    # 'armed' appena possibile, non aspettare la prossima compressione
+    # storico.
+    rearmed = db.rearm_due_price_alerts(conn)
+    conn.commit()
+    if rearmed:
+        print(f"Ri-armati {rearmed} allarmi 'rearm' con cooldown scaduto.")
+
+    # Svuota la coda di invio Telegram degli allarmi scattati in questo
+    # batch (e in eventuali batch precedenti rimasti in coda per un
+    # fallimento temporaneo) - stesso interruttore "silenziosamente
+    # disattivato senza il secret" di scripts/notify_telegram.py, non un
+    # errore fatale se TELEGRAM_BOT_TOKEN non e' configurato.
+    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if telegram_token:
+        sent, failed = drain_telegram_outbox(conn, telegram_token)
+        if sent or failed:
+            print(f"Coda Telegram allarmi: {sent} messaggi inviati, {failed} falliti (ritentati al prossimo giro).")
+    elif alerts_fired:
+        print(
+            "TELEGRAM_BOT_TOKEN non configurato: gli allarmi scattati in questo batch "
+            "restano in coda (telegram_outbox) finche' non verra' impostato.",
+            file=sys.stderr,
+        )
+
     # La compressione dello storico (price_snapshots/binder_value_snapshots)
     # e' un'operazione da una volta al giorno, non da ripetere ad ogni batch
     # (96 run/giorno a cadenza 15 minuti): controllato con una chiave in meta
@@ -195,9 +280,11 @@ def main():
 
     print(f"\nCompletato in {(finished - start).total_seconds():.0f}s: "
           f"{ok} carte aggiornate, {errors} errori "
-          f"(desideri={tier_counts.get(db.PRIORITY_WISHLIST, 0)}, "
+          f"(allarmi={tier_counts.get(db.PRIORITY_ALERT, 0)}, "
+          f"desideri={tier_counts.get(db.PRIORITY_WISHLIST, 0)}, "
           f"binder={tier_counts.get(db.PRIORITY_BINDER, 0)}, "
-          f"catalogo={tier_counts.get(db.PRIORITY_CATALOG, 0)}).")
+          f"catalogo={tier_counts.get(db.PRIORITY_CATALOG, 0)}); "
+          f"{alerts_fired} allarmi prezzo scattati.")
 
     if circuit_breaker_triggered:
         print(

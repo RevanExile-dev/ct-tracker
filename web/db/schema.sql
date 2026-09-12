@@ -385,6 +385,12 @@ CREATE TABLE IF NOT EXISTS sync_checkpoint (
 
 CREATE INDEX IF NOT EXISTS idx_sync_checkpoint_started ON sync_checkpoint (started_at DESC);
 
+-- Aggiunta con la fascia di priorita' "allarmi armati" (sotto-parte 4c del
+-- piano, PRIORITY_ALERT in scripts/db.py) - stesso principio di
+-- last_attempted_at su latest_prices sopra, una colonna in piu' invece di
+-- rifare la tabella.
+ALTER TABLE sync_checkpoint ADD COLUMN IF NOT EXISTS alert_count INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
@@ -469,3 +475,39 @@ CREATE INDEX IF NOT EXISTS idx_price_alerts_user ON price_alerts (user_id);
 -- per carta ad ogni batch di sync - indice sullo stesso pattern di accesso,
 -- parziale (solo state='armed') perche' e' l'unico stato che gli interessa.
 CREATE INDEX IF NOT EXISTS idx_price_alerts_armed ON price_alerts (blueprint_id) WHERE state = 'armed';
+
+-- Coda di invio Telegram per gli allarmi prezzo scattati (sotto-parte 4c
+-- del piano): il valutatore (scripts/sync_prices_priority.py, chiamato
+-- subito dopo aver riscritto price_listings per una carta, cosi' legge
+-- prezzi appena aggiornati senza chiamate API aggiuntive) accoda qui un
+-- messaggio invece di mandarlo subito - MAI "invio garantito esattamente
+-- una volta" (vedi il piano): un worker separato nello stesso run svuota
+-- la coda con retry/backoff, sent_at resta NULL finche' Telegram non
+-- conferma davvero l'invio (non basta aver provato).
+CREATE TABLE IF NOT EXISTS telegram_outbox (
+  id BIGSERIAL PRIMARY KEY,
+  alert_id BIGINT REFERENCES price_alerts (id) ON DELETE CASCADE,
+  chat_id BIGINT NOT NULL,
+  -- Un solo messaggio per (allarme, giorno di scatto): UNIQUE su
+  -- dedup_key, con ON CONFLICT DO NOTHING all'accodamento, protegge da un
+  -- doppio accodamento se il valutatore rivedesse per errore lo stesso
+  -- allarme gia' scattato oggi (es. un run interrotto e ripetuto) - non
+  -- puo' impedire un doppio INVIO lato Telegram se la risposta di
+  -- conferma si perde dopo che il messaggio e' comunque partito (da qui
+  -- "mai esattamente una volta": al peggio un utente vede lo stesso
+  -- avviso due volte, mai un allarme perso).
+  dedup_key TEXT NOT NULL UNIQUE,
+  -- Testo gia' pronto per sendMessage, troncato alla creazione al limite
+  -- di Telegram (4096 caratteri) - vedi scripts/notify_telegram.py per lo
+  -- stesso formato di messaggio, qui per-allarme invece che per batch.
+  payload TEXT NOT NULL,
+  sent_at TIMESTAMPTZ,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  last_attempted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Il worker di invio legge solo i messaggi non ancora confermati - indice
+-- parziale sullo stesso pattern (sent_at IS NULL), ordinato per non far
+-- sorpassare i messaggi piu' vecchi da quelli nuovi ad ogni retry.
+CREATE INDEX IF NOT EXISTS idx_telegram_outbox_pending ON telegram_outbox (created_at) WHERE sent_at IS NULL;
