@@ -135,6 +135,22 @@ export type Lot = {
   createdAt: string;
 };
 
+export type LotEventType = "add" | "remove" | "quantity_change";
+
+// Un evento e' un fatto storico immutabile: lotId puo' diventare null se il
+// lotto a cui si riferiva e' stato poi eliminato (vedi ON DELETE SET NULL
+// in web/db/schema.sql), blueprintId resta invece sempre valorizzato -
+// duplicato apposta nella riga cosi' l'evento resta interrogabile anche
+// senza il lotto originale.
+export type LotEvent = {
+  id: number;
+  lotId: string | null;
+  blueprintId: number;
+  eventType: LotEventType;
+  delta: number;
+  occurredAt: string;
+};
+
 export type LotInput = {
   blueprintId: number;
   quantity: number;

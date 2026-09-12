@@ -275,11 +275,12 @@ CREATE INDEX IF NOT EXISTS idx_binder_value_user_date ON binder_value_snapshots 
 -- una vendita, funzionalita' non ancora implementata.
 --
 -- provenance e' testo libero con pochi valori noti convalidati lato
--- applicativo (web/lib/lots.ts): 'acquisto', 'pacchetto', 'regalo',
--- 'scambio', 'non_specificata' - CHECK qui serve solo a bloccare valori
--- palesemente sbagliati scritti da un bug futuro, non a fare da unica
--- fonte di verita' per l'enum (stesso principio di is_premium 0/1 sopra:
--- il contratto vero e' nel codice TypeScript che consuma la colonna).
+-- applicativo (LOT_PROVENANCES in web/lib/account.server.ts): 'acquisto',
+-- 'pacchetto', 'regalo', 'scambio', 'non_specificata' - CHECK qui serve
+-- solo a bloccare valori palesemente sbagliati scritti da un bug futuro,
+-- non a fare da unica fonte di verita' per l'enum (stesso principio di
+-- is_premium 0/1 sopra: il contratto vero e' nel codice TypeScript che
+-- consuma la colonna).
 CREATE TABLE IF NOT EXISTS binder_lots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -299,6 +300,43 @@ CREATE TABLE IF NOT EXISTS binder_lots (
 
 CREATE INDEX IF NOT EXISTS idx_binder_lots_user ON binder_lots (user_id);
 CREATE INDEX IF NOT EXISTS idx_binder_lots_blueprint ON binder_lots (user_id, blueprint_id);
+
+-- Storico degli eventi di lotto (docs/binder_reserved_work_plan_2026-09-11.md,
+-- punto 2): registra ogni "apporto/rimozione di copie" separatamente dal
+-- costo/provenienza gia' in binder_lots, cosi' un futuro grafico puo'
+-- separare "quante copie sono state aggiunte/rimosse quando" dalla
+-- variazione di mercato - MAI ricostruito a ritroso dal binder di oggi
+-- (esplicitamente vietato dal report di riferimento), solo accumulato in
+-- avanti a ogni scrittura reale su binder_lots.
+--
+-- lot_id NON usa CASCADE: eliminare un lotto deve conservare lo storico
+-- degli eventi gia' avvenuti (criterio di accettazione esplicito nel piano
+-- - "rimozione conserva lo storico"), quindi SET NULL invece di cancellare
+-- le righe. blueprint_id/user_id sono duplicati qui (non solo derivabili
+-- via lot_id) proprio per restare interrogabili anche dopo che il lotto a
+-- cui si riferivano e' stato eliminato.
+--
+-- delta e' con segno, coerente col tipo di evento (vincolato dal CHECK
+-- sotto): 'add' (creazione lotto) sempre positivo, 'remove' (eliminazione
+-- lotto) sempre negativo, 'quantity_change' (modifica quantita' su un
+-- lotto esistente) mai zero - un valore invariato non e' un evento.
+CREATE TABLE IF NOT EXISTS binder_lot_events (
+  id BIGSERIAL PRIMARY KEY,
+  lot_id UUID REFERENCES binder_lots (id) ON DELETE SET NULL,
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('add', 'remove', 'quantity_change')),
+  delta INTEGER NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (
+    (event_type = 'add' AND delta > 0) OR
+    (event_type = 'remove' AND delta < 0) OR
+    (event_type = 'quantity_change' AND delta != 0)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_binder_lot_events_user ON binder_lot_events (user_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_binder_lot_events_lot ON binder_lot_events (lot_id);
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
