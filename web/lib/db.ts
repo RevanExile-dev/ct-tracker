@@ -153,3 +153,22 @@ export async function fetchLanguages(): Promise<string[]> {
 export async function fetchMeta(): Promise<Record<string, string>> {
   return apiFetch<Record<string, string>>("/api/meta");
 }
+
+/** Prezzo piu' economico nella lingua posseduta di ogni carta (ignora
+ * condizione/Zero, vedi fetchOwnedLanguagePrices lato server) - usata dal
+ * Binder per pesare "Valore stimato" sulla lingua registrata quando nota,
+ * invece del "best" generale. POST (non apiFetch, che e' solo GET): un
+ * binder puo' avere piu' carte di quante ne stiano in una query string. */
+export async function fetchOwnedLanguagePrices(
+  entries: { id: number; language: string }[]
+): Promise<Record<number, { price_cents: number; price_currency: string | null; listings_count: number }>> {
+  if (entries.length === 0) return {};
+  const res = await fetch("/api/cards/language-prices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entries),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Richiesta prezzi per lingua fallita (${res.status})`);
+  return res.json();
+}

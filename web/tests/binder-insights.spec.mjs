@@ -69,7 +69,17 @@ test('a failed history request is an error with retry, never an empty-history su
   await page.goto(`${BASE}/binder`);
   await expect(page.getByRole('alert').filter({ hasText: 'Non riesco a caricare lo storico' })).toBeVisible();
   await page.route('**/api/account/binder/value-history', (route) => route.fulfill({ json: points }));
-  await page.getByRole('button', { name: 'Riprova storico' }).click();
+  // .evaluate(el => el.click()) invece di .click(): il bottone viene
+  // smontato (sostituito dallo scheletro, poi dal grafico) da un
+  // re-render che puo' scattare prima ancora che Playwright completi le
+  // sue verifiche di azionabilita'/allegamento al DOM (anche con
+  // force:true, che le salta ma non l'attesa che l'elemento sia ancora
+  // presente al momento del dispatch) - risultato intermittente "element
+  // was detached from the DOM". Un click DOM diretto e sincrono e' immune
+  // a questa corsa: attiva comunque il gestore React (l'evento nativo
+  // risale fino al listener delegato sulla radice), solo senza il
+  // controllo a piu' fasi di Playwright nel mezzo.
+  await page.getByRole('button', { name: 'Riprova storico' }).evaluate((el) => el.click());
   await expect(page.getByRole('slider', { name: 'Esplora lo storico' })).toBeVisible();
 });
 

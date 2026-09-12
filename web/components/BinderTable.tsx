@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CardRow } from "@/lib/db";
-import { formatCents, priceDeltaPct } from "@/lib/format";
+import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
 
 type CardTrend = { avgCents: number; days: number };
 
@@ -25,6 +25,7 @@ export default function BinderTable({
   returnTo,
   quantities,
   onQuantityChange,
+  ownedLanguageMatches,
 }: {
   cards: CardRow[];
   trends?: Record<number, CardTrend>;
@@ -34,6 +35,10 @@ export default function BinderTable({
    * compare (stessa convenzione di CardTile). */
   quantities?: Map<number, number>;
   onQuantityChange?: (id: number, next: number) => void;
+  /** blueprintId -> prezzo nella lingua posseduta, stessa semantica di
+   * ownedLanguageMatch in CardTile.tsx (cents null = lingua nota ma nessuna
+   * corrispondenza trovata, mai un fallback silenzioso). */
+  ownedLanguageMatches?: Map<number, { language: string; cents: number | null; currency: string | null }>;
 }) {
   const showQuantity = quantities !== undefined && onQuantityChange !== undefined;
   return (
@@ -51,8 +56,12 @@ export default function BinderTable({
         </thead>
         <tbody className="divide-y divide-base-border">
           {cards.map((card) => {
-            const priceCents = card.filtered_price_cents ?? card.best_price_cents ?? card.latest_price_cents;
-            const priceCurrency = card.filtered_price_currency ?? card.best_price_currency ?? card.latest_price_currency;
+            const languageMatch = ownedLanguageMatches?.get(card.id);
+            const hasOwnedMatch = card.filtered_price_cents === undefined && languageMatch?.cents != null;
+            const priceCents = card.filtered_price_cents
+              ?? (hasOwnedMatch ? languageMatch!.cents : card.best_price_cents ?? card.latest_price_cents);
+            const priceCurrency = card.filtered_price_currency
+              ?? (hasOwnedMatch ? languageMatch!.currency ?? "EUR" : card.best_price_currency ?? card.latest_price_currency);
             const trend = trends?.[card.id];
             const delta = trend ? priceDeltaPct(priceCents, trend.avgCents) : null;
             const quantity = quantities?.get(card.id) ?? 1;
@@ -109,10 +118,22 @@ export default function BinderTable({
                   </td>
                 )}
                 <td className="px-4 py-3 text-right font-mono text-ink-primary">
-                  {formatCents(priceCents, priceCurrency ?? "EUR")}
+                  <div className="flex items-center justify-end gap-1">
+                    {formatCents(priceCents, priceCurrency ?? "EUR")}
+                    {hasOwnedMatch && (
+                      <span className="text-xs" title={`Prezzo trovato in ${languageMatch!.language.toUpperCase()} (lingua posseduta)`}>
+                        {languageFlag(languageMatch!.language)}
+                      </span>
+                    )}
+                  </div>
                   {quantity > 1 && (
                     <div className="text-[11px] text-ink-faint">
                       = {formatCents(priceCents !== null ? priceCents * quantity : null, priceCurrency ?? "EUR")}
+                    </div>
+                  )}
+                  {languageMatch && languageMatch.cents == null && (
+                    <div className="text-[10px] text-ink-faint">
+                      nessuna inserzione in {languageFlag(languageMatch.language)} {languageMatch.language.toUpperCase()}
                     </div>
                   )}
                 </td>
