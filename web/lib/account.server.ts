@@ -2,7 +2,7 @@ import "server-only";
 import { getPgPool } from "./pgPool";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
-import type { BinderValuePoint } from "./types";
+import type { BinderValuePoint, Lot, LotInput, LotProvenance } from "./types";
 
 // Query Postgres per i dati collegati all'account (binder/wishlist/filtri
 // salvati) - solo lato server (Route Handler in web/app/api/account/**),
@@ -175,4 +175,137 @@ export async function setFilterPreset(userId: string, scope: string, data: Filte
 export async function deleteFilterPreset(userId: string, scope: string): Promise<void> {
   const pool = getPgPool();
   await pool.query("DELETE FROM filter_presets WHERE user_id = $1 AND scope = $2", [userId, scope]);
+}
+
+// --- Lotti (costo/provenienza) - vedi CREATE TABLE binder_lots in
+// web/db/schema.sql per la semantica completa (NULL vs 0 su costTotalCents,
+// un lotto e' un acquisto specifico, non "la" quantita' posseduta della
+// carta). Stesso tetto di MAX_BINDER_QUANTITY: e' lo stesso CHECK lato DB
+// (quantity > 0 AND quantity <= 999), le due soglie vanno tenute allineate.
+export const MAX_LOT_QUANTITY = 999;
+export const LOT_PROVENANCES: LotProvenance[] = ["acquisto", "pacchetto", "regalo", "scambio", "non_specificata"];
+
+export function isValidLotQuantity(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_LOT_QUANTITY;
+}
+
+export function isValidLotProvenance(value: unknown): value is LotProvenance {
+  return typeof value === "string" && (LOT_PROVENANCES as string[]).includes(value);
+}
+
+/** Data pura YYYY-MM-DD (colonna DATE, niente ora/fuso) - stesso formato
+ * gia' usato da binder_value_snapshots.captured_at, vedi normalizeCollectionHistory
+ * in web/lib/collectionHistory.ts sul perche' importa non passare per Date. */
+export function isValidLotDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+/** Costo dichiarato: NULL = sconosciuto (mai inserito), un intero >= 0 se
+ * presente - MAI negativo, MAI una stringa/NaN che finirebbe in una colonna
+ * INTEGER e romperebbe la riga. */
+export function isValidLotCost(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isInteger(value) && value >= 0);
+}
+
+/** Codice valuta ISO 4217 a 3 lettere, o assente - stesso formato gia'
+ * validato in web/lib/collectionHistory.ts (collectionHistoryCsv). Un
+ * valore qualunque qui romperebbe silenziosamente la UI molto piu' tardi:
+ * formatCents() in web/lib/format.ts passa la valuta cosi' com'e' a
+ * Intl.NumberFormat, che lancia un RangeError (non un fallback silenzioso)
+ * su un codice non valido - un crash dell'intera pagina /lots al primo
+ * render, non solo un numero brutto. Meglio rifiutarlo qui, all'ingresso. */
+export function isValidLotCurrency(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && /^[A-Z]{3}$/.test(value));
+}
+
+function toLot(row: {
+  id: string; blueprint_id: number; quantity: number; language: string | null;
+  condition: string | null; finish: string | null; provenance: string;
+  acquired_at: string; cost_total_cents: number | null; cost_currency: string | null;
+  note: string | null; created_at: Date | string;
+}): Lot {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    quantity: row.quantity,
+    language: row.language,
+    condition: row.condition,
+    finish: row.finish,
+    provenance: row.provenance as LotProvenance,
+    acquiredAt: row.acquired_at,
+    costTotalCents: row.cost_total_cents,
+    costCurrency: row.cost_currency,
+    note: row.note,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+const LOT_COLUMNS = `id, blueprint_id, quantity, language, condition, finish, provenance,
+     acquired_at::text AS acquired_at, cost_total_cents, cost_currency, note, created_at`;
+
+export async function getLots(userId: string): Promise<Lot[]> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `SELECT ${LOT_COLUMNS} FROM binder_lots WHERE user_id = $1 ORDER BY acquired_at DESC, created_at DESC`,
+    [userId]
+  );
+  return rows.map(toLot);
+}
+
+export async function createLot(userId: string, input: LotInput): Promise<Lot> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `INSERT INTO binder_lots
+       (user_id, blueprint_id, quantity, language, condition, finish, provenance, acquired_at, cost_total_cents, cost_currency, note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE), $9, $10, $11)
+     RETURNING ${LOT_COLUMNS}`,
+    [
+      userId, input.blueprintId, input.quantity,
+      input.language ?? null, input.condition ?? null, input.finish ?? null,
+      input.provenance ?? "non_specificata", input.acquiredAt ?? null,
+      input.costTotalCents ?? null, input.costCurrency ?? null, input.note ?? null,
+    ]
+  );
+  return toLot(rows[0]);
+}
+
+/** Patch parziale: solo i campi presenti in `patch` vengono aggiornati
+ * (stesso principio "mai un rimpiazzo totale" di upsertBinderEntry sopra) -
+ * ma qui il whitelist di colonne e' fisso (non un JSONB), quindi costruito
+ * qui invece che affidato a una singola query statica come per binder_cards. */
+export async function updateLot(
+  userId: string,
+  lotId: string,
+  patch: Partial<Omit<LotInput, "blueprintId">>
+): Promise<Lot | null> {
+  const pool = getPgPool();
+  const columns: Record<string, string> = {
+    quantity: "quantity", language: "language", condition: "condition", finish: "finish",
+    provenance: "provenance", acquiredAt: "acquired_at", costTotalCents: "cost_total_cents",
+    costCurrency: "cost_currency", note: "note",
+  };
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, column] of Object.entries(columns)) {
+    const value = (patch as Record<string, unknown>)[key];
+    if (value === undefined) continue;
+    values.push(value);
+    sets.push(`${column} = $${values.length}`);
+  }
+  if (sets.length === 0) {
+    const { rows } = await pool.query(`SELECT ${LOT_COLUMNS} FROM binder_lots WHERE id = $1 AND user_id = $2`, [lotId, userId]);
+    return rows[0] ? toLot(rows[0]) : null;
+  }
+  values.push(lotId, userId);
+  const { rows } = await pool.query(
+    `UPDATE binder_lots SET ${sets.join(", ")} WHERE id = $${values.length - 1} AND user_id = $${values.length}
+     RETURNING ${LOT_COLUMNS}`,
+    values
+  );
+  return rows[0] ? toLot(rows[0]) : null;
+}
+
+export async function deleteLot(userId: string, lotId: string): Promise<void> {
+  const pool = getPgPool();
+  await pool.query("DELETE FROM binder_lots WHERE id = $1 AND user_id = $2", [lotId, userId]);
 }

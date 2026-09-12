@@ -254,6 +254,52 @@ CREATE TABLE IF NOT EXISTS binder_value_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_binder_value_user_date ON binder_value_snapshots (user_id, captured_at);
 
+-- Lotti di acquisto per il Binder: a differenza di binder_cards (una riga
+-- per carta posseduta, quantita' in data->>'quantity'), un lotto e' un
+-- ACQUISTO specifico di N copie della stessa carta, con il SUO costo e la
+-- SUA provenienza - una carta puo' avere piu' lotti nel tempo (es. 2 copie
+-- comprate a gennaio + 1 vinta a un torneo a marzo). binder_cards resta la
+-- fonte di verita' per "possiedo questa carta" (usata dal grafico prezzi,
+-- dai filtri catalogo, ecc.); binder_lots e' opt-in e serve solo per chi
+-- vuole tracciare costo/plusvalenza NON REALIZZATA - non sostituisce
+-- binder_cards, la affianca.
+--
+-- cost_total_cents e' il costo TOTALE del lotto (non per singola copia):
+-- NULL = costo sconosciuto/non inserito (lotto tracciato solo per
+-- provenienza/data), 0 = dichiarato esplicitamente gratuito (es. regalo,
+-- pacchetto di benvenuto) - le due cose NON sono equivalenti, motivo per
+-- cui la colonna e' nullable invece di avere un default a 0. Qualunque
+-- indicatore di plusvalenza calcolato da questi dati e' per definizione
+-- NON REALIZZATO (valore di mercato corrente - costo), mai "profitto":
+-- un profitto REALIZZATO esiste solo se l'utente registra esplicitamente
+-- una vendita, funzionalita' non ancora implementata.
+--
+-- provenance e' testo libero con pochi valori noti convalidati lato
+-- applicativo (web/lib/lots.ts): 'acquisto', 'pacchetto', 'regalo',
+-- 'scambio', 'non_specificata' - CHECK qui serve solo a bloccare valori
+-- palesemente sbagliati scritti da un bug futuro, non a fare da unica
+-- fonte di verita' per l'enum (stesso principio di is_premium 0/1 sopra:
+-- il contratto vero e' nel codice TypeScript che consuma la colonna).
+CREATE TABLE IF NOT EXISTS binder_lots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0 AND quantity <= 999),
+  language TEXT,
+  condition TEXT,
+  finish TEXT,
+  provenance TEXT NOT NULL DEFAULT 'non_specificata'
+    CHECK (provenance IN ('acquisto', 'pacchetto', 'regalo', 'scambio', 'non_specificata')),
+  acquired_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  cost_total_cents INTEGER CHECK (cost_total_cents IS NULL OR cost_total_cents >= 0),
+  cost_currency TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_binder_lots_user ON binder_lots (user_id);
+CREATE INDEX IF NOT EXISTS idx_binder_lots_blueprint ON binder_lots (user_id, blueprint_id);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
