@@ -1,0 +1,53 @@
+name: Sync prezzi CardTrader (batch prioritario)
+
+on:
+  schedule:
+    # Ogni 15 minuti (indicativo, da misurare - vedi
+    # docs/binder_reserved_work_plan_2026-09-11.md punto 3): ogni run
+    # processa un budget di ~4 minuti di richieste (scripts/sync_prices_priority.py),
+    # scegliendo le carte piu' urgenti (desideri -> binder -> resto del
+    # catalogo, poi le piu' vecchie per prezzo dentro ogni fascia) invece di
+    # seguire un ordine fisso. Sostituisce i due cron fissi di sync_prices.yml
+    # (06:00/18:00 UTC, solo espansioni recenti) e quello settimanale
+    # completo di sync_prices_full.yml, che per ~30.000+ carte al rate limit
+    # di 1 richiesta/secondo di CardTrader superava le 8 ore e per tutta la
+    # sua durata bloccava qualunque altro sync nello stesso concurrency
+    # group.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Condiviso con sync_catalog.yml (e con sync_prices.yml/sync_prices_full.yml,
+# rimasti solo per un resync manuale completo - vedi li'): mai due sync in
+# scrittura sul database Postgres in parallelo. cancel-in-progress false: un
+# run gia' partito non va ucciso, il prossimo aspetta in coda (con una
+# cadenza di 15 minuti e un budget di 4 minuti per run, la coda non dovrebbe
+# mai accumularsi in condizioni normali).
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
+jobs:
+  sync-prices-priority:
+    runs-on: ubuntu-latest
+    # Il budget interno allo script e' di 4 minuti (BUDGET_SECONDS): questo
+    # timeout e' solo una rete di sicurezza per un run anomalo (es. bloccato
+    # su un retry di rete), non il meccanismo di controllo del tempo vero.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Batch prioritario (desideri -> binder -> catalogo)
+        env:
+          CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/sync_prices_priority.py

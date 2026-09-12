@@ -503,3 +503,70 @@ def set_meta(conn, key: str, value: str):
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
             (key, value),
         )
+
+
+# Fasce di priorita' per lo scheduler a batch (scripts/sync_prices_priority.py,
+# docs/binder_reserved_work_plan_2026-09-11.md punto 3): desideri -> binder ->
+# resto del catalogo. "allarmi attivi" (la fascia piu' alta nel piano) non e'
+# ancora implementabile: la tabella degli allarmi per-carta e' lavoro futuro
+# (punto 4, non ancora fatto) - quando esistera' andra' inserita qui SOPRA
+# la fascia 1, non in sostituzione.
+PRIORITY_WISHLIST = 1
+PRIORITY_BINDER = 2
+PRIORITY_CATALOG = 3
+
+
+def fetch_priority_batch(conn, limit: int):
+    """Le prossime `limit` carte da risincronizzare, ordinate per fascia di
+    priorita' e poi per "quanto e' vecchio il loro ultimo prezzo noto"
+    (latest_prices.captured_at_ts, NULLS FIRST cosi' una carta mai
+    sincronizzata viene prima di qualunque carta gia' vista almeno una
+    volta - a prescindere dalla fascia). Nessun cursore/offset da passare:
+    la carta appena aggiornata da QUESTA chiamata avra' il captured_at_ts
+    piu' recente della sua fascia al prossimo giro, quindi scivola in coda
+    da sola (vedi commento su sync_checkpoint in web/db/schema.sql)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT b.id, b.name, b.expansion_name,
+                   CASE
+                     WHEN EXISTS (SELECT 1 FROM wishlist_cards w WHERE w.blueprint_id = b.id) THEN %(p_wishlist)s
+                     WHEN EXISTS (SELECT 1 FROM binder_cards c WHERE c.blueprint_id = b.id) THEN %(p_binder)s
+                     ELSE %(p_catalog)s
+                   END AS priority
+            FROM blueprints b
+            LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
+            ORDER BY priority ASC, lp.captured_at_ts ASC NULLS FIRST, b.id ASC
+            LIMIT %(limit)s
+            """,
+            {"p_wishlist": PRIORITY_WISHLIST, "p_binder": PRIORITY_BINDER,
+             "p_catalog": PRIORITY_CATALOG, "limit": limit},
+        )
+        return cur.fetchall()
+
+
+def record_sync_checkpoint(conn, started_at: str, finished_at: str, budget_seconds: int,
+                            tier_counts: dict, cards_ok: int, cards_error: int,
+                            circuit_breaker_triggered: bool):
+    """Una riga per run dello scheduler prioritario - solo osservabilita'
+    (vedi commento sulla tabella in web/db/schema.sql), mai letta per
+    decidere quali carte processare al prossimo giro."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sync_checkpoint
+                (started_at, finished_at, budget_seconds, wishlist_count, binder_count,
+                 catalog_count, cards_ok, cards_error, circuit_breaker_triggered)
+            VALUES (%(started_at)s, %(finished_at)s, %(budget_seconds)s, %(wishlist_count)s,
+                    %(binder_count)s, %(catalog_count)s, %(cards_ok)s, %(cards_error)s,
+                    %(circuit_breaker_triggered)s)
+            """,
+            {
+                "started_at": started_at, "finished_at": finished_at, "budget_seconds": budget_seconds,
+                "wishlist_count": tier_counts.get(PRIORITY_WISHLIST, 0),
+                "binder_count": tier_counts.get(PRIORITY_BINDER, 0),
+                "catalog_count": tier_counts.get(PRIORITY_CATALOG, 0),
+                "cards_ok": cards_ok, "cards_error": cards_error,
+                "circuit_breaker_triggered": circuit_breaker_triggered,
+            },
+        )
