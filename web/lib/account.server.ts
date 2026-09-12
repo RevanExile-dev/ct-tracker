@@ -3,7 +3,10 @@ import { randomBytes } from "crypto";
 import { getPgPool } from "./pgPool";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
-import type { BinderValuePoint, Lot, LotEvent, LotInput, LotProvenance, TelegramLinkStatus } from "./types";
+import type {
+  BinderValuePoint, Lot, LotEvent, LotInput, LotProvenance, PriceAlert, PriceAlertFireMode,
+  PriceAlertInput, PriceAlertState, PriceAlertTargetType, TelegramLinkStatus,
+} from "./types";
 
 // Query Postgres per i dati collegati all'account (binder/wishlist/filtri
 // salvati) - solo lato server (Route Handler in web/app/api/account/**),
@@ -527,4 +530,194 @@ export async function consumeTelegramLinkCode(code: string, chatId: number): Pro
   } finally {
     client.release();
   }
+}
+
+// --- Allarmi prezzo (sotto-parte 4b del piano) ---
+
+export class PriceAlertValidationError extends Error {}
+
+const PRICE_ALERT_TARGET_TYPES: PriceAlertTargetType[] = ["absolute_cents", "percent_drop"];
+const PRICE_ALERT_FIRE_MODES: PriceAlertFireMode[] = ["once", "rearm"];
+
+// Tetti applicativi (non tecnici, stesso principio di MAX_LOT_QUANTITY
+// sopra): evitano un fat-finger o un valore che non ha senso di dominio
+// (un calo del 100%+ non e' un calo, e' un prezzo negativo).
+const MAX_TARGET_ABSOLUTE_CENTS = 100_000_00; // 100.000,00 in qualunque valuta
+const MAX_TARGET_PERCENT_DROP = 99;
+export const MIN_REARM_COOLDOWN_HOURS = 1;
+export const MAX_REARM_COOLDOWN_HOURS = 24 * 30; // un mese
+
+export function isValidPriceAlertTargetType(value: unknown): value is PriceAlertTargetType {
+  return typeof value === "string" && (PRICE_ALERT_TARGET_TYPES as string[]).includes(value);
+}
+
+export function isValidPriceAlertFireMode(value: unknown): value is PriceAlertFireMode {
+  return typeof value === "string" && (PRICE_ALERT_FIRE_MODES as string[]).includes(value);
+}
+
+export function isValidPriceAlertTargetValue(targetType: PriceAlertTargetType, value: unknown): value is number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return false;
+  return targetType === "absolute_cents" ? value <= MAX_TARGET_ABSOLUTE_CENTS : value <= MAX_TARGET_PERCENT_DROP;
+}
+
+export function isValidRearmCooldownHours(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isInteger(value) &&
+    value >= MIN_REARM_COOLDOWN_HOURS && value <= MAX_REARM_COOLDOWN_HOURS
+  );
+}
+
+export function isValidPriceAlertCanSellViaHub(value: unknown): value is number | null {
+  return value === null || value === 0 || value === 1;
+}
+
+function toPriceAlert(row: {
+  id: string | number; blueprint_id: number; language: string | null; condition: string | null;
+  can_sell_via_hub: number | null; target_type: PriceAlertTargetType; target_value: number;
+  baseline_price_cents: number | null; baseline_currency: string | null;
+  baseline_captured_at: Date | string | null; fire_mode: PriceAlertFireMode;
+  rearm_cooldown_hours: number | null; state: PriceAlertState; fired_at: Date | string | null;
+  created_at: Date | string;
+}): PriceAlert {
+  return {
+    id: Number(row.id),
+    blueprintId: row.blueprint_id,
+    language: row.language,
+    condition: row.condition,
+    canSellViaHub: row.can_sell_via_hub,
+    targetType: row.target_type,
+    targetValue: row.target_value,
+    baselinePriceCents: row.baseline_price_cents,
+    baselineCurrency: row.baseline_currency,
+    baselineCapturedAt: row.baseline_captured_at instanceof Date
+      ? row.baseline_captured_at.toISOString() : row.baseline_captured_at,
+    fireMode: row.fire_mode,
+    rearmCooldownHours: row.rearm_cooldown_hours,
+    state: row.state,
+    firedAt: row.fired_at instanceof Date ? row.fired_at.toISOString() : row.fired_at,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+/** Inserzione piu' economica per un profilo ESATTO (lingua/condizione/hub,
+ * ognuno opzionale - NULL = nessun vincolo su quel campo) - MAI un fallback
+ * su un profilo diverso da quello richiesto, stesso principio di
+ * _exact_it_nm_zero_matches in scripts/db.py. Usata sia per fissare
+ * baseline_price_cents alla creazione di un allarme, sia (in futuro, punto
+ * 4c) dal worker di valutazione per leggere il prezzo attuale dello stesso
+ * identico profilo. */
+async function findMatchingListingPrice(
+  blueprintId: number,
+  language: string | null,
+  condition: string | null,
+  canSellViaHub: number | null
+): Promise<{ priceCents: number; currency: string | null } | null> {
+  const pool = getPgPool();
+  const conditions = ["blueprint_id = $1"];
+  const params: unknown[] = [blueprintId];
+  if (language !== null) {
+    params.push(language);
+    conditions.push(`language = $${params.length}`);
+  }
+  if (condition !== null) {
+    params.push(condition);
+    conditions.push(`condition = $${params.length}`);
+  }
+  if (canSellViaHub !== null) {
+    params.push(canSellViaHub);
+    conditions.push(`can_sell_via_hub = $${params.length}`);
+  }
+  const { rows } = await pool.query(
+    `SELECT price_cents, price_currency FROM price_listings
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY price_cents ASC LIMIT 1`,
+    params
+  );
+  if (rows.length === 0) return null;
+  return { priceCents: rows[0].price_cents, currency: rows[0].price_currency };
+}
+
+export async function getPriceAlerts(userId: string): Promise<PriceAlert[]> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM price_alerts WHERE user_id = $1 ORDER BY created_at DESC",
+    [userId]
+  );
+  return rows.map(toPriceAlert);
+}
+
+/** Crea un allarme, fissando baseline_price_cents/baseline_captured_at UNA
+ * VOLTA SOLA leggendo il prezzo attuale dell'identico profilo scelto (mai
+ * ricalcolato piu' avanti, vedi web/db/schema.sql). Per target_type
+ * "percent_drop" un profilo senza nessuna inserzione al momento della
+ * creazione e' un errore esplicito (non c'e' nessun riferimento da cui
+ * calcolare un calo percentuale) - per "absolute_cents" e' invece
+ * consentito, la soglia resta valida anche senza un baseline. */
+export async function createPriceAlert(userId: string, input: PriceAlertInput): Promise<PriceAlert> {
+  const language = input.language ?? null;
+  const condition = input.condition ?? null;
+  const canSellViaHub = input.canSellViaHub ?? null;
+  const fireMode = input.fireMode ?? "once";
+  const rearmCooldownHours = fireMode === "rearm" ? (input.rearmCooldownHours ?? null) : null;
+
+  const matching = await findMatchingListingPrice(input.blueprintId, language, condition, canSellViaHub);
+  if (input.targetType === "percent_drop" && !matching) {
+    throw new PriceAlertValidationError(
+      "Nessuna inserzione trovata per questo identico profilo (lingua/condizione/hub): impossibile calcolare un calo percentuale senza un prezzo di riferimento. Scegli un profilo con almeno un'inserzione attiva, oppure usa una soglia di prezzo assoluta."
+    );
+  }
+
+  const pool = getPgPool();
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO price_alerts (
+         user_id, blueprint_id, language, condition, can_sell_via_hub,
+         target_type, target_value, baseline_price_cents, baseline_currency,
+         baseline_captured_at, fire_mode, rearm_cooldown_hours
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING *`,
+      [
+        userId, input.blueprintId, language, condition, canSellViaHub,
+        input.targetType, input.targetValue,
+        matching?.priceCents ?? null, matching?.currency ?? null,
+        matching ? new Date() : null,
+        fireMode, rearmCooldownHours,
+      ]
+    );
+    return toPriceAlert(rows[0]);
+  } catch (err) {
+    // 23503 = violazione di foreign key: un blueprintId sintatticamente
+    // valido (intero positivo, supera la validazione della route) ma
+    // inesistente nel catalogo - senza findMatchingListingPrice() a
+    // fare da controllo implicito (per absolute_cents senza nessun
+    // match "matching" e' gia' null a prescindere, quindi non lo
+    // intercetta prima) l'unico punto che se ne accorge e' l'INSERT
+    // stesso. Rilievo di review su questa PR: senza questo catch, un
+    // blueprintId inesistente arrivava fino a un'eccezione Postgres non
+    // gestita (500) invece di un 400 chiaro.
+    if ((err as { code?: string }).code === "23503") {
+      throw new PriceAlertValidationError("Carta non trovata.");
+    }
+    throw err;
+  }
+}
+
+export async function deletePriceAlert(userId: string, id: number): Promise<void> {
+  const pool = getPgPool();
+  await pool.query("DELETE FROM price_alerts WHERE user_id = $1 AND id = $2", [userId, id]);
+}
+
+/** Attiva/disattiva manualmente un allarme - un cambio di stato diretto
+ * dell'utente, distinto dalle transizioni automatiche armed->fired->armed
+ * del worker di valutazione (sotto-parte 4c, non ancora presente): qui
+ * "enabled" forza sempre lo stato a 'armed' o 'disabled', a prescindere da
+ * dove si trovasse prima (anche ri-armare manualmente un allarme "fired"
+ * one-shot e' un'azione legittima dell'utente). */
+export async function setPriceAlertEnabled(userId: string, id: number, enabled: boolean): Promise<PriceAlert | null> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `UPDATE price_alerts SET state = $3 WHERE user_id = $1 AND id = $2 RETURNING *`,
+    [userId, id, enabled ? "armed" : "disabled"]
+  );
+  return rows.length > 0 ? toPriceAlert(rows[0]) : null;
 }

@@ -87,6 +87,14 @@ export default function UserMenu() {
             <div className="text-sm text-ink-primary truncate">{label}</div>
           </div>
           <Link
+            href="/account/alerts"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block w-full text-left px-4 py-3 text-sm text-ink-muted hover:text-accent-bright hover:bg-base-surface2 transition-colors"
+          >
+            Allarmi prezzo
+          </Link>
+          <Link
             href="/account/telegram"
             role="menuitem"
             onClick={() => setOpen(false)}
