@@ -21,7 +21,13 @@ function parseAlertInput(body: unknown): { input: PriceAlertInput } | { error: s
   const v = body as Record<string, unknown>;
 
   const blueprintId = Number(v.blueprintId);
-  if (!Number.isFinite(blueprintId)) return { error: "blueprintId mancante o non valido" };
+  // Number.isInteger (non solo isFinite, rilievo di review su questa PR):
+  // un decimale o un valore <= 0 supererebbe comunque isFinite ma non
+  // corrisponde a nessun id reale, arrivando fino all'INSERT e fallendo li'
+  // con un errore Postgres non gestito (500) invece di un 400 chiaro qui.
+  if (!Number.isInteger(blueprintId) || blueprintId <= 0) {
+    return { error: "blueprintId mancante o non valido" };
+  }
 
   if (v.language !== undefined && !isNullableShortString(v.language)) {
     return { error: `Lingua non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };

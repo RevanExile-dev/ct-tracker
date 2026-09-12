@@ -668,22 +668,38 @@ export async function createPriceAlert(userId: string, input: PriceAlertInput): 
   }
 
   const pool = getPgPool();
-  const { rows } = await pool.query(
-    `INSERT INTO price_alerts (
-       user_id, blueprint_id, language, condition, can_sell_via_hub,
-       target_type, target_value, baseline_price_cents, baseline_currency,
-       baseline_captured_at, fire_mode, rearm_cooldown_hours
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-     RETURNING *`,
-    [
-      userId, input.blueprintId, language, condition, canSellViaHub,
-      input.targetType, input.targetValue,
-      matching?.priceCents ?? null, matching?.currency ?? null,
-      matching ? new Date() : null,
-      fireMode, rearmCooldownHours,
-    ]
-  );
-  return toPriceAlert(rows[0]);
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO price_alerts (
+         user_id, blueprint_id, language, condition, can_sell_via_hub,
+         target_type, target_value, baseline_price_cents, baseline_currency,
+         baseline_captured_at, fire_mode, rearm_cooldown_hours
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING *`,
+      [
+        userId, input.blueprintId, language, condition, canSellViaHub,
+        input.targetType, input.targetValue,
+        matching?.priceCents ?? null, matching?.currency ?? null,
+        matching ? new Date() : null,
+        fireMode, rearmCooldownHours,
+      ]
+    );
+    return toPriceAlert(rows[0]);
+  } catch (err) {
+    // 23503 = violazione di foreign key: un blueprintId sintatticamente
+    // valido (intero positivo, supera la validazione della route) ma
+    // inesistente nel catalogo - senza findMatchingListingPrice() a
+    // fare da controllo implicito (per absolute_cents senza nessun
+    // match "matching" e' gia' null a prescindere, quindi non lo
+    // intercetta prima) l'unico punto che se ne accorge e' l'INSERT
+    // stesso. Rilievo di review su questa PR: senza questo catch, un
+    // blueprintId inesistente arrivava fino a un'eccezione Postgres non
+    // gestita (500) invece di un 400 chiaro.
+    if ((err as { code?: string }).code === "23503") {
+      throw new PriceAlertValidationError("Carta non trovata.");
+    }
+    throw err;
+  }
 }
 
 export async function deletePriceAlert(userId: string, id: number): Promise<void> {
