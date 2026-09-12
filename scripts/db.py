@@ -505,6 +505,13 @@ def set_meta(conn, key: str, value: str):
         )
 
 
+def get_meta(conn, key: str) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT value FROM meta WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 # Fasce di priorita' per lo scheduler a batch (scripts/sync_prices_priority.py,
 # docs/binder_reserved_work_plan_2026-09-11.md punto 3): desideri -> binder ->
 # resto del catalogo. "allarmi attivi" (la fascia piu' alta nel piano) non e'
@@ -517,14 +524,27 @@ PRIORITY_CATALOG = 3
 
 
 def fetch_priority_batch(conn, limit: int):
-    """Le prossime `limit` carte da risincronizzare, ordinate per fascia di
-    priorita' e poi per "quanto e' vecchio il loro ultimo prezzo noto"
-    (latest_prices.captured_at_ts, NULLS FIRST cosi' una carta mai
-    sincronizzata viene prima di qualunque carta gia' vista almeno una
-    volta - a prescindere dalla fascia). Nessun cursore/offset da passare:
-    la carta appena aggiornata da QUESTA chiamata avra' il captured_at_ts
-    piu' recente della sua fascia al prossimo giro, quindi scivola in coda
-    da sola (vedi commento su sync_checkpoint in web/db/schema.sql)."""
+    """Le prossime `limit` carte da risincronizzare, ordinate PRIMA per fascia
+    di priorita' (desideri, poi binder, poi resto del catalogo - una carta di
+    fascia 1 gia' vista di recente passa comunque prima di una carta di fascia
+    3 mai vista) e SOLO ALL'INTERNO DI CIASCUNA FASCIA per "quanto e' vecchio
+    l'ultimo tentativo su questa carta" (COALESCE(last_attempted_at,
+    captured_at_ts), NULLS FIRST cosi' una carta mai nemmeno tentata viene
+    prima di qualunque carta gia' tentata almeno una volta nella sua fascia).
+    Nessun cursore/offset da passare: la carta appena tentata da QUESTA
+    chiamata avra' last_attempted_at piu' recente della sua fascia al
+    prossimo giro, quindi scivola in coda da sola (vedi commento su
+    sync_checkpoint in web/db/schema.sql).
+
+    Usa last_attempted_at (aggiornato ad OGNI tentativo, riuscito o no - vedi
+    mark_attempted) e non captured_at_ts (aggiornato SOLO sui successi, da
+    upsert_latest_price) apposta: una carta che fallisce sempre altrimenti
+    avrebbe captured_at_ts eternamente vecchio/NULL e si ripresenterebbe in
+    cima alla sua fascia ad ogni singolo run, rischiando di bloccare l'intero
+    batch (con 15+ carte cosi', il circuit breaker di
+    scripts/sync_prices_priority.py scatterebbe prima di raggiungere
+    qualunque altra carta) - bug di starvation reale, trovato in review su
+    questa PR."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -536,13 +556,33 @@ def fetch_priority_batch(conn, limit: int):
                    END AS priority
             FROM blueprints b
             LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
-            ORDER BY priority ASC, lp.captured_at_ts ASC NULLS FIRST, b.id ASC
+            ORDER BY priority ASC, COALESCE(lp.last_attempted_at, lp.captured_at_ts) ASC NULLS FIRST, b.id ASC
             LIMIT %(limit)s
             """,
             {"p_wishlist": PRIORITY_WISHLIST, "p_binder": PRIORITY_BINDER,
              "p_catalog": PRIORITY_CATALOG, "limit": limit},
         )
         return cur.fetchall()
+
+
+def mark_attempted(conn, blueprint_id: int, attempted_at: str):
+    """Registra "abbiamo provato a sincronizzare questa carta adesso",
+    A PRESCINDERE dall'esito - va chiamata (e committata) PRIMA della
+    chiamata a CardTrader, cosi' resta valida anche se quella chiamata fallisce
+    e il resto della transazione va in rollback (vedi fetch_priority_batch sul
+    perche' serve: altrimenti una carta che fallisce sempre bloccherebbe la
+    coda per tutte le altre). Un semplice UPDATE non basta per una carta mai
+    vista prima (nessuna riga in latest_prices ancora): upsert minimale che
+    non tocca nessun campo di prezzo se la riga non esiste gia'."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO latest_prices (blueprint_id, last_attempted_at)
+            VALUES (%s, %s)
+            ON CONFLICT (blueprint_id) DO UPDATE SET last_attempted_at = EXCLUDED.last_attempted_at
+            """,
+            (blueprint_id, attempted_at),
+        )
 
 
 def record_sync_checkpoint(conn, started_at: str, finished_at: str, budget_seconds: int,

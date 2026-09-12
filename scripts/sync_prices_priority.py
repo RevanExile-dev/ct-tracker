@@ -15,13 +15,20 @@ aggiornare invece di seguire un ordine fisso per espansione:
   1. Carte in wishlist di almeno un utente.
   2. Carte nel binder di almeno un utente.
   3. Resto del catalogo.
-Dentro ogni fascia, le carte con il prezzo piu' vecchio (o mai sincronizzato)
+Dentro ogni fascia, le carte con il tentativo piu' vecchio (o mai tentate)
 vengono prima - vedi fetch_priority_batch() in scripts/db.py. Non c'e' nessun
 cursore/offset salvato tra un run e l'altro: la priorita' viene ricalcolata
-da zero ad ogni chiamata, e la carta appena aggiornata scivola naturalmente
-in fondo alla sua fascia perche' il suo "ultimo prezzo visto" e' ora il piu'
+da zero ad ogni chiamata, e la carta appena tentata scivola naturalmente in
+fondo alla sua fascia perche' il suo "ultimo tentativo" e' ora il piu'
 recente - stesso principio di un nastro trasportatore, non di una coda con
-puntatore esplicito.
+puntatore esplicito. Il tentativo (latest_prices.last_attempted_at) viene
+registrato PRIMA della chiamata a CardTrader e A PRESCINDERE dall'esito -
+non solo sul successo (captured_at_ts, aggiornato separatamente da
+upsert_latest_price): una carta che fallisce SEMPRE (es. un blueprint
+rimosso da CardTrader) altrimenti resterebbe per sempre in cima alla sua
+fascia, e con 15+ carte cosi' il circuit breaker scatterebbe ad ogni run
+prima di raggiungere qualunque altra carta - bug di starvation reale,
+trovato in review su questa PR e corretto qui.
 
 "allarmi attivi" (la fascia con priorita' piu' alta nel piano originale) non
 e' ancora implementabile: la tabella degli allarmi Telegram per-carta e'
@@ -90,6 +97,27 @@ def main():
             break
         processed += 1
         tier_counts[priority] = tier_counts.get(priority, 0) + 1
+
+        # Registrato e COMMITTATO subito, PRIMA della chiamata a CardTrader
+        # che puo' fallire: altrimenti una carta che fallisce sempre (es. un
+        # blueprint rimosso da CardTrader) resterebbe per sempre in cima alla
+        # sua fascia di priorita' (captured_at_ts non si aggiorna mai sui
+        # fallimenti), bloccando l'intero batch ad ogni run - bug di
+        # starvation reale, trovato in review su questa PR (vedi
+        # fetch_priority_batch in scripts/db.py).
+        try:
+            db.mark_attempted(conn, bp_id, now_iso)
+            conn.commit()
+        except Exception as exc:
+            print(f"  [ERRORE] impossibile registrare il tentativo per {name} id={bp_id}: {exc}", file=sys.stderr)
+            conn.rollback()
+            errors += 1
+            consecutive_errors += 1
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                circuit_breaker_triggered = True
+                break
+            continue
+
         try:
             products = client.get_marketplace_products(bp_id)
 
@@ -138,9 +166,13 @@ def main():
 
     # La compressione dello storico (price_snapshots/binder_value_snapshots)
     # e' un'operazione da una volta al giorno, non da ripetere ad ogni batch
-    # (96 run/giorno a cadenza 15 minuti): la finestra 03:00-03:14 UTC copre
-    # esattamente un run al giorno con la cadenza di default del workflow.
-    if start.hour == 3 and start.minute < 15:
+    # (96 run/giorno a cadenza 15 minuti): controllato con una chiave in meta
+    # invece che con una finestra fissa sull'orario di avvio (es. "solo se
+    # start.hour==3 e start.minute<15") - i cron di GitHub Actions possono
+    # ritardare anche di parecchi minuti nelle ore di punta, e una finestra
+    # di 15 minuti sarebbe facile da mancare per l'intera giornata (rilievo
+    # di review su questa PR).
+    if db.get_meta(conn, "last_pruned_date") != today:
         pruned = db.prune_old_history(conn)
         if pruned:
             print(f"Storico compresso: rimossi {pruned} punti giornalieri "
@@ -149,6 +181,7 @@ def main():
         if binder_pruned:
             print(f"Storico valore Binder compresso: rimossi {binder_pruned} punti "
                   f"oltre i {db.RETENTION_DAILY_DAYS} giorni (tenuto 1 punto/settimana).")
+        db.set_meta(conn, "last_pruned_date", today)
 
     finished = datetime.now(timezone.utc)
     db.record_sync_checkpoint(

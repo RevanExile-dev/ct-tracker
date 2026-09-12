@@ -181,6 +181,25 @@ CREATE TABLE IF NOT EXISTS latest_prices (
   prev_it_nm_zero_price_cents INTEGER
 );
 
+-- Aggiunta dopo la creazione iniziale della tabella (primo uso reale di
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS in questo schema, gia' anticipato nel
+-- commento in cima al file): "quando abbiamo provato l'ultima volta a
+-- sincronizzare questa carta", a prescindere dall'esito - diverso da
+-- captured_at_ts, che si aggiorna SOLO su un tentativo riuscito. Serve a
+-- scripts/sync_prices_priority.py per evitare un bug di starvation reale
+-- trovato in review su questa PR: senza questa colonna, una carta che fallisce
+-- SEMPRE (es. un blueprint rimosso da CardTrader) avrebbe captured_at_ts
+-- eternamente NULL/vecchio, quindi si ripresenterebbe in cima alla stessa
+-- fascia di priorita' ad ogni singolo run - con 15+ carte cosi', il circuit
+-- breaker (MAX_CONSECUTIVE_ERRORS) scatterebbe ad ogni run PRIMA di
+-- raggiungere qualunque altra carta, bloccando l'intero batch prioritario per
+-- sempre. Aggiornata ad ogni tentativo (successo O fallimento, in una
+-- scrittura separata e committata subito, PRIMA della chiamata a CardTrader
+-- che potrebbe fallire e fare rollback) cosi' anche una carta rotta scivola
+-- in fondo alla coda e lascia spazio alle altre, pur continuando ad essere
+-- ritentata periodicamente invece di essere ignorata per sempre.
+ALTER TABLE latest_prices ADD COLUMN IF NOT EXISTS last_attempted_at TIMESTAMPTZ;
+
 -- Le migliori inserzioni live per ogni carta (non storico: ad ogni sync le
 -- righe della carta vengono sostituite con le inserzioni piu' economiche
 -- del momento, vedi replace_price_listings in scripts/db.py).

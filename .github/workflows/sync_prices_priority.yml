@@ -38,13 +38,16 @@ jobs:
     # una carta puo' quindi da sola richiedere fino a 2+4+8+16+32=62s prima
     # di arrendersi. Il circuit breaker (MAX_CONSECUTIVE_ERRORS=15) nel caso
     # peggiore - 15 carte di fila che falliscono tutte al quinto tentativo,
-    # es. durante un'interruzione di CardTrader - puo' quindi richiedere fino
-    # a 15*62s=930s (~15,5 minuti) PRIMA di fermarsi, superando un timeout di
-    # 15 minuti pieni: un valore piu' ampio serve a lasciare al circuit
-    # breaker il tempo di attivarsi ed uscire in modo pulito (con un
-    # messaggio d'errore chiaro e il checkpoint scritto) invece di essere
-    # ucciso a meta' da GitHub Actions con un timeout generico.
-    timeout-minutes: 20
+    # es. durante un'interruzione di CardTrader, DOPO aver gia' usato quasi
+    # tutto il budget di 4 minuti su carte riuscite prima nello stesso run -
+    # puo' quindi richiedere fino a circa 4+15,5=19,5 minuti prima di
+    # fermarsi (rilievo di review su questa PR, con margine ulteriore per un
+    # eventuale timeout di rete su una singola richiesta): un valore ben piu'
+    # ampio serve a lasciare al circuit breaker il tempo di attivarsi ed
+    # uscire in modo pulito (messaggio d'errore chiaro + checkpoint scritto)
+    # invece di essere ucciso a meta' da GitHub Actions con un timeout
+    # generico che non lascerebbe nemmeno scrivere il checkpoint.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
