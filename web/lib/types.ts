@@ -113,6 +113,41 @@ export type BinderValuePoint = {
   priced_count: number;
 };
 
+export type LotProvenance = "acquisto" | "pacchetto" | "regalo" | "scambio" | "non_specificata";
+
+// Un lotto e' un ACQUISTO specifico (N copie della stessa carta, un solo
+// costo/una sola provenienza) - a differenza di BinderEntry (web/lib/binder.ts,
+// una riga per carta posseduta in totale), una carta puo' avere piu' lotti
+// nel tempo. Vedi web/db/schema.sql per la semantica NULL/0 di costTotalCents.
+// Solo account (nessuna modalita' guest/localStorage): richiede sempre login.
+export type Lot = {
+  id: string;
+  blueprintId: number;
+  quantity: number;
+  language: string | null;
+  condition: string | null;
+  finish: string | null;
+  provenance: LotProvenance;
+  acquiredAt: string;
+  costTotalCents: number | null;
+  costCurrency: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+export type LotInput = {
+  blueprintId: number;
+  quantity: number;
+  language?: string | null;
+  condition?: string | null;
+  finish?: string | null;
+  provenance?: LotProvenance;
+  acquiredAt?: string;
+  costTotalCents?: number | null;
+  costCurrency?: string | null;
+  note?: string | null;
+};
+
 export type Listing = {
   price_cents: number;
   price_currency: string | null;

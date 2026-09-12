@@ -31,6 +31,7 @@ export default function SiteHeader({
   const onBinder = pathname.startsWith("/binder");
   const onWishlist = pathname === "/wishlist";
   const onScanner = pathname === "/scan";
+  const onLots = pathname.startsWith("/lots");
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
@@ -107,6 +108,14 @@ export default function SiteHeader({
               className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               ♡ Desideri
+            </Link>
+          )}
+          {!onLots && (
+            <Link
+              href="/lots"
+              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+            >
+              🧾 Lotti
             </Link>
           )}
           <UserMenu />

@@ -409,7 +409,7 @@ export async function fetchCardsTrend(
 }
 
 /** Prezzo piu' economico nella lingua POSSEDUTA di ogni carta del binder,
- * una per blueprint - non "esatto" nel senso di it_nm_zero_price_cents
+ * una per blueprint+lingua - non "esatto" nel senso di it_nm_zero_price_cents
  * (qui si ignorano condizione e Zero, l'unico filtro e' la lingua
  * registrata sulla copia posseduta, vedi BinderEntry.language in
  * web/lib/binder.ts): "condition" non ha oggi NESSUN punto del codice che
@@ -423,10 +423,19 @@ export async function fetchCardsTrend(
  * Batch in una sola query invece di N (una per carta del binder) tramite
  * una VALUES list - self-join su price_listings filtrato per lingua.
  * Il chiamante deve gia' aver escluso le entry senza lingua nota (per
- * quelle non c'e' nulla da interrogare, resta il "best" generale). */
+ * quelle non c'e' nulla da interrogare, resta il "best" generale).
+ *
+ * Chiave del risultato "blueprintId:lingua" (non solo blueprintId): un
+ * binder ha una sola lingua per carta, ma un utente puo' avere piu' LOTTI
+ * (web/app/lots/page.tsx) della stessa carta in lingue diverse - con GROUP
+ * BY sul solo blueprint_id due entry con lo stesso id ma lingue diverse
+ * venivano fuse in un'unica riga (il MIN() mescolava le inserzioni di
+ * ENTRAMBE le lingue), restituendo lo stesso prezzo sbagliato a tutti i
+ * lotti di quella carta - bug reale, riprodotto con una query diretta
+ * durante la review di questa PR, non solo teorico. */
 export async function fetchOwnedLanguagePrices(
   entries: { blueprintId: number; language: string }[]
-): Promise<Record<number, { price_cents: number; price_currency: string | null; listings_count: number }>> {
+): Promise<Record<string, { price_cents: number; price_currency: string | null; listings_count: number }>> {
   if (entries.length === 0) return {};
   const pool = getPgPool();
   const p = new Params();
@@ -435,19 +444,19 @@ export async function fetchOwnedLanguagePrices(
     .join(", ");
   const { rows } = await pool.query(
     `
-    SELECT v.blueprint_id,
+    SELECT v.blueprint_id, v.language,
            MIN(pl.price_cents) AS price_cents,
            (ARRAY_AGG(pl.price_currency ORDER BY pl.price_cents ASC))[1] AS price_currency,
            COUNT(*)::int AS listings_count
     FROM (VALUES ${values}) AS v(blueprint_id, language)
     JOIN price_listings pl ON pl.blueprint_id = v.blueprint_id AND pl.language = v.language
-    GROUP BY v.blueprint_id
+    GROUP BY v.blueprint_id, v.language
     `,
     p.values
   );
-  const result: Record<number, { price_cents: number; price_currency: string | null; listings_count: number }> = {};
+  const result: Record<string, { price_cents: number; price_currency: string | null; listings_count: number }> = {};
   for (const row of rows) {
-    result[row.blueprint_id] = {
+    result[`${row.blueprint_id}:${row.language}`] = {
       price_cents: row.price_cents,
       price_currency: row.price_currency,
       listings_count: row.listings_count,

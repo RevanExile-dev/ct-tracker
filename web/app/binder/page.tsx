@@ -86,8 +86,13 @@ function BinderContent() {
   // (languageEntries e' un nuovo array ad ogni chiamata di useMemo anche a
   // contenuto invariato, ma qui serve solo il contenuto).
   const languageEntriesKey = languageEntries.map((e) => `${e.id}:${e.language}`).sort().join(",");
+  // Chiave "blueprintId:lingua" (non solo blueprintId): vedi il commento su
+  // fetchOwnedLanguagePrices in web/lib/db.server.ts - qui nel binder ogni
+  // carta ha una sola lingua nota quindi non cambierebbe nulla in pratica,
+  // ma la forma del risultato e' condivisa con web/app/lots/page.tsx (dove
+  // invece serve davvero) e deve restare coerente in entrambi i punti.
   const [languagePrices, setLanguagePrices] = useState<
-    Record<number, { price_cents: number; price_currency: string | null; listings_count: number }>
+    Record<string, { price_cents: number; price_currency: string | null; listings_count: number }>
   >({});
 
   useEffect(() => {
@@ -119,7 +124,7 @@ function BinderContent() {
       const bestCents = card.best_price_cents ?? card.latest_price_cents;
       const bestCurrency = card.best_price_currency ?? card.latest_price_currency;
       const ownedLanguage = entryById.get(card.id)?.language ?? null;
-      const languagePrice = ownedLanguage ? languagePrices[card.id] : undefined;
+      const languagePrice = ownedLanguage ? languagePrices[`${card.id}:${ownedLanguage}`] : undefined;
       map.set(card.id, languagePrice
         ? { cents: languagePrice.price_cents, currency: languagePrice.price_currency, matchedLanguage: ownedLanguage, triedLanguage: ownedLanguage }
         : { cents: bestCents, currency: bestCurrency, matchedLanguage: null, triedLanguage: ownedLanguage });
