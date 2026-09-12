@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getBinderEntries, mergeBinderEntries } from "@/lib/account.server";
+import { getBinderEntries, isValidBinderQuantity, mergeBinderEntries } from "@/lib/account.server";
 import type { BinderEntry } from "@/lib/binder";
 
 function isBinderEntry(value: unknown): value is BinderEntry {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
-  return typeof v.blueprintId === "number" && Number.isFinite(v.blueprintId);
+  // A differenza di PUT /[id] (patch parziale), qui ogni entry sostituisce
+  // per intero la riga corrispondente (vedi mergeBinderEntries) - quantity
+  // deve quindi essere sempre valida, non solo se presente.
+  return typeof v.blueprintId === "number" && Number.isFinite(v.blueprintId) && isValidBinderQuantity(v.quantity);
 }
 
 export async function GET() {
