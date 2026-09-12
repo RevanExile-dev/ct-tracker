@@ -32,10 +32,19 @@ concurrency:
 jobs:
   sync-prices-priority:
     runs-on: ubuntu-latest
-    # Il budget interno allo script e' di 4 minuti (BUDGET_SECONDS): questo
-    # timeout e' solo una rete di sicurezza per un run anomalo (es. bloccato
-    # su un retry di rete), non il meccanismo di controllo del tempo vero.
-    timeout-minutes: 15
+    # Il budget interno allo script (BUDGET_SECONDS, 4 minuti) e' controllato
+    # SOLO tra una carta e la successiva, non dentro il retry/backoff di una
+    # singola chiamata (api_client.py, max_retries=5, backoff 2^tentativo):
+    # una carta puo' quindi da sola richiedere fino a 2+4+8+16+32=62s prima
+    # di arrendersi. Il circuit breaker (MAX_CONSECUTIVE_ERRORS=15) nel caso
+    # peggiore - 15 carte di fila che falliscono tutte al quinto tentativo,
+    # es. durante un'interruzione di CardTrader - puo' quindi richiedere fino
+    # a 15*62s=930s (~15,5 minuti) PRIMA di fermarsi, superando un timeout di
+    # 15 minuti pieni: un valore piu' ampio serve a lasciare al circuit
+    # breaker il tempo di attivarsi ed uscire in modo pulito (con un
+    # messaggio d'errore chiaro e il checkpoint scritto) invece di essere
+    # ucciso a meta' da GitHub Actions con un timeout generico.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
