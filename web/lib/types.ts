@@ -179,6 +179,45 @@ export type ExpansionInfo = { code: string; name: string; cardCount: number };
 
 export type TelegramLinkStatus = { linked: boolean; linkedAt: string | null };
 
+export type PriceAlertTargetType = "absolute_cents" | "percent_drop";
+export type PriceAlertFireMode = "once" | "rearm";
+export type PriceAlertState = "armed" | "fired" | "disabled";
+
+// Un allarme e' sempre su un profilo ESATTO (lingua/condizione/hub) - null
+// in uno di questi campi e' la scelta esplicita "qualunque", non un default
+// silenzioso (vedi web/db/schema.sql). baselinePriceCents e' fissato UNA
+// VOLTA alla creazione (mai ricalcolato), null solo se al momento della
+// creazione non esisteva nessuna inserzione per questo profilo (consentito
+// solo per targetType "absolute_cents").
+export type PriceAlert = {
+  id: number;
+  blueprintId: number;
+  language: string | null;
+  condition: string | null;
+  canSellViaHub: number | null;
+  targetType: PriceAlertTargetType;
+  targetValue: number;
+  baselinePriceCents: number | null;
+  baselineCurrency: string | null;
+  baselineCapturedAt: string | null;
+  fireMode: PriceAlertFireMode;
+  rearmCooldownHours: number | null;
+  state: PriceAlertState;
+  firedAt: string | null;
+  createdAt: string;
+};
+
+export type PriceAlertInput = {
+  blueprintId: number;
+  language?: string | null;
+  condition?: string | null;
+  canSellViaHub?: number | null;
+  targetType: PriceAlertTargetType;
+  targetValue: number;
+  fireMode?: PriceAlertFireMode;
+  rearmCooldownHours?: number | null;
+};
+
 // Forma lean usata solo da web/lib/scanner/catalog.ts (riconoscimento carte
 // via OCR/hash percettivo): niente prezzi, serve solo per il matching
 // testuale/visivo contro l'intero catalogo.

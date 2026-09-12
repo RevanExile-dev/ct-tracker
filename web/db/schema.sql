@@ -420,3 +420,52 @@ CREATE TABLE IF NOT EXISTS telegram_link_codes (
   code TEXT NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL
 );
+
+-- Allarmi prezzo per-carta (sotto-parte 4b del piano): un utente puo'
+-- chiedere di essere avvisato quando il prezzo di una carta, in un
+-- profilo ESATTO (lingua/condizione/vendibile-via-hub - mai un fallback
+-- silenzioso su un profilo diverso, stesso principio di
+-- latest_prices.it_nm_zero_price_cents sopra), scende sotto una soglia
+-- assoluta o di una percentuale rispetto al prezzo al momento della
+-- creazione dell'allarme. Il worker di valutazione (sotto-parte 4c, non
+-- ancora presente) legge solo le righe con state='armed'.
+CREATE TABLE IF NOT EXISTS price_alerts (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  -- NULL qui e' una scelta ESPLICITA dell'utente ("qualunque lingua/
+  -- condizione/hub"), non un default silenzioso lasciato vuoto per
+  -- errore - la UI chiede sempre "qualunque" come opzione a se stante.
+  language TEXT,
+  condition TEXT,
+  can_sell_via_hub INTEGER, -- NULL = indifferente, 1 = solo CardTrader Zero, 0 = mai Zero
+  -- absolute_cents: soglia assoluta in centesimi (target_value).
+  -- percent_drop: percentuale di calo (es. 15 = -15%) rispetto a
+  -- baseline_price_cents, fissato una volta sola alla creazione (MAI
+  -- ricalcolato ad ogni sync, vedi il piano - altrimenti un calo
+  -- percentuale "rispetto a ieri" scatterebbe quasi ad ogni oscillazione).
+  target_type TEXT NOT NULL CHECK (target_type IN ('absolute_cents', 'percent_drop')),
+  target_value INTEGER NOT NULL CHECK (target_value > 0),
+  -- NULL se al momento della creazione non esisteva nessuna inserzione
+  -- per questo identico profilo - consentito solo per
+  -- target_type='absolute_cents' (un calo percentuale senza riferimento
+  -- non e' calcolabile, vedi il vincolo sotto).
+  baseline_price_cents INTEGER,
+  baseline_currency TEXT,
+  baseline_captured_at TIMESTAMPTZ,
+  fire_mode TEXT NOT NULL DEFAULT 'once' CHECK (fire_mode IN ('once', 'rearm')),
+  -- Solo per fire_mode='rearm': ore minime tra un "fired" e il successivo
+  -- ri-arma automatico (logica nel worker di valutazione, sotto-parte 4c).
+  rearm_cooldown_hours INTEGER CHECK (rearm_cooldown_hours IS NULL OR rearm_cooldown_hours > 0),
+  state TEXT NOT NULL DEFAULT 'armed' CHECK (state IN ('armed', 'fired', 'disabled')),
+  fired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT price_alerts_baseline_required_for_percent
+    CHECK (target_type != 'percent_drop' OR baseline_price_cents IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_alerts_user ON price_alerts (user_id);
+-- Il worker di valutazione (sotto-parte 4c) legge tutti gli allarmi armati
+-- per carta ad ogni batch di sync - indice sullo stesso pattern di accesso,
+-- parziale (solo state='armed') perche' e' l'unico stato che gli interessa.
+CREATE INDEX IF NOT EXISTS idx_price_alerts_armed ON price_alerts (blueprint_id) WHERE state = 'armed';
