@@ -177,6 +177,8 @@ export type Listing = {
 
 export type ExpansionInfo = { code: string; name: string; cardCount: number };
 
+export type TelegramLinkStatus = { linked: boolean; linkedAt: string | null };
+
 // Forma lean usata solo da web/lib/scanner/catalog.ts (riconoscimento carte
 // via OCR/hash percettivo): niente prezzi, serve solo per il matching
 // testuale/visivo contro l'intero catalogo.
