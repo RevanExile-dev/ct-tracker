@@ -22,19 +22,24 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-type LanguagePriceMap = Record<number, { price_cents: number; price_currency: string | null }>;
+type LanguagePriceMap = Record<string, { price_cents: number; price_currency: string | null }>;
 
 /** Stessa euristica "lingua posseduta se nota e disponibile, altrimenti best
  * generale" di web/app/binder/page.tsx (priceInfoById) - qui per-lotto invece
  * che per-carta, perche' due lotti della stessa carta possono avere lingue
- * diverse. */
+ * diverse (es. una copia IT e una JP): la chiave "blueprintId:lingua" (non
+ * solo blueprintId) e' quello che distingue i due casi - con solo
+ * blueprintId come chiave, i lotti in lingue diverse della stessa carta si
+ * sarebbero sovrascritti a vicenda mostrando a entrambi lo stesso prezzo
+ * (bug reale, riprodotto con una query diretta durante la review). */
 function resolveLotUnitPrice(
   lot: Lot,
   card: CardRow | undefined,
   languagePrices: LanguagePriceMap
 ): { cents: number; currency: string | null } | null {
-  if (lot.language && languagePrices[lot.blueprintId]) {
-    const p = languagePrices[lot.blueprintId];
+  const key = lot.language ? `${lot.blueprintId}:${lot.language}` : null;
+  if (key && languagePrices[key]) {
+    const p = languagePrices[key];
     return { cents: p.price_cents, currency: p.price_currency };
   }
   const bestCents = card?.best_price_cents ?? card?.latest_price_cents ?? null;

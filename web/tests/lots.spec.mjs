@@ -108,6 +108,55 @@ test('adding a lot: search, select a card, submit, appears in the table', async 
   await expect(page.getByText(/profitto/i)).toHaveCount(0);
 });
 
+test('two lots of the same card in different languages each resolve their own market price, not the other one\'s', async ({ page }) => {
+  // Rilievo reale della review AI su questa PR: la mappa dei prezzi per
+  // lingua era indicizzata solo per blueprintId, quindi due lotti della
+  // stessa carta in lingue diverse si sovrascrivevano a vicenda (entrambi
+  // finivano per mostrare il prezzo dell'ULTIMA lingua caricata dal
+  // server). Riprodotto con una query Postgres diretta, corretto usando
+  // "blueprintId:lingua" come chiave sia lato server (fetchOwnedLanguagePrices
+  // in web/lib/db.server.ts) sia qui in resolveLotUnitPrice.
+  await mockCommon(page);
+  await page.route('**/api/account/lots', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        json: [
+          {
+            id: 'lot-it', blueprintId: PIKACHU.id, quantity: 1, language: 'it',
+            condition: null, finish: null, provenance: 'acquisto', acquiredAt: '2026-01-01',
+            costTotalCents: 2000, costCurrency: 'EUR', note: null, createdAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            id: 'lot-jp', blueprintId: PIKACHU.id, quantity: 1, language: 'jp',
+            condition: null, finish: null, provenance: 'acquisto', acquiredAt: '2026-01-02',
+            costTotalCents: 2000, costCurrency: 'EUR', note: null, createdAt: '2026-01-02T00:00:00.000Z',
+          },
+        ],
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await page.route('**/api/cards/language-prices', async (route) => {
+    // IT vale molto meno del "best" generale (50,00), JP molto di piu' - se
+    // il bug fosse ancora presente le due righe mostrerebbero lo stesso
+    // valore (quello dell'ultima entry della risposta).
+    await route.fulfill({
+      status: 200,
+      json: {
+        [`${PIKACHU.id}:it`]: { price_cents: 1000, price_currency: 'EUR', listings_count: 1 },
+        [`${PIKACHU.id}:jp`]: { price_cents: 9000, price_currency: 'EUR', listings_count: 1 },
+      },
+    });
+  });
+  await page.goto(`${BASE}/lots`);
+  const rows = page.locator('tr', { hasText: 'Pikachu VMAX' });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText(/10,00/);
+  await expect(rows.nth(1)).toContainText(/90,00/);
+});
+
 test('a lot with unknown cost never contributes a fake gain, and is excluded honestly from the total', async ({ page }) => {
   await mockCommon(page);
   await page.route('**/api/account/lots', async (route) => {

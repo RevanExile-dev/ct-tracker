@@ -30,7 +30,11 @@ async function arrange(page) {
       // Solo Carta Uno (id 1, lingua it) ha una corrispondenza nel mock -
       // Carta Due (jp) viene interrogata ma non trova nulla, esattamente
       // come una vera assenza di inserzioni in quella lingua sul mercato.
-      await route.fulfill({ status: 200, json: { 1: { price_cents: 700, price_currency: 'EUR', listings_count: 3 } } });
+      // Chiave "blueprintId:lingua" (non solo blueprintId): stesso formato
+      // usato dal vero endpoint dopo il fix del bug sui lotti multi-lingua
+      // (due lotti della stessa carta in lingue diverse si sovrascrivevano
+      // a vicenda con una chiave solo numerica - vedi web/lib/db.server.ts).
+      await route.fulfill({ status: 200, json: { '1:it': { price_cents: 700, price_currency: 'EUR', listings_count: 3 } } });
       return;
     }
     let body = [];
