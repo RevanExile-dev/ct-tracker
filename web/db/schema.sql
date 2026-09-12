@@ -501,6 +501,10 @@ CREATE TABLE IF NOT EXISTS telegram_outbox (
   -- di Telegram (4096 caratteri) - vedi scripts/notify_telegram.py per lo
   -- stesso formato di messaggio, qui per-allarme invece che per batch.
   payload TEXT NOT NULL,
+  -- URL immagine della carta (blueprints.image_url) al momento dello scatto:
+  -- NULL se la carta non ne ha una - in quel caso il worker manda solo
+  -- testo (sendMessage) invece di una foto con didascalia (sendPhoto).
+  image_url TEXT,
   sent_at TIMESTAMPTZ,
   retry_count INTEGER NOT NULL DEFAULT 0,
   last_attempted_at TIMESTAMPTZ,
@@ -511,3 +515,8 @@ CREATE TABLE IF NOT EXISTS telegram_outbox (
 -- parziale sullo stesso pattern (sent_at IS NULL), ordinato per non far
 -- sorpassare i messaggi piu' vecchi da quelli nuovi ad ogni retry.
 CREATE INDEX IF NOT EXISTS idx_telegram_outbox_pending ON telegram_outbox (created_at) WHERE sent_at IS NULL;
+
+-- CREATE TABLE IF NOT EXISTS sopra non aggiunge colonne a una tabella gia'
+-- esistente (stesso motivo di sync_checkpoint.alert_count qui sotto) -
+-- necessario per i database creati prima di questa colonna.
+ALTER TABLE telegram_outbox ADD COLUMN IF NOT EXISTS image_url TEXT;
