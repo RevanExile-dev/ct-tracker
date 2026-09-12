@@ -84,5 +84,5 @@ test('the table view mirrors the same resolved price and flag', async ({ page })
   await expect(rowOne).toContainText(/7,00/);
   const rowTwo = page.locator('tr', { hasText: 'Carta Due' });
   await expect(rowTwo).toContainText(/5,00/);
-  await expect(rowTwo).toContainText(/nessuna inserzione in JP/i);
+  await expect(rowTwo).toContainText(/nessuna inserzione in.*JP/i);
 });

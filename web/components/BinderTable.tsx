@@ -133,7 +133,7 @@ export default function BinderTable({
                   )}
                   {languageMatch && languageMatch.cents == null && (
                     <div className="text-[10px] text-ink-faint">
-                      nessuna inserzione in {languageMatch.language.toUpperCase()}
+                      nessuna inserzione in {languageFlag(languageMatch.language)} {languageMatch.language.toUpperCase()}
                     </div>
                   )}
                 </td>
