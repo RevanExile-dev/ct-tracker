@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { CardRow, fetchCards, fetchOwnedLanguagePrices } from "@/lib/db";
 import { formatCents, formatDateLong, languageFlag, languageLabel } from "@/lib/format";
@@ -78,6 +79,23 @@ function SortableHeader({ column, sort, onToggle, children }: {
         <span className="text-[9px]" aria-hidden="true">{active ? (sort.direction === "asc" ? "▲" : "▼") : "⇅"}</span>
       </button>
     </th>
+  );
+}
+
+// Miniatura piccola a sinistra del nome carta nella tabella lotti - solo
+// anteprima visiva (nessun link/click), non la stessa InteractiveCard usata
+// in griglia (CardTile): qui basta un riquadro fisso, niente hover/tilt.
+// Componente a modulo (non dentro LotsPage) per lo stesso motivo di
+// SortableHeader sopra: stato d'errore proprio per riga, ridefinirlo ad
+// ogni render del genitore lo smonterebbe inutilmente.
+function LotCardThumbnail({ src, alt }: { src: string | null; alt: string }) {
+  const [imgError, setImgError] = useState(false);
+  return (
+    <div className="relative w-8 aspect-[5/7] shrink-0 rounded-sm overflow-hidden bg-base-surface2 border border-base-border">
+      {src && !imgError ? (
+        <Image src={src} alt={alt} fill sizes="32px" className="object-cover" onError={() => setImgError(true)} />
+      ) : null}
+    </div>
   );
 }
 
@@ -451,13 +469,18 @@ export default function LotsPage() {
                 return (
                   <tr key={lot.id} className="border-b border-base-border last:border-0">
                     <td className="px-4 py-3">
-                      {card ? (
-                        <Link href={`/card/${card.id}`} className="hover:text-accent-bright transition-colors">{card.name}</Link>
-                      ) : (
-                        <span className="text-ink-faint">Carta #{lot.blueprintId}</span>
-                      )}
-                      {lot.language && <span className="ml-1.5 text-xs text-ink-faint">{languageFlag(lot.language)} {languageLabel(lot.language)}</span>}
-                      {lot.note && <div className="text-xs text-ink-faint mt-0.5">{lot.note}</div>}
+                      <div className="flex items-start gap-2.5">
+                        <LotCardThumbnail src={card?.image_url ?? null} alt={card?.name ?? `Carta #${lot.blueprintId}`} />
+                        <div className="min-w-0">
+                          {card ? (
+                            <Link href={`/card/${card.id}`} className="hover:text-accent-bright transition-colors">{card.name}</Link>
+                          ) : (
+                            <span className="text-ink-faint">Carta #{lot.blueprintId}</span>
+                          )}
+                          {lot.language && <span className="ml-1.5 text-xs text-ink-faint">{languageFlag(lot.language)} {languageLabel(lot.language)}</span>}
+                          {lot.note && <div className="text-xs text-ink-faint mt-0.5">{lot.note}</div>}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3">{lot.quantity}</td>
                     <td className="px-4 py-3">{PROVENANCE_LABELS[lot.provenance]}</td>
