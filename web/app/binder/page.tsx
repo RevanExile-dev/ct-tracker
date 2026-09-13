@@ -240,11 +240,18 @@ function BinderContent() {
   // funzione usata da web/app/lots/page.tsx (web/lib/lotSummary.ts), qui sul
   // sottoinsieme di lotti le cui carte sono nel binder attualmente caricato
   // (cardsById): un lotto di una carta rimossa dal binder ma non ancora
-  // eliminata da /lotti non avrebbe comunque un prezzo da mostrare qui.
+  // eliminata da /lotti non avrebbe comunque un prezzo da mostrare qui - va
+  // quindi FILTRATO fuori dalla somma (rilievo review, verificato reale:
+  // senza questo filter il suo costo entrerebbe comunque in costCents pur
+  // non avendo un valueCents corrispondente, sottostimando la plusvalenza).
   const cardsByIdForLots = useMemo(() => new Map((cards ?? []).map((c) => [c.id, c])), [cards]);
+  const lotsInBinder = useMemo(
+    () => (lots ?? []).filter((lot) => cardsByIdForLots.has(lot.blueprintId)),
+    [lots, cardsByIdForLots]
+  );
   const lotEconomics = useMemo(
-    () => (lots ? summarizeLotEconomics(lots, cardsByIdForLots, languagePrices) : null),
-    [lots, cardsByIdForLots, languagePrices]
+    () => (lots ? summarizeLotEconomics(lotsInBinder, cardsByIdForLots, languagePrices) : null),
+    [lots, lotsInBinder, cardsByIdForLots, languagePrices]
   );
 
   function handlePurchaseSaved() {

@@ -3,12 +3,25 @@ import { auth } from "@/lib/auth";
 import { parseLotImportMarkdown } from "@/lib/lotImport";
 import { applyLotImport } from "@/lib/lotImport.server";
 
-// Tetto applicativo (non tecnico, stesso principio di MAX_LOT_QUANTITY in
-// web/lib/account.server.ts): un file Markdown di carte comprate reale
+// Tetto sulla lunghezza del testo (non tecnico): protegge la CPU della
+// route da un payload enorme incollato per errore prima ancora di provare a
+// parsarlo - generoso per qualunque tabella reale (poche centinaia di righe
+// restano ben sotto questa soglia anche con colonne verbose).
+const MAX_MARKDOWN_LENGTH = 200_000;
+
+// Tetto applicativo (non solo tecnico, stesso principio di MAX_LOT_QUANTITY
+// in web/lib/account.server.ts): un file Markdown di carte comprate reale
 // (vedi il contesto che ha originato questa funzionalita') e' nell'ordine
-// delle decine/poche centinaia di righe - un limite piu' alto protegge solo
-// da un file incollato per errore o enorme, non da un uso legittimo.
-const MAX_IMPORT_ROWS = 500;
+// delle decine/poche centinaia di righe. Abbassato da 500 a 150 dopo una
+// review (rilievo verificato reale): applyLotImport processa le righe in
+// sequenza, non in blocco, e ognuna costa piu' round-trip al DB (matching +
+// upsert binder + upsert lotto) - su un host serverless con timeout la
+// somma puo' superarlo prima di finire. Un'importazione parziale per
+// timeout non e' distruttiva (le righe gia' scritte restano corrette, si
+// puo' rilanciare lo stesso file: le righe gia' importate si limitano ad
+// aggiornarsi di nuovo), ma resta un'esperienza peggiore che va evitata
+// abbassando il limite piuttosto che accettandola.
+const MAX_IMPORT_ROWS = 150;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -19,6 +32,9 @@ export async function POST(req: NextRequest) {
   const markdown = body && typeof body === "object" ? (body as Record<string, unknown>).markdown : undefined;
   if (typeof markdown !== "string" || !markdown.trim()) {
     return NextResponse.json({ error: "Nessun testo Markdown da importare." }, { status: 400 });
+  }
+  if (markdown.length > MAX_MARKDOWN_LENGTH) {
+    return NextResponse.json({ error: `Testo troppo lungo (${markdown.length} caratteri): il limite è ${MAX_MARKDOWN_LENGTH}.` }, { status: 400 });
   }
 
   const { rows, warnings } = parseLotImportMarkdown(markdown);

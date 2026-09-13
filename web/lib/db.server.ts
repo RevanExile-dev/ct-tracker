@@ -581,7 +581,16 @@ export async function findBlueprintMatches(name: string): Promise<BlueprintMatch
   );
   const rows = exact.rows.length > 0
     ? exact.rows
-    : (await pool.query(`SELECT id, name, expansion_name FROM blueprints WHERE name ILIKE $1`, [`%${trimmed}%`])).rows;
+    : (await pool.query(
+        // "\\" e' l'ESCAPE di default di ILIKE in Postgres: un "%" o "_"
+        // letterale nel nome della carta (o incollato per errore nella
+        // tabella Markdown) va escappato PRIMA di avvolgerlo nei wildcard
+        // "%...%" espliciti sotto, altrimenti Postgres lo tratterebbe come
+        // wildcard anche lui invece che come carattere letterale (rilievo
+        // review, verificato: nessun escaping era presente).
+        `SELECT id, name, expansion_name FROM blueprints WHERE name ILIKE $1`,
+        [`%${trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`]
+      )).rows;
   return rows.map((r) => ({ id: r.id, name: r.name, expansionName: r.expansion_name ?? null }));
 }
 
