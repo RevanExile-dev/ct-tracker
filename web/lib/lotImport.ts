@@ -14,6 +14,15 @@ export type ParsedImportRow = {
   set: string | null;
   priceCents: number | null;
   acquiredAt: string | null; // YYYY-MM-DD, o null se assente/non riconosciuta nella riga
+  // Rarita'/tipo dichiarati nella riga (es. "IR", "SIR", "Promo") - colonna
+  // opzionale, non presente in ogni Markdown. Nome+Set spesso non bastano a
+  // scegliere un blueprint unico: il catalogo puo' avere piu' stampe della
+  // stessa carta nello stesso set a rarita' diverse (caso reale riscontrato
+  // dall'utente: "Primarina" in "Pitch Black" esiste sia Holo Rare sia
+  // Illustration Rare) - questo campo serve a restringere ulteriormente in
+  // web/lib/lotImport.server.ts, o quantomeno a mostrarlo nella UI di
+  // risoluzione manuale quando anche questo non basta.
+  type: string | null;
 };
 
 export type ParseLotImportResult = {
@@ -26,6 +35,7 @@ const HEADER_ALIASES = {
   set: ["set", "espansione", "expansion"],
   price: ["prezzo", "price", "costo"],
   date: ["data", "date"],
+  type: ["tipo", "rarità", "rarita", "rarity", "tipologia"],
 } as const;
 
 function normalizeHeaderCell(cell: string): string {
@@ -102,7 +112,7 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
   const lines = text.split(/\r?\n/);
 
   let headerIndex = -1;
-  let nameCol = -1, setCol = -1, priceCol = -1, dateCol = -1;
+  let nameCol = -1, setCol = -1, priceCol = -1, dateCol = -1, typeCol = -1;
 
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].includes("|")) continue;
@@ -120,6 +130,7 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
     setCol = findColumn(cells, HEADER_ALIASES.set);
     priceCol = candidatePrice;
     dateCol = findColumn(cells, HEADER_ALIASES.date);
+    typeCol = findColumn(cells, HEADER_ALIASES.type);
     break;
   }
 
@@ -148,6 +159,7 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
       set: setCol !== -1 ? (cells[setCol]?.trim() || null) : null,
       priceCents,
       acquiredAt: dateCol !== -1 ? parseDateCell(cells[dateCol] ?? "") : null,
+      type: typeCol !== -1 ? (cells[typeCol]?.trim() || null) : null,
     });
   }
 

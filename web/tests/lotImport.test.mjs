@@ -43,11 +43,31 @@ test('parses the exact table format from the user-provided collection Markdown',
   assert.equal(rows[0].set, 'Buio Pesto');
   assert.equal(rows[0].priceCents, 354);
   assert.equal(rows[0].acquiredAt, null);
+  assert.equal(rows[0].type, 'IR');
   assert.equal(rows[1].rowNumber, 2);
   assert.equal(rows[1].name, 'Victini');
   assert.equal(rows[1].set, 'SV Black Star Promos');
   assert.equal(rows[1].priceCents, 396);
   assert.equal(rows[1].acquiredAt, null);
+  assert.equal(rows[1].type, 'Promo');
+});
+
+test('a table with no Tipo/Rarità column leaves type null (never guessed)', () => {
+  const md = `| Carta | Set | Prezzo pagato |
+|-------|-----|----------------|
+| Mew | Crown Zenith | 53.00 |
+`;
+  const { rows } = parseLotImportMarkdown(md);
+  assert.equal(rows[0].type, null);
+});
+
+test('recognizes a "Rarità" header as the Tipo column', () => {
+  const md = `| Carta | Set | Rarità | Prezzo pagato |
+|-------|-----|--------|----------------|
+| Cleffa | Obsidian Flames | SIR | 15.11 |
+`;
+  const { rows } = parseLotImportMarkdown(md);
+  assert.equal(rows[0].type, 'SIR');
 });
 
 test('reads an optional Data column in ISO format', () => {

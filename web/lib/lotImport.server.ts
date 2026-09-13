@@ -20,7 +20,15 @@ export type ImportRowOutcome =
   // rimanda cosi' come sono a POST /api/account/lots/import/resolve una
   // volta che l'utente ha scelto la carta giusta.
   | { status: "unmatched"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null }
-  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; candidates: ImportCandidate[] }
+  // declaredType: il "Tipo"/rarita' dichiarati nella riga cosi' come scritti
+  // dall'utente (es. "IR"), non normalizzati - passato SOLO per farlo
+  // vedere nella UI di risoluzione manuale accanto ai candidati (che
+  // mostrano gia' la propria rarita' reale, vedi ImportCandidate.rarity):
+  // se il matching automatico in narrowByType sotto non e' bastato a
+  // scendere a un solo candidato, l'utente ha comunque modo di confrontare
+  // "quello che ho scritto io" con "quello che il catalogo chiama cosi'"
+  // senza dover indovinare.
+  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; declaredType: string | null; candidates: ImportCandidate[] }
   // Carta trovata SENZA ambiguita' ma gia' presente nel binder: NON scritta
   // in automatico (richiesta esplicita dell'utente dopo aver notato che un
   // ri-import aggiornava silenziosamente prezzo/data di carte gia'
@@ -37,6 +45,38 @@ export type ImportRowOutcome =
 
 function toImportCandidate(c: BlueprintMatchCandidate): ImportCandidate {
   return { id: c.id, name: c.name, expansionName: c.expansionName, rarity: c.rarity, imageUrl: c.imageUrl };
+}
+
+// Sigle di rarita' STANDARD del TCG Pokemon (non nomi di set: queste non
+// cambiano da un catalogo all'altro o da una lingua all'altra come "Buio
+// Pesto" vs "Team Up" - "IR" e' Illustration Rare ovunque si giochi in
+// italiano) - qui SOLO le abbreviazioni realmente viste nei file
+// dell'utente, non un tentativo di coprire ogni rarita' mai esistita nel
+// gioco: un'abbreviazione mancante semplicemente non restringe nulla,
+// non e' un errore. Il valore e' una sottostringa da cercare (case
+// insensitive) nel campo `rarity` del blueprint, stesso principio "contains"
+// gia' usato per il Set.
+const TYPE_ABBREVIATION_HINTS: Record<string, string> = {
+  ir: "illustration rare",
+  sir: "special illustration rare",
+  promo: "promo",
+};
+
+/** Restringe (mai allarga) un elenco di candidati gia' ambiguo usando il
+ * "Tipo" dichiarato nella riga, quando presente e riconosciuto - MAI
+ * usato da solo (un Tipo senza Set che risolve un migliaio di candidati a
+ * "solo quelli Illustration Rare" resterebbe comunque troppo permissivo),
+ * solo come ultimo passo dopo che Nome+Set hanno gia' fatto la loro parte.
+ * Se il tipo non aiuta (nessuna abbreviazione riconosciuta, o non narrows
+ * a un risultato diverso) torna i candidati cosi' come sono - MAI un
+ * elenco vuoto che farebbe sembrare la carta "non trovata" per un dato
+ * opzionale che non siamo riusciti a interpretare. */
+function narrowByDeclaredType(candidates: BlueprintMatchCandidate[], declaredType: string | null): BlueprintMatchCandidate[] {
+  if (!declaredType) return candidates;
+  const hint = TYPE_ABBREVIATION_HINTS[declaredType.trim().toLowerCase()];
+  if (!hint) return candidates;
+  const narrowed = candidates.filter((c) => (c.rarity ?? "").toLowerCase().includes(hint));
+  return narrowed.length > 0 ? narrowed : candidates;
 }
 
 /** Un candidato per riga: esatto quando c'e' un solo risultato dal nome, o
@@ -74,7 +114,16 @@ async function matchRow(row: ParsedImportRow): Promise<
       return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
     }
     if (narrowed.length > 1) {
-      return { ok: false, reason: "ambiguous", candidates: narrowed.map(toImportCandidate) };
+      // Nome+Set non bastano da soli (caso reale: piu' stampe della stessa
+      // carta nello stesso set a rarita' diverse) - un ultimo tentativo con
+      // il "Tipo" dichiarato nella riga, se presente e riconosciuto, prima
+      // di arrendersi all'ambiguita'.
+      const byType = narrowByDeclaredType(narrowed, row.type);
+      if (byType.length === 1) {
+        const only = byType[0];
+        return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
+      }
+      return { ok: false, reason: "ambiguous", candidates: byType.map(toImportCandidate) };
     }
     // narrowed.length === 0: nessuno dei candidati per nome ha un'espansione
     // compatibile con il Set dichiarato nella riga - anche con un solo
@@ -87,7 +136,15 @@ async function matchRow(row: ParsedImportRow): Promise<
     return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
   }
 
-  return { ok: false, reason: "ambiguous", candidates: candidates.map(toImportCandidate) };
+  // Nessun Set nella riga (o Set presente ma senza nessun candidato
+  // compatibile, vedi sopra): un'ultima chance con il Tipo dichiarato prima
+  // di arrendersi, stesso principio del ramo con Set.
+  const byType = narrowByDeclaredType(candidates, row.type);
+  if (byType.length === 1) {
+    const only = byType[0];
+    return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
+  }
+  return { ok: false, reason: "ambiguous", candidates: byType.map(toImportCandidate) };
 }
 
 /** Scrive nel binder+lotti dell'utente un blueprintId gia' certo (o perche'
@@ -126,7 +183,7 @@ export async function applyLotImport(userId: string, rows: ParsedImportRow[]): P
       outcomes.push(
         match.reason === "unmatched"
           ? { status: "unmatched", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt }
-          : { status: "ambiguous", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt, candidates: match.candidates }
+          : { status: "ambiguous", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt, declaredType: row.type, candidates: match.candidates }
       );
       continue;
     }

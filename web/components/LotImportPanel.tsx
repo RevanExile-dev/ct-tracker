@@ -9,7 +9,7 @@ type ImportCandidate = { id: number; name: string; expansionName: string | null;
 type ImportOutcome =
   | { status: "imported"; rowNumber: number; name: string; matchedName: string; matchedExpansion: string | null; created: boolean }
   | { status: "unmatched"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null }
-  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; candidates: ImportCandidate[] }
+  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; declaredType: string | null; candidates: ImportCandidate[] }
   | {
       status: "confirm_update"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null;
       matchedId: number; matchedName: string; matchedExpansion: string | null;
@@ -95,6 +95,7 @@ function ResolveRow({
         Riga {outcome.rowNumber} (&quot;{outcome.name}&quot;)
         {outcome.priceCents !== null && <> — {formatCents(outcome.priceCents)}</>}
         {outcome.status === "unmatched" ? ": nessuna carta trovata con questo nome." : ": più carte corrispondono, scegli quella giusta."}
+        {outcome.status === "ambiguous" && outcome.declaredType && <> Tipo dichiarato: <strong className="text-ink-muted">{outcome.declaredType}</strong>.</>}
       </div>
 
       {outcome.status === "ambiguous" && (
