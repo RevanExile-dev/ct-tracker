@@ -560,7 +560,18 @@ export async function fetchMeta(): Promise<Record<string, string>> {
   return out;
 }
 
-export type BlueprintMatchCandidate = { id: number; name: string; expansionName: string | null };
+export type BlueprintMatchCandidate = {
+  id: number; name: string; expansionName: string | null;
+  rarity: string | null; imageUrl: string | null;
+};
+
+const BLUEPRINT_MATCH_COLUMNS = "id, name, expansion_name, rarity, image_url";
+
+function toBlueprintMatchCandidate(r: {
+  id: number; name: string; expansion_name: string | null; rarity: string | null; image_url: string | null;
+}): BlueprintMatchCandidate {
+  return { id: r.id, name: r.name, expansionName: r.expansion_name ?? null, rarity: r.rarity ?? null, imageUrl: r.image_url ?? null };
+}
 
 /** Candidati per il matching nome->carta dell'import Markdown dei lotti
  * (web/lib/lotImport.server.ts): prima tentativo ESATTO (case-insensitive,
@@ -570,13 +581,19 @@ export type BlueprintMatchCandidate = { id: number; name: string; expansionName:
  * sottostringa). Solo se l'esatto non trova NULLA si allarga a un ILIKE
  * "contiene", piu' permissivo ma anche piu' a rischio di falsi candidati -
  * per questo il chiamante riceve comunque tutti i candidati e decide se
- * l'esito e' un match sicuro o ambiguo, mai deciso qui. */
+ * l'esito e' un match sicuro o ambiguo, mai deciso qui. Include rarity/
+ * image_url (non solo id/nome/espansione): il catalogo tracciato ha spesso
+ * PIU' blueprint con lo stesso nome+espansione (varianti/rarita' diverse
+ * della stessa carta nello stesso set) - senza questi due campi in piu' la
+ * UI di risoluzione manuale (web/components/LotImportPanel.tsx) non
+ * avrebbe modo di mostrare all'utente la differenza tra due candidati
+ * altrimenti identici a video. */
 export async function findBlueprintMatches(name: string): Promise<BlueprintMatchCandidate[]> {
   const pool = getPgPool();
   const trimmed = name.trim();
   if (!trimmed) return [];
   const exact = await pool.query(
-    `SELECT id, name, expansion_name FROM blueprints WHERE lower(trim(name)) = lower($1)`,
+    `SELECT ${BLUEPRINT_MATCH_COLUMNS} FROM blueprints WHERE lower(trim(name)) = lower($1)`,
     [trimmed]
   );
   const rows = exact.rows.length > 0
@@ -588,10 +605,21 @@ export async function findBlueprintMatches(name: string): Promise<BlueprintMatch
         // "%...%" espliciti sotto, altrimenti Postgres lo tratterebbe come
         // wildcard anche lui invece che come carattere letterale (rilievo
         // review, verificato: nessun escaping era presente).
-        `SELECT id, name, expansion_name FROM blueprints WHERE name ILIKE $1`,
+        `SELECT ${BLUEPRINT_MATCH_COLUMNS} FROM blueprints WHERE name ILIKE $1`,
         [`%${trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`]
       )).rows;
-  return rows.map((r) => ({ id: r.id, name: r.name, expansionName: r.expansion_name ?? null }));
+  return rows.map(toBlueprintMatchCandidate);
+}
+
+/** Una carta per id esatto, stessa forma di findBlueprintMatches - usata da
+ * POST /api/account/lots/import/resolve per verificare che l'id scelto
+ * dall'utente nella UI di risoluzione manuale esista davvero nel catalogo,
+ * prima di scriverci un lotto/binder entry (mai fidarsi di un id arrivato
+ * dal client senza controllo). */
+export async function findBlueprintById(id: number): Promise<BlueprintMatchCandidate | null> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(`SELECT ${BLUEPRINT_MATCH_COLUMNS} FROM blueprints WHERE id = $1`, [id]);
+  return rows[0] ? toBlueprintMatchCandidate(rows[0]) : null;
 }
 
 /** Catalogo lean (niente prezzi) per il riconoscimento carte via OCR/hash
