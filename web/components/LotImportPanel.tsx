@@ -13,7 +13,7 @@ type ImportOutcome =
 
 type ImportResponse = { outcomes: ImportOutcome[]; warnings: string[] };
 
-type ResolvedState = Record<number, { matchedName: string; matchedExpansion: string | null } | "error">;
+type ResolvedState = Record<number, { matchedName: string; matchedExpansion: string | null }>;
 
 /** Riga di risoluzione manuale per UNA riga di import rimasta ambigua o
  * senza corrispondenza: per "ambiguous" mostra i candidati gia' trovati dal
@@ -28,7 +28,7 @@ function ResolveRow({
   outcome, onResolved,
 }: {
   outcome: Extract<ImportOutcome, { status: "unmatched" | "ambiguous" }>;
-  onResolved: (rowNumber: number, result: { matchedName: string; matchedExpansion: string | null } | "error") => void;
+  onResolved: (rowNumber: number, result: { matchedName: string; matchedExpansion: string | null }) => void;
 }) {
   const [selectedId, setSelectedId] = useState<number | null>(
     outcome.status === "ambiguous" && outcome.candidates.length > 0 ? outcome.candidates[0].id : null
@@ -62,11 +62,15 @@ function ResolveRow({
         body: JSON.stringify({ blueprintId, costTotalCents: outcome.priceCents, acquiredAt: outcome.acquiredAt }),
       });
       const body = await res.json().catch(() => null);
-      if (!res.ok) { setError(body?.error ?? `Richiesta fallita (${res.status})`); onResolved(outcome.rowNumber, "error"); return; }
+      // Su un fallimento la riga NON va segnata risolta (rilievo review,
+      // verificato reale): il padre la toglierebbe subito dalla vista non
+      // appena resolved[rowNumber] smette di essere undefined, portandosi
+      // via il messaggio d'errore prima ancora che l'utente possa leggerlo
+      // o scegliere un'altra carta - resta visibile finche' non riesce.
+      if (!res.ok) { setError(body?.error ?? `Richiesta fallita (${res.status})`); return; }
       onResolved(outcome.rowNumber, { matchedName: body.matchedName, matchedExpansion: body.matchedExpansion });
     } catch {
       setError("Errore di rete.");
-      onResolved(outcome.rowNumber, "error");
     } finally {
       setSubmitting(false);
     }
@@ -203,7 +207,7 @@ export default function LotImportPanel({ onImported }: { onImported: () => void 
   const importedCount = result?.outcomes.filter((o) => o.status === "imported").length ?? 0;
   const problemOutcomes = (result?.outcomes.filter((o) => o.status !== "imported") ?? []) as Extract<ImportOutcome, { status: "unmatched" | "ambiguous" }>[];
   const unresolvedProblems = problemOutcomes.filter((o) => resolved[o.rowNumber] === undefined);
-  const resolvedCount = Object.values(resolved).filter((v) => v !== "error").length;
+  const resolvedCount = Object.keys(resolved).length;
 
   return (
     <div className="mb-8 rounded-card border border-base-border bg-base-surface/70 p-5">
