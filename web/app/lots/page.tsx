@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { CardRow, fetchCards, fetchOwnedLanguagePrices } from "@/lib/db";
@@ -22,6 +22,63 @@ const PROVENANCE_OPTIONS = Object.entries(PROVENANCE_LABELS) as [LotProvenance, 
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+type SortColumn = "name" | "quantity" | "provenance" | "acquiredAt" | "cost" | "value" | "gain";
+type SortState = { column: SortColumn; direction: "asc" | "desc" } | null;
+
+// Testo -> crescente al primo click (A→Z ha piu' senso "in ordine"); i
+// numeri -> decrescente al primo click, perche' la domanda tipica e' "quali
+// carte mi fanno guadagnare di piu'/costano di piu'", non il contrario -
+// richiesto esplicitamente dall'utente per la plusvalenza.
+const DEFAULT_SORT_DIRECTION: Record<SortColumn, "asc" | "desc"> = {
+  name: "asc", quantity: "desc", provenance: "asc", acquiredAt: "desc", cost: "desc", value: "desc", gain: "desc",
+};
+
+type EnrichedLot = {
+  lot: Lot;
+  card: CardRow | undefined;
+  priceInfo: ReturnType<typeof resolveLotUnitPrice>;
+  lotValue: number | null;
+  gain: number | null;
+};
+
+// Funzione pura di modulo (non dentro LotsPage): non dipende da props/state
+// del componente, solo dagli argomenti e da PROVENANCE_LABELS (costante di
+// modulo) - tenerla qui evita di ricrearla ad ogni render e rende inutile
+// l'eslint-disable altrimenti necessario nelle dipendenze di sortedLots.
+function sortKey(row: EnrichedLot, column: SortColumn): string | number | null {
+  switch (column) {
+    case "name": return row.card?.name ?? `Carta #${row.lot.blueprintId}`;
+    case "quantity": return row.lot.quantity;
+    case "provenance": return PROVENANCE_LABELS[row.lot.provenance];
+    case "acquiredAt": return row.lot.acquiredAt;
+    case "cost": return row.lot.costTotalCents;
+    case "value": return row.lotValue;
+    case "gain": return row.gain;
+  }
+}
+
+// Componente a modulo (non definito dentro LotsPage): un componente
+// ridefinito ad ogni render del genitore smonterebbe e rimonterebbe questi
+// <th> ogni volta, inutile qui dato che bastano props semplici.
+function SortableHeader({ column, sort, onToggle, children }: {
+  column: SortColumn; sort: SortState; onToggle: (column: SortColumn) => void; children: ReactNode;
+}) {
+  const active = sort?.column === column;
+  const ariaSort = active ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
+  return (
+    <th className="p-0" aria-sort={ariaSort}>
+      <button
+        type="button"
+        onClick={() => onToggle(column)}
+        className={`w-full px-4 py-3 flex items-center gap-1 text-left hover:text-ink-primary transition-colors ${active ? "text-ink-primary" : ""}`}
+      >
+        {children}
+        <span className="text-[9px]" aria-hidden="true">{active ? (sort.direction === "asc" ? "▲" : "▼") : "⇅"}</span>
+      </button>
+    </th>
+  );
 }
 
 export default function LotsPage() {
@@ -172,6 +229,51 @@ export default function LotsPage() {
     () => summarizeLotEconomics(lots ?? [], cardsById, languagePrices),
     [lots, cardsById, languagePrices]
   );
+
+  // Costo/valore/plusvalenza calcolati UNA VOLTA per lotto qui (non piu'
+  // inline nel render, vedi tabella sotto): servono sia per disegnare le
+  // righe sia come chiave di ordinamento, e vanno tenuti identici nei due
+  // punti - un solo calcolo evita che i due possano divergere.
+  const enrichedLots = useMemo(() => {
+    return (lots ?? []).map((lot) => {
+      const card = cardsById.get(lot.blueprintId);
+      const priceInfo = resolveLotUnitPrice(lot, card, languagePrices);
+      const lotValue = priceInfo ? priceInfo.cents * lot.quantity : null;
+      const costCurrency = lot.costCurrency ?? "EUR";
+      const gain = lot.costTotalCents !== null && lotValue !== null && costCurrency === (priceInfo?.currency ?? "EUR")
+        ? lotValue - lot.costTotalCents
+        : null;
+      return { lot, card, priceInfo, lotValue, gain };
+    });
+  }, [lots, cardsById, languagePrices]);
+
+  const [sort, setSort] = useState<SortState>(null);
+
+  function toggleSort(column: SortColumn) {
+    setSort((current) =>
+      current?.column === column
+        ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { column, direction: DEFAULT_SORT_DIRECTION[column] }
+    );
+  }
+
+  // Chiave comparabile per colonna - null/undefined SEMPRE in fondo
+  // indipendentemente dalla direzione (un costo/valore/plusvalenza
+  // sconosciuti non sono "il piu' piccolo", sono semplicemente un dato
+  // mancante: metterli in cima ordinando decrescente sarebbe fuorviante).
+  const sortedLots = useMemo(() => {
+    if (!sort) return enrichedLots;
+    const { column, direction } = sort;
+    const withKey = enrichedLots.map((row) => ({ row, key: sortKey(row, column) }));
+    withKey.sort((a, b) => {
+      if (a.key === null && b.key === null) return 0;
+      if (a.key === null) return 1;
+      if (b.key === null) return -1;
+      const cmp = typeof a.key === "string" && typeof b.key === "string" ? a.key.localeCompare(b.key) : a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+      return direction === "asc" ? cmp : -cmp;
+    });
+    return withKey.map((w) => w.row);
+  }, [enrichedLots, sort]);
 
   if (status === "loading") {
     return (
@@ -333,25 +435,19 @@ export default function LotsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-base-border bg-base-surface2 text-left text-[11px] font-mono uppercase tracking-wider text-ink-faint">
-                <th className="px-4 py-3">Carta</th>
-                <th className="px-4 py-3">Qtà</th>
-                <th className="px-4 py-3">Provenienza</th>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Costo</th>
-                <th className="px-4 py-3">Valore attuale</th>
-                <th className="px-4 py-3">Plusvalenza</th>
+                <SortableHeader column="name" sort={sort} onToggle={toggleSort}>Carta</SortableHeader>
+                <SortableHeader column="quantity" sort={sort} onToggle={toggleSort}>Qtà</SortableHeader>
+                <SortableHeader column="provenance" sort={sort} onToggle={toggleSort}>Provenienza</SortableHeader>
+                <SortableHeader column="acquiredAt" sort={sort} onToggle={toggleSort}>Data</SortableHeader>
+                <SortableHeader column="cost" sort={sort} onToggle={toggleSort}>Costo</SortableHeader>
+                <SortableHeader column="value" sort={sort} onToggle={toggleSort}>Valore attuale</SortableHeader>
+                <SortableHeader column="gain" sort={sort} onToggle={toggleSort}>Plusvalenza</SortableHeader>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {lots.map((lot) => {
-                const card = cardsById.get(lot.blueprintId);
-                const priceInfo = resolveLotUnitPrice(lot, card, languagePrices);
-                const lotValue = priceInfo ? priceInfo.cents * lot.quantity : null;
+              {sortedLots.map(({ lot, card, priceInfo, lotValue, gain }) => {
                 const costCurrency = lot.costCurrency ?? "EUR";
-                const gain = lot.costTotalCents !== null && lotValue !== null && costCurrency === (priceInfo?.currency ?? "EUR")
-                  ? lotValue - lot.costTotalCents
-                  : null;
                 return (
                   <tr key={lot.id} className="border-b border-base-border last:border-0">
                     <td className="px-4 py-3">
