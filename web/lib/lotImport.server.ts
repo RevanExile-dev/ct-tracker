@@ -1,6 +1,6 @@
 import "server-only";
 import { type BlueprintMatchCandidate, findBlueprintById, findBlueprintMatches } from "./db.server";
-import { upsertBinderEntry, upsertPurchaseLot } from "./account.server";
+import { getExistingPurchaseInfo, upsertBinderEntry, upsertPurchaseLot } from "./account.server";
 import type { ParsedImportRow } from "./lotImport";
 
 // Applica al DB le righe gia' parsate da web/lib/lotImport.ts (puro,
@@ -20,7 +20,20 @@ export type ImportRowOutcome =
   // rimanda cosi' come sono a POST /api/account/lots/import/resolve una
   // volta che l'utente ha scelto la carta giusta.
   | { status: "unmatched"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null }
-  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; candidates: ImportCandidate[] };
+  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; candidates: ImportCandidate[] }
+  // Carta trovata SENZA ambiguita' ma gia' presente nel binder: NON scritta
+  // in automatico (richiesta esplicita dell'utente dopo aver notato che un
+  // ri-import aggiornava silenziosamente prezzo/data di carte gia'
+  // importate) - matchedId e' pronto per essere rimandato cosi' com'e' a
+  // POST /api/account/lots/import/resolve se l'utente conferma
+  // l'aggiornamento (stesso endpoint usato per le righe ambigue/non
+  // trovate, qui con un solo candidato gia' scelto dal matching). Se
+  // l'utente non conferma, la riga resta cosi' com'era prima dell'import.
+  | {
+      status: "confirm_update"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null;
+      matchedId: number; matchedName: string; matchedExpansion: string | null;
+      existingCostCents: number | null; existingAcquiredAt: string | null;
+    };
 
 function toImportCandidate(c: BlueprintMatchCandidate): ImportCandidate {
   return { id: c.id, name: c.name, expansionName: c.expansionName, rarity: c.rarity, imageUrl: c.imageUrl };
@@ -115,6 +128,19 @@ export async function applyLotImport(userId: string, rows: ParsedImportRow[]): P
           ? { status: "unmatched", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt }
           : { status: "ambiguous", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt, candidates: match.candidates }
       );
+      continue;
+    }
+    // Carta gia' nel binder: non si scrive nulla senza conferma esplicita
+    // (vedi commento su "confirm_update" sopra) - una carta NUOVA per
+    // l'utente invece si aggiunge subito, come sempre.
+    const existing = await getExistingPurchaseInfo(userId, match.id);
+    if (existing.inBinder) {
+      outcomes.push({
+        status: "confirm_update",
+        rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt,
+        matchedId: match.id, matchedName: match.name, matchedExpansion: match.expansionName,
+        existingCostCents: existing.costTotalCents, existingAcquiredAt: existing.acquiredAt,
+      });
       continue;
     }
     const { created } = await writeImportedCard(userId, match.id, { costTotalCents: row.priceCents, acquiredAt: row.acquiredAt });
