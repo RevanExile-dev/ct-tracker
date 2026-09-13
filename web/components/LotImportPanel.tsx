@@ -340,7 +340,10 @@ export default function LotImportPanel({ onImported }: { onImported: () => void 
       {open && (
         <div className="mt-4">
           <p className="text-sm text-ink-muted mb-3">
-            Incolla una tabella Markdown con le carte comprate (colonne <em>Carta</em>, <em>Set</em>, <em>Prezzo pagato</em> e opzionalmente <em>Data</em>). Le carte non ancora nel binder vengono aggiunte subito; per quelle già presenti ti chiediamo conferma prima di aggiornare prezzo/data. Una riga senza data non tocca una data già registrata. Se il nome del Set non corrisponde a quello inglese usato dal catalogo, la riga non viene indovinata: comparirà qui sotto da risolvere a mano.
+            Incolla una tabella Markdown con le carte comprate (colonne <em>Carta</em>, <em>Set</em>, <em>Prezzo pagato</em> e opzionalmente <em>Tipo</em> e <em>Data</em>). Le carte non ancora nel binder vengono aggiunte subito; per quelle già presenti ti chiediamo conferma prima di aggiornare prezzo/data. Una riga senza data non tocca una data già registrata. Se il nome del Set non corrisponde a quello inglese usato dal catalogo, la riga non viene indovinata: comparirà qui sotto da risolvere a mano.
+          </p>
+          <p className="text-xs text-ink-faint mb-3">
+            Per il riconoscimento automatico: nome della carta in inglese esatto (aggiungi &quot;ex&quot;/&quot;V&quot;/&quot;VSTAR&quot; solo se la stampa li ha davvero nel nome), Set in inglese come nel gioco (va bene aggiungere altro testo dopo). Nella colonna Tipo sono riconosciute solo <code>IR</code>, <code>SIR</code>, <code>Promo</code> e <code>IR TG</code>: qualunque altro valore (es. &quot;V&quot;, &quot;Trainer&quot;) viene ignorato senza restringere nulla. Se non sei sicuro della rarità esatta, lascia Tipo vuoto: si risolve a mano con l&apos;immagine, meglio che un valore sbagliato.
           </p>
           <textarea
             value={text}

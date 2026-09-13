@@ -9,14 +9,25 @@ import ts from 'typescript';
 // web/lib/lotImport.ts) ed esegue il risultato in un vm context isolato,
 // invece di passare da un intero setup Next.js/ts-node solo per un test
 // unitario.
-function loadLotImportModule() {
+function transpileToModule(relativePath) {
   const exports = {};
-  const code = ts.transpileModule(readFileSync(new URL('../lib/lotImport.ts', import.meta.url), 'utf8'), {
+  const code = ts.transpileModule(readFileSync(new URL(relativePath, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
-  const context = { exports, module: { exports } };
+  // require() minimo: lotImport.ts importa web/lib/rarity.ts (anch'esso
+  // puro, nessun import a sua volta) - basta risolvere quell'unico
+  // percorso relativo, non un vero sistema di moduli.
+  function localRequire(spec) {
+    if (spec === './rarity') return transpileToModule('../lib/rarity.ts');
+    throw new Error(`require non gestito nel test: ${spec}`);
+  }
+  const context = { exports, module: { exports }, require: localRequire };
   vm.runInNewContext(code, context);
   return exports;
+}
+
+function loadLotImportModule() {
+  return transpileToModule('../lib/lotImport.ts');
 }
 
 const { parseLotImportMarkdown, narrowByDeclaredType } = loadLotImportModule();
@@ -189,4 +200,34 @@ test('narrowByDeclaredType is case-insensitive and trims whitespace on both the 
   const candidates = [{ id: 1, rarity: '  Illustration Rare  ' }];
   const narrowed = narrowByDeclaredType(candidates, ' ir ');
   assert.equal(narrowed.length, 1);
+});
+
+// "IR TG" (Illustration Rare della Trainer Gallery): trovato con una
+// simulazione di import reale contro il catalogo Postgres (2026-09-13,
+// vedi docs/lot_import_markdown_format_2026-09-13.md) - una riga con
+// questo Tipo restava ambigua (Common vs Illustration Rare dello stesso
+// set) perche' "ir tg" non era tra le abbreviazioni riconosciute.
+test('narrowByDeclaredType recognizes "IR TG" as an Illustration Rare hint (Trainer Gallery cards share the plain IR rarity in this catalog)', () => {
+  const candidates = [
+    { id: 1, rarity: 'Common' },
+    { id: 2, rarity: 'Illustration Rare' },
+  ];
+  const narrowed = narrowByDeclaredType(candidates, 'IR TG');
+  assert.equal(narrowed.length, 1);
+  assert.equal(narrowed[0].id, 2);
+});
+
+// Il catalogo reale ha rarity "Special Illustration" (Dark Phantasma) e
+// "Special Illustraion Rare" - refuso, Fusion Strike - invece del canonico
+// "Special Illustration Rare" per alcuni set (vedi web/lib/rarity.ts,
+// RARITY_ALIASES) - senza passare da normalizeRarity, "SIR" non le
+// avrebbe mai riconosciute.
+test('narrowByDeclaredType matches "SIR" against a catalog rarity alias ("Special Illustraion Rare" typo), not just the canonical spelling', () => {
+  const candidates = [
+    { id: 1, rarity: 'Common' },
+    { id: 2, rarity: 'Special Illustraion Rare' },
+  ];
+  const narrowed = narrowByDeclaredType(candidates, 'SIR');
+  assert.equal(narrowed.length, 1);
+  assert.equal(narrowed[0].id, 2);
 });
