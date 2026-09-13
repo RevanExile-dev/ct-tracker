@@ -372,6 +372,38 @@ export async function updateLot(
   }
 }
 
+/** Stato attuale di una carta ai fini dell'import Markdown (web/lib/lotImport.server.ts):
+ * e' gia' nel binder dell'utente? Se si', quale costo/data ha gia' registrato
+ * sul suo lotto "acquisto" (se esiste)? Usata per decidere se una riga
+ * dell'import puo' scrivere subito (carta nuova) o deve prima chiedere
+ * conferma all'utente (carta gia' presente: l'import non deve sovrascrivere
+ * un prezzo/data gia' noti senza che l'utente lo scelga esplicitamente -
+ * richiesta esplicita dell'utente dopo aver notato che un ri-import
+ * aggiornava le carte gia' importate senza avvisare). Le due query girano
+ * in parallelo (Promise.all): sono indipendenti, nessun bisogno di una
+ * transazione ne' di una singola query con LATERAL solo per risparmiare un
+ * round-trip. */
+export async function getExistingPurchaseInfo(
+  userId: string,
+  blueprintId: number
+): Promise<{ inBinder: boolean; costTotalCents: number | null; acquiredAt: string | null }> {
+  const pool = getPgPool();
+  const [binderResult, lotResult] = await Promise.all([
+    pool.query("SELECT 1 FROM binder_cards WHERE user_id = $1 AND blueprint_id = $2", [userId, blueprintId]),
+    pool.query(
+      `SELECT cost_total_cents, acquired_at::text AS acquired_at FROM binder_lots
+       WHERE user_id = $1 AND blueprint_id = $2 AND provenance = 'acquisto'
+       ORDER BY created_at ASC LIMIT 1`,
+      [userId, blueprintId]
+    ),
+  ]);
+  return {
+    inBinder: binderResult.rows.length > 0,
+    costTotalCents: lotResult.rows[0]?.cost_total_cents ?? null,
+    acquiredAt: lotResult.rows[0]?.acquired_at ?? null,
+  };
+}
+
 /** Crea o aggiorna il lotto "acquisto" di una carta per l'import Markdown
  * (web/lib/lotImport.server.ts, POST /api/account/lots/import): se esiste
  * gia' un lotto con provenance "acquisto" per questa carta (il piu' vecchio,
