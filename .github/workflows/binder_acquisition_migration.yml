@@ -1,0 +1,28 @@
+name: Binder - data di acquisizione opzionale
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - web/db/migrations/20260913_optional_acquisition_date.sql
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Consenti date mancanti senza modificare quelle registrate
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          PGOPTIONS: -c lock_timeout=10s -c statement_timeout=30s
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f web/db/migrations/20260913_optional_acquisition_date.sql
