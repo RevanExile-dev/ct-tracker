@@ -14,6 +14,15 @@ export type ParsedImportRow = {
   set: string | null;
   priceCents: number | null;
   acquiredAt: string | null; // YYYY-MM-DD, o null se assente/non riconosciuta nella riga
+  // Rarita'/tipo dichiarati nella riga (es. "IR", "SIR", "Promo") - colonna
+  // opzionale, non presente in ogni Markdown. Nome+Set spesso non bastano a
+  // scegliere un blueprint unico: il catalogo puo' avere piu' stampe della
+  // stessa carta nello stesso set a rarita' diverse (caso reale riscontrato
+  // dall'utente: "Primarina" in "Pitch Black" esiste sia Holo Rare sia
+  // Illustration Rare) - questo campo serve a restringere ulteriormente in
+  // web/lib/lotImport.server.ts, o quantomeno a mostrarlo nella UI di
+  // risoluzione manuale quando anche questo non basta.
+  type: string | null;
 };
 
 export type ParseLotImportResult = {
@@ -26,6 +35,7 @@ const HEADER_ALIASES = {
   set: ["set", "espansione", "expansion"],
   price: ["prezzo", "price", "costo"],
   date: ["data", "date"],
+  type: ["tipo", "rarità", "rarita", "rarity", "tipologia"],
 } as const;
 
 function normalizeHeaderCell(cell: string): string {
@@ -102,7 +112,7 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
   const lines = text.split(/\r?\n/);
 
   let headerIndex = -1;
-  let nameCol = -1, setCol = -1, priceCol = -1, dateCol = -1;
+  let nameCol = -1, setCol = -1, priceCol = -1, dateCol = -1, typeCol = -1;
 
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].includes("|")) continue;
@@ -120,6 +130,7 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
     setCol = findColumn(cells, HEADER_ALIASES.set);
     priceCol = candidatePrice;
     dateCol = findColumn(cells, HEADER_ALIASES.date);
+    typeCol = findColumn(cells, HEADER_ALIASES.type);
     break;
   }
 
@@ -148,9 +159,52 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
       set: setCol !== -1 ? (cells[setCol]?.trim() || null) : null,
       priceCents,
       acquiredAt: dateCol !== -1 ? parseDateCell(cells[dateCol] ?? "") : null,
+      type: typeCol !== -1 ? (cells[typeCol]?.trim() || null) : null,
     });
   }
 
   if (rows.length === 0) warnings.push("La tabella non contiene righe di dati.");
   return { rows, warnings };
+}
+
+// Sigle di rarita' STANDARD del TCG Pokemon (non nomi di set: queste non
+// cambiano da un catalogo all'altro o da una lingua all'altra come "Buio
+// Pesto" vs "Team Up" - "IR" e' Illustration Rare ovunque si giochi in
+// italiano) - qui SOLO le abbreviazioni realmente viste nei file
+// dell'utente, non un tentativo di coprire ogni rarita' mai esistita nel
+// gioco: un'abbreviazione mancante semplicemente non restringe nulla, non
+// e' un errore. Il valore e' il nome COMPLETO da confrontare (case
+// insensitive, dopo trim) contro il campo `rarity` del blueprint.
+const TYPE_ABBREVIATION_HINTS: Record<string, string> = {
+  ir: "illustration rare",
+  sir: "special illustration rare",
+  promo: "promo",
+};
+
+/** Restringe (mai allarga) un elenco di candidati gia' ambiguo usando il
+ * "Tipo" dichiarato nella riga, quando presente e riconosciuto - MAI usato
+ * da solo (un Tipo senza Set che restringe mille candidati a "solo quelli
+ * Illustration Rare" resterebbe comunque troppo permissivo), solo come
+ * ultimo passo dopo che Nome+Set hanno gia' fatto la loro parte (vedi
+ * web/lib/lotImport.server.ts, matchRow). Se il tipo non aiuta (nessuna
+ * abbreviazione riconosciuta, o non narrows a un risultato diverso) torna
+ * i candidati cosi' come sono - MAI un elenco vuoto che farebbe sembrare
+ * la carta "non trovata" per un dato opzionale che non siamo riusciti a
+ * interpretare.
+ *
+ * Generica su T (non sul tipo concreto BlueprintMatchCandidate, che vive
+ * lato server in db.server.ts) cosi' resta testabile qui, in questo
+ * modulo puro senza dipendenze da DB - vedi web/tests/lotImport.test.mjs. */
+export function narrowByDeclaredType<T extends { rarity: string | null }>(candidates: T[], declaredType: string | null): T[] {
+  if (!declaredType) return candidates;
+  const hint = TYPE_ABBREVIATION_HINTS[declaredType.trim().toLowerCase()];
+  if (!hint) return candidates;
+  // Confronto ESATTO, non ".includes()": "special illustration rare".includes(
+  // "illustration rare") e' true in JS, quindi un ".includes()" qui
+  // avrebbe tenuto la SIR anche quando l'utente ha scritto "IR" - le due
+  // rarita' sono diverse, non una sottostringa dell'altra, vanno
+  // confrontate carattere per carattere (bug reale di una versione
+  // precedente, trovato in review).
+  const narrowed = candidates.filter((c) => (c.rarity ?? "").trim().toLowerCase() === hint);
+  return narrowed.length > 0 ? narrowed : candidates;
 }

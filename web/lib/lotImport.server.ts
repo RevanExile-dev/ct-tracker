@@ -1,7 +1,7 @@
 import "server-only";
 import { type BlueprintMatchCandidate, findBlueprintById, findBlueprintMatches } from "./db.server";
 import { getExistingPurchaseInfo, upsertBinderEntry, upsertPurchaseLot } from "./account.server";
-import type { ParsedImportRow } from "./lotImport";
+import { narrowByDeclaredType, type ParsedImportRow } from "./lotImport";
 
 // Applica al DB le righe gia' parsate da web/lib/lotImport.ts (puro,
 // senza DB) - separato in un modulo a parte perche' qui serve sia il
@@ -20,7 +20,15 @@ export type ImportRowOutcome =
   // rimanda cosi' come sono a POST /api/account/lots/import/resolve una
   // volta che l'utente ha scelto la carta giusta.
   | { status: "unmatched"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null }
-  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; candidates: ImportCandidate[] }
+  // declaredType: il "Tipo"/rarita' dichiarati nella riga cosi' come scritti
+  // dall'utente (es. "IR"), non normalizzati - passato SOLO per farlo
+  // vedere nella UI di risoluzione manuale accanto ai candidati (che
+  // mostrano gia' la propria rarita' reale, vedi ImportCandidate.rarity):
+  // se il matching automatico in narrowByType sotto non e' bastato a
+  // scendere a un solo candidato, l'utente ha comunque modo di confrontare
+  // "quello che ho scritto io" con "quello che il catalogo chiama cosi'"
+  // senza dover indovinare.
+  | { status: "ambiguous"; rowNumber: number; name: string; priceCents: number | null; acquiredAt: string | null; declaredType: string | null; candidates: ImportCandidate[] }
   // Carta trovata SENZA ambiguita' ma gia' presente nel binder: NON scritta
   // in automatico (richiesta esplicita dell'utente dopo aver notato che un
   // ri-import aggiornava silenziosamente prezzo/data di carte gia'
@@ -69,25 +77,43 @@ async function matchRow(row: ParsedImportRow): Promise<
       const expLower = (c.expansionName ?? "").toLowerCase();
       return expLower.includes(setLower) || setLower.includes(expLower);
     });
-    if (narrowed.length === 1) {
-      const only = narrowed[0];
+    // Un Set DICHIARATO che non trova nessun candidato compatibile resta
+    // qui dentro (rilievo review, verificato reale: la versione precedente
+    // cadeva fuori da questo blocco quando narrowed.length === 0, finendo
+    // nel fallback "nessun Set" sotto - che applica narrowByDeclaredType
+    // all'INTERO elenco candidates, ignorando che l'utente aveva
+    // esplicitamente scritto un Set che non ha trovato riscontro. Un Tipo
+    // che per puro caso narrows a un solo risultato in tutto il catalogo
+    // avrebbe cosi' scavalcato un Set sbagliato/typo, scrivendo la carta
+    // di un set diverso da quello dichiarato). Con narrowed.length === 0
+    // l'unica cosa sicura e' l'ambiguita' sui candidati per nome, mai un
+    // altro tentativo di narrowing che dimenticherebbe il Set indicato.
+    const byType = narrowByDeclaredType(narrowed, row.type);
+    if (byType.length === 1) {
+      const only = byType[0];
       return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
     }
-    if (narrowed.length > 1) {
-      return { ok: false, reason: "ambiguous", candidates: narrowed.map(toImportCandidate) };
-    }
-    // narrowed.length === 0: nessuno dei candidati per nome ha un'espansione
-    // compatibile con il Set dichiarato nella riga - anche con un solo
-    // candidato per nome, NON e' un match sicuro (e' proprio il caso del
-    // commento sopra), quindi cade nel ramo ambiguo qui sotto elencando
-    // comunque il/i candidato/i trovato/i per nome, cosi' il report mostra
-    // perche' non e' bastato.
-  } else if (candidates.length === 1) {
+    // byType e' narrowed stesso se il Tipo non ha aiutato (narrowByDeclaredType
+    // non torna mai piu' elementi di quanti gliene sono passati) - se
+    // narrowed era vuoto, resta vuoto: mostriamo comunque i candidati per
+    // nome (non narrowed) nel report, cosi' l'utente vede perche' il Set
+    // dichiarato non e' bastato.
+    return { ok: false, reason: "ambiguous", candidates: (narrowed.length > 0 ? byType : candidates).map(toImportCandidate) };
+  }
+
+  if (candidates.length === 1) {
     const only = candidates[0];
     return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
   }
 
-  return { ok: false, reason: "ambiguous", candidates: candidates.map(toImportCandidate) };
+  // Nessun Set nella riga: un'ultima chance con il Tipo dichiarato prima di
+  // arrendersi, stesso principio del ramo con Set.
+  const byType = narrowByDeclaredType(candidates, row.type);
+  if (byType.length === 1) {
+    const only = byType[0];
+    return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
+  }
+  return { ok: false, reason: "ambiguous", candidates: byType.map(toImportCandidate) };
 }
 
 /** Scrive nel binder+lotti dell'utente un blueprintId gia' certo (o perche'
@@ -126,7 +152,7 @@ export async function applyLotImport(userId: string, rows: ParsedImportRow[]): P
       outcomes.push(
         match.reason === "unmatched"
           ? { status: "unmatched", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt }
-          : { status: "ambiguous", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt, candidates: match.candidates }
+          : { status: "ambiguous", rowNumber: row.rowNumber, name: row.name, priceCents: row.priceCents, acquiredAt: row.acquiredAt, declaredType: row.type, candidates: match.candidates }
       );
       continue;
     }
