@@ -19,7 +19,7 @@ function loadLotImportModule() {
   return exports;
 }
 
-const { parseLotImportMarkdown } = loadLotImportModule();
+const { parseLotImportMarkdown, narrowByDeclaredType } = loadLotImportModule();
 
 test('parses the exact table format from the user-provided collection Markdown', () => {
   const md = `# Contesto
@@ -135,4 +135,58 @@ Fine della tabella, testo normale qui sotto con | anche pipe | dentro.
   const { rows } = parseLotImportMarkdown(md);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].name, 'Eevee');
+});
+
+// narrowByDeclaredType: la review su questa funzionalita' ha trovato un bug
+// reale in una versione precedente (".includes()" invece di un confronto
+// esatto, che faceva scambiare una Illustration Rare per una Special
+// Illustration Rare perche' la seconda stringa CONTIENE la prima) - questi
+// test coprono esattamente quel caso, non solo il percorso felice.
+
+test('narrowByDeclaredType picks the exact rarity when "IR" and "SIR" are both candidates (real bug: .includes() confused the two)', () => {
+  const candidates = [
+    { id: 1, rarity: 'Holo Rare' },
+    { id: 2, rarity: 'Illustration Rare' },
+    { id: 3, rarity: 'Special Illustration Rare' },
+  ];
+  const narrowed = narrowByDeclaredType(candidates, 'IR');
+  assert.equal(narrowed.length, 1);
+  assert.equal(narrowed[0].id, 2);
+});
+
+test('narrowByDeclaredType with "SIR" never picks the plain Illustration Rare candidate', () => {
+  const candidates = [
+    { id: 2, rarity: 'Illustration Rare' },
+    { id: 3, rarity: 'Special Illustration Rare' },
+  ];
+  const narrowed = narrowByDeclaredType(candidates, 'SIR');
+  assert.equal(narrowed.length, 1);
+  assert.equal(narrowed[0].id, 3);
+});
+
+test('narrowByDeclaredType returns candidates unchanged when the declared type has no matching rarity (never an empty result)', () => {
+  const candidates = [
+    { id: 1, rarity: 'Common' },
+    { id: 2, rarity: 'Uncommon' },
+  ];
+  const narrowed = narrowByDeclaredType(candidates, 'IR');
+  assert.equal(narrowed.length, 2);
+});
+
+test('narrowByDeclaredType returns candidates unchanged for an unrecognized abbreviation', () => {
+  const candidates = [{ id: 1, rarity: 'Illustration Rare' }, { id: 2, rarity: 'Common' }];
+  const narrowed = narrowByDeclaredType(candidates, 'XYZ');
+  assert.equal(narrowed.length, 2);
+});
+
+test('narrowByDeclaredType returns candidates unchanged when declaredType is null', () => {
+  const candidates = [{ id: 1, rarity: 'Illustration Rare' }];
+  const narrowed = narrowByDeclaredType(candidates, null);
+  assert.equal(narrowed.length, 1);
+});
+
+test('narrowByDeclaredType is case-insensitive and trims whitespace on both the declared type and the rarity', () => {
+  const candidates = [{ id: 1, rarity: '  Illustration Rare  ' }];
+  const narrowed = narrowByDeclaredType(candidates, ' ir ');
+  assert.equal(narrowed.length, 1);
 });

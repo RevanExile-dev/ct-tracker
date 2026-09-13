@@ -166,3 +166,45 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
   if (rows.length === 0) warnings.push("La tabella non contiene righe di dati.");
   return { rows, warnings };
 }
+
+// Sigle di rarita' STANDARD del TCG Pokemon (non nomi di set: queste non
+// cambiano da un catalogo all'altro o da una lingua all'altra come "Buio
+// Pesto" vs "Team Up" - "IR" e' Illustration Rare ovunque si giochi in
+// italiano) - qui SOLO le abbreviazioni realmente viste nei file
+// dell'utente, non un tentativo di coprire ogni rarita' mai esistita nel
+// gioco: un'abbreviazione mancante semplicemente non restringe nulla, non
+// e' un errore. Il valore e' il nome COMPLETO da confrontare (case
+// insensitive, dopo trim) contro il campo `rarity` del blueprint.
+const TYPE_ABBREVIATION_HINTS: Record<string, string> = {
+  ir: "illustration rare",
+  sir: "special illustration rare",
+  promo: "promo",
+};
+
+/** Restringe (mai allarga) un elenco di candidati gia' ambiguo usando il
+ * "Tipo" dichiarato nella riga, quando presente e riconosciuto - MAI usato
+ * da solo (un Tipo senza Set che restringe mille candidati a "solo quelli
+ * Illustration Rare" resterebbe comunque troppo permissivo), solo come
+ * ultimo passo dopo che Nome+Set hanno gia' fatto la loro parte (vedi
+ * web/lib/lotImport.server.ts, matchRow). Se il tipo non aiuta (nessuna
+ * abbreviazione riconosciuta, o non narrows a un risultato diverso) torna
+ * i candidati cosi' come sono - MAI un elenco vuoto che farebbe sembrare
+ * la carta "non trovata" per un dato opzionale che non siamo riusciti a
+ * interpretare.
+ *
+ * Generica su T (non sul tipo concreto BlueprintMatchCandidate, che vive
+ * lato server in db.server.ts) cosi' resta testabile qui, in questo
+ * modulo puro senza dipendenze da DB - vedi web/tests/lotImport.test.mjs. */
+export function narrowByDeclaredType<T extends { rarity: string | null }>(candidates: T[], declaredType: string | null): T[] {
+  if (!declaredType) return candidates;
+  const hint = TYPE_ABBREVIATION_HINTS[declaredType.trim().toLowerCase()];
+  if (!hint) return candidates;
+  // Confronto ESATTO, non ".includes()": "special illustration rare".includes(
+  // "illustration rare") e' true in JS, quindi un ".includes()" qui
+  // avrebbe tenuto la SIR anche quando l'utente ha scritto "IR" - le due
+  // rarita' sono diverse, non una sottostringa dell'altra, vanno
+  // confrontate carattere per carattere (bug reale di una versione
+  // precedente, trovato in review).
+  const narrowed = candidates.filter((c) => (c.rarity ?? "").trim().toLowerCase() === hint);
+  return narrowed.length > 0 ? narrowed : candidates;
+}

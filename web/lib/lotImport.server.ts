@@ -1,7 +1,7 @@
 import "server-only";
 import { type BlueprintMatchCandidate, findBlueprintById, findBlueprintMatches } from "./db.server";
 import { getExistingPurchaseInfo, upsertBinderEntry, upsertPurchaseLot } from "./account.server";
-import type { ParsedImportRow } from "./lotImport";
+import { narrowByDeclaredType, type ParsedImportRow } from "./lotImport";
 
 // Applica al DB le righe gia' parsate da web/lib/lotImport.ts (puro,
 // senza DB) - separato in un modulo a parte perche' qui serve sia il
@@ -47,38 +47,6 @@ function toImportCandidate(c: BlueprintMatchCandidate): ImportCandidate {
   return { id: c.id, name: c.name, expansionName: c.expansionName, rarity: c.rarity, imageUrl: c.imageUrl };
 }
 
-// Sigle di rarita' STANDARD del TCG Pokemon (non nomi di set: queste non
-// cambiano da un catalogo all'altro o da una lingua all'altra come "Buio
-// Pesto" vs "Team Up" - "IR" e' Illustration Rare ovunque si giochi in
-// italiano) - qui SOLO le abbreviazioni realmente viste nei file
-// dell'utente, non un tentativo di coprire ogni rarita' mai esistita nel
-// gioco: un'abbreviazione mancante semplicemente non restringe nulla,
-// non e' un errore. Il valore e' una sottostringa da cercare (case
-// insensitive) nel campo `rarity` del blueprint, stesso principio "contains"
-// gia' usato per il Set.
-const TYPE_ABBREVIATION_HINTS: Record<string, string> = {
-  ir: "illustration rare",
-  sir: "special illustration rare",
-  promo: "promo",
-};
-
-/** Restringe (mai allarga) un elenco di candidati gia' ambiguo usando il
- * "Tipo" dichiarato nella riga, quando presente e riconosciuto - MAI
- * usato da solo (un Tipo senza Set che risolve un migliaio di candidati a
- * "solo quelli Illustration Rare" resterebbe comunque troppo permissivo),
- * solo come ultimo passo dopo che Nome+Set hanno gia' fatto la loro parte.
- * Se il tipo non aiuta (nessuna abbreviazione riconosciuta, o non narrows
- * a un risultato diverso) torna i candidati cosi' come sono - MAI un
- * elenco vuoto che farebbe sembrare la carta "non trovata" per un dato
- * opzionale che non siamo riusciti a interpretare. */
-function narrowByDeclaredType(candidates: BlueprintMatchCandidate[], declaredType: string | null): BlueprintMatchCandidate[] {
-  if (!declaredType) return candidates;
-  const hint = TYPE_ABBREVIATION_HINTS[declaredType.trim().toLowerCase()];
-  if (!hint) return candidates;
-  const narrowed = candidates.filter((c) => (c.rarity ?? "").toLowerCase().includes(hint));
-  return narrowed.length > 0 ? narrowed : candidates;
-}
-
 /** Un candidato per riga: esatto quando c'e' un solo risultato dal nome, o
  * disambiguato tramite la colonna "Set" della tabella (se presente) - mai un
  * "prendo il primo" silenzioso, coerente con la scelta dell'utente per
@@ -109,36 +77,37 @@ async function matchRow(row: ParsedImportRow): Promise<
       const expLower = (c.expansionName ?? "").toLowerCase();
       return expLower.includes(setLower) || setLower.includes(expLower);
     });
-    if (narrowed.length === 1) {
-      const only = narrowed[0];
+    // Un Set DICHIARATO che non trova nessun candidato compatibile resta
+    // qui dentro (rilievo review, verificato reale: la versione precedente
+    // cadeva fuori da questo blocco quando narrowed.length === 0, finendo
+    // nel fallback "nessun Set" sotto - che applica narrowByDeclaredType
+    // all'INTERO elenco candidates, ignorando che l'utente aveva
+    // esplicitamente scritto un Set che non ha trovato riscontro. Un Tipo
+    // che per puro caso narrows a un solo risultato in tutto il catalogo
+    // avrebbe cosi' scavalcato un Set sbagliato/typo, scrivendo la carta
+    // di un set diverso da quello dichiarato). Con narrowed.length === 0
+    // l'unica cosa sicura e' l'ambiguita' sui candidati per nome, mai un
+    // altro tentativo di narrowing che dimenticherebbe il Set indicato.
+    const byType = narrowByDeclaredType(narrowed, row.type);
+    if (byType.length === 1) {
+      const only = byType[0];
       return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
     }
-    if (narrowed.length > 1) {
-      // Nome+Set non bastano da soli (caso reale: piu' stampe della stessa
-      // carta nello stesso set a rarita' diverse) - un ultimo tentativo con
-      // il "Tipo" dichiarato nella riga, se presente e riconosciuto, prima
-      // di arrendersi all'ambiguita'.
-      const byType = narrowByDeclaredType(narrowed, row.type);
-      if (byType.length === 1) {
-        const only = byType[0];
-        return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
-      }
-      return { ok: false, reason: "ambiguous", candidates: byType.map(toImportCandidate) };
-    }
-    // narrowed.length === 0: nessuno dei candidati per nome ha un'espansione
-    // compatibile con il Set dichiarato nella riga - anche con un solo
-    // candidato per nome, NON e' un match sicuro (e' proprio il caso del
-    // commento sopra), quindi cade nel ramo ambiguo qui sotto elencando
-    // comunque il/i candidato/i trovato/i per nome, cosi' il report mostra
-    // perche' non e' bastato.
-  } else if (candidates.length === 1) {
+    // byType e' narrowed stesso se il Tipo non ha aiutato (narrowByDeclaredType
+    // non torna mai piu' elementi di quanti gliene sono passati) - se
+    // narrowed era vuoto, resta vuoto: mostriamo comunque i candidati per
+    // nome (non narrowed) nel report, cosi' l'utente vede perche' il Set
+    // dichiarato non e' bastato.
+    return { ok: false, reason: "ambiguous", candidates: (narrowed.length > 0 ? byType : candidates).map(toImportCandidate) };
+  }
+
+  if (candidates.length === 1) {
     const only = candidates[0];
     return { ok: true, id: only.id, name: only.name, expansionName: only.expansionName };
   }
 
-  // Nessun Set nella riga (o Set presente ma senza nessun candidato
-  // compatibile, vedi sopra): un'ultima chance con il Tipo dichiarato prima
-  // di arrendersi, stesso principio del ramo con Set.
+  // Nessun Set nella riga: un'ultima chance con il Tipo dichiarato prima di
+  // arrendersi, stesso principio del ramo con Set.
   const byType = narrowByDeclaredType(candidates, row.type);
   if (byType.length === 1) {
     const only = byType[0];
