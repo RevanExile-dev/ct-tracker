@@ -88,12 +88,15 @@ function SortableHeader({ column, sort, onToggle, children }: {
 // Componente a modulo (non dentro LotsPage) per lo stesso motivo di
 // SortableHeader sopra: stato d'errore proprio per riga, ridefinirlo ad
 // ogni render del genitore lo smonterebbe inutilmente.
-function LotCardThumbnail({ src, alt }: { src: string | null; alt: string }) {
+function LotCardThumbnail({ src }: { src: string | null }) {
   const [imgError, setImgError] = useState(false);
   return (
-    <div className="relative w-8 aspect-[5/7] shrink-0 rounded-sm overflow-hidden bg-base-surface2 border border-base-border">
+    // Puramente decorativa: il nome della carta e' gia' un link testuale
+    // subito a destra, quindi niente alt/aria qui evita che uno screen
+    // reader annunci la stessa informazione due volte.
+    <div aria-hidden="true" className="relative w-8 aspect-[5/7] shrink-0 rounded-sm overflow-hidden bg-base-surface2 border border-base-border">
       {src && !imgError ? (
-        <Image src={src} alt={alt} fill sizes="32px" className="object-cover" onError={() => setImgError(true)} />
+        <Image src={src} alt="" fill sizes="32px" className="object-cover" onError={() => setImgError(true)} />
       ) : null}
     </div>
   );
@@ -470,7 +473,11 @@ export default function LotsPage() {
                   <tr key={lot.id} className="border-b border-base-border last:border-0">
                     <td className="px-4 py-3">
                       <div className="flex items-start gap-2.5">
-                        <LotCardThumbnail src={card?.image_url ?? null} alt={card?.name ?? `Carta #${lot.blueprintId}`} />
+                        {/* key=src: se la src cambia sotto lo stesso lotto (raro, ma
+                            possibile dopo un reload dei dati), rimonta il componente
+                            invece di lasciare un imgError rimasto true dalla src
+                            precedente a nascondere un'immagine nuova e valida. */}
+                        <LotCardThumbnail key={card?.image_url ?? "none"} src={card?.image_url ?? null} />
                         <div className="min-w-0">
                           {card ? (
                             <Link href={`/card/${card.id}`} className="hover:text-accent-bright transition-colors">{card.name}</Link>
