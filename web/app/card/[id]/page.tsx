@@ -10,9 +10,10 @@ import {
   fetchBestListings, fetchCardDetail, fetchPriceHistory,
 } from "@/lib/db";
 import { useSession } from "next-auth/react";
-import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getBinderIds } from "@/lib/binder";
 import { getWishlistIds } from "@/lib/wishlist";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
+import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 import InteractiveCard from "@/components/InteractiveCard";
 import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
@@ -42,6 +43,7 @@ function CardDetailContent() {
   const [listings, setListings] = useState<Listing[]>([]);
   const { data: session } = useSession();
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
+  const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
   const [inBinder, setInBinder] = useState(false);
   const [inWishlist, setInWishlist] = useState(false);
   const [popping, setPopping] = useState(false);
@@ -263,7 +265,7 @@ function CardDetailContent() {
             )}
             <button
               onClick={() => {
-                setInBinder(new Set(toggleBinder(id)).has(id));
+                setInBinder(new Set(promptBinderToggle(card, inBinder)).has(id));
                 setPopping(true);
               }}
               onAnimationEnd={() => setPopping(false)}
@@ -479,6 +481,7 @@ function CardDetailContent() {
         </div>
       </div>
       {wishlistPromptOverlay}
+      {binderPromptOverlay}
       {manualAlertOpen && (
         <QuickAlertModal card={card} onClose={() => setManualAlertOpen(false)} />
       )}

@@ -26,6 +26,8 @@ export default function CardTile({
   quantity,
   onQuantityChange,
   ownedLanguageMatch,
+  onLogPurchase,
+  hasPurchaseInfo,
 }: {
   card: CardRow;
   index?: number;
@@ -63,6 +65,15 @@ export default function CardTile({
    * assente del tutto = lingua non nota, nessun cambiamento rispetto a
    * prima di questa funzionalita'. */
   ownedLanguageMatch?: { language: string; cents: number | null; currency: string | null } | null;
+  /** Passato SOLO dal binder (web/app/binder/page.tsx): apre LogPurchaseModal
+   * per registrare/modificare prezzo pagato e data di questa carta. Assente
+   * altrove (catalogo/desideri/movimenti), dove "quanto l'hai pagata" non ha
+   * senso - stessa convenzione di quantity/onQuantityChange sopra. */
+  onLogPurchase?: () => void;
+  /** True se esiste gia' un lotto per questa carta: cambia solo l'etichetta
+   * del pulsante (mai il comportamento), cosi' non sembra un'azione "da
+   * fare la prima volta" quando in realta' aggiorna un dato gia' presente. */
+  hasPurchaseInfo?: boolean;
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -318,6 +329,18 @@ export default function CardTile({
               className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
             >
               +
+            </button>
+          </div>
+        )}
+
+        {onLogPurchase && (
+          <div className="px-3 pb-3 -mt-1">
+            <button
+              type="button"
+              onClick={onLogPurchase}
+              className="w-full text-xs text-ink-muted hover:text-accent-bright transition-colors text-left"
+            >
+              {hasPurchaseInfo ? "💰 Modifica prezzo di acquisto" : "💰 Aggiungi prezzo di acquisto"}
             </button>
           </div>
         )}

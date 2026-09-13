@@ -8,11 +8,13 @@ import { CardRow, fetchCards, fetchCardsTrend, fetchOwnedLanguagePrices } from "
 import { BinderEntry, getBinderEntries, setBinderQuantity, toggleBinder } from "@/lib/binder";
 import { formatCents } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
-import type { BinderValuePoint } from "@/lib/types";
+import type { BinderValuePoint, Lot } from "@/lib/types";
+import { primaryLotFor, summarizeLotEconomics } from "@/lib/lotSummary";
 import BinderBook from "@/components/BinderBook";
 import BinderTable from "@/components/BinderTable";
 import CardTile from "@/components/CardTile";
 import CollectionValueChart from "@/components/CollectionValueChart";
+import LogPurchaseModal from "@/components/LogPurchaseModal";
 import SiteHeader from "@/components/SiteHeader";
 
 function BinderContent() {
@@ -39,6 +41,13 @@ function BinderContent() {
   const valueHistory = historyResponse?.key === historyKey ? historyResponse.points : null;
   const historyError = historyResponse?.key === historyKey ? historyResponse.error : null;
   const [trends, setTrends] = useState<Record<number, { avgCents: number; days: number }>>({});
+  // Lotti (costo/provenienza dichiarati) di questo utente - solo-account,
+  // vedi web/lib/types.ts su Lot - usati sia per il riquadro di plusvalenza
+  // sotto "Valore stimato" sia dal pulsante "Dettagli acquisto" su ogni
+  // carta (apre LogPurchaseModal precompilato con l'ultimo lotto noto).
+  const [lots, setLots] = useState<Lot[] | null>(null);
+  const [lotsReloadTick, setLotsReloadTick] = useState(0);
+  const [purchaseModalCard, setPurchaseModalCard] = useState<CardRow | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +192,23 @@ function BinderContent() {
     return () => { cancelled = true; };
   }, [session, historyKey]);
 
+  useEffect(() => {
+    // Stesso motivo di valueHistory sopra: i lotti sono solo-account (vedi
+    // web/lib/types.ts), nessuna fetch da sloggati - non serve nemmeno
+    // resettare lo stato qui al logout, il rendering del riquadro
+    // plusvalenza sotto e' gia' condizionato su `session`.
+    if (!session) return;
+    let cancelled = false;
+    fetch("/api/account/lots")
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: Lot[]) => { if (!cancelled) setLots(data); })
+      // Best-effort come trends sopra: senza risposta il binder mostra
+      // solo "Valore stimato" (comportamento gia' esistente prima di
+      // questa funzionalita'), nessun riquadro di plusvalenza in piu'.
+      .catch(() => { if (!cancelled) setLots(null); });
+    return () => { cancelled = true; };
+  }, [session, lotsReloadTick]);
+
   const summary = useMemo(() => {
     if (!cards) return null;
     const priced = cards.filter((card) => priceInfoById.get(card.id)?.cents !== null);
@@ -209,6 +235,27 @@ function BinderContent() {
       languageMatched,
     };
   }, [cards, quantityById, priceInfoById]);
+
+  // Plusvalenza non realizzata sui soli lotti con costo dichiarato - stessa
+  // funzione usata da web/app/lots/page.tsx (web/lib/lotSummary.ts), qui sul
+  // sottoinsieme di lotti le cui carte sono nel binder attualmente caricato
+  // (cardsById): un lotto di una carta rimossa dal binder ma non ancora
+  // eliminata da /lotti non avrebbe comunque un prezzo da mostrare qui.
+  const cardsByIdForLots = useMemo(() => new Map((cards ?? []).map((c) => [c.id, c])), [cards]);
+  const lotEconomics = useMemo(
+    () => (lots ? summarizeLotEconomics(lots, cardsByIdForLots, languagePrices) : null),
+    [lots, cardsByIdForLots, languagePrices]
+  );
+
+  function handlePurchaseSaved() {
+    setPurchaseModalCard(null);
+    setLotsReloadTick((t) => t + 1);
+  }
+
+  const cardsWithPurchaseInfo = useMemo(
+    () => new Set((lots ?? []).map((lot) => lot.blueprintId)),
+    [lots]
+  );
 
   const setBookPage = useCallback((page: number) => {
     const params = new URLSearchParams(window.location.search);
@@ -258,6 +305,21 @@ function BinderContent() {
           {summary.languageAttempted > 0 && (
             <span className="text-xs text-ink-faint">{summary.languageMatched}/{summary.languageAttempted} nella lingua posseduta</span>
           )}
+          {session && lotEconomics && lotEconomics.costKnownCount > 0 && (
+            <>
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Speso (prezzo di acquisto)</div>
+                <div className="font-display text-xl font-bold">{formatCents(lotEconomics.costCents)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Plusvalenza non realizzata</div>
+                <div className={`font-display text-xl font-bold ${lotEconomics.gainCents >= 0 ? "text-signal-up" : "text-signal-down"}`}>
+                  {lotEconomics.gainCount > 0 ? formatCents(lotEconomics.gainCents) : "—"}
+                </div>
+              </div>
+              <Link href="/lots" className="text-xs text-ink-muted hover:text-accent-bright transition-colors underline">Dettaglio lotti →</Link>
+            </>
+          )}
           {view === "collection" && (
             <div className="ml-auto inline-flex rounded-lg border border-base-border bg-base-surface2 p-1">
               <Link href="/binder?view=collection" className={`min-h-9 inline-flex items-center rounded-md px-3 text-xs ${layout === "grid" ? "bg-accent/15 text-accent-bright" : "text-ink-muted"}`}>Griglia</Link>
@@ -292,7 +354,16 @@ function BinderContent() {
 
       {cards && cards.length > 0 && view === "collection" && (
         layout === "table" ? (
-          <BinderTable cards={cards} trends={trends} returnTo={returnTo} quantities={quantityById} onQuantityChange={changeQuantity} ownedLanguageMatches={ownedLanguageMatchById} />
+          <BinderTable
+            cards={cards}
+            trends={trends}
+            returnTo={returnTo}
+            quantities={quantityById}
+            onQuantityChange={changeQuantity}
+            ownedLanguageMatches={ownedLanguageMatchById}
+            onLogPurchase={session ? (card) => setPurchaseModalCard(card) : undefined}
+            cardsWithPurchaseInfo={cardsWithPurchaseInfo}
+          />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
             {cards.map((card, index) => (
@@ -312,12 +383,22 @@ function BinderContent() {
                 quantity={quantityById.get(card.id) ?? 1}
                 onQuantityChange={(quantity) => changeQuantity(card.id, quantity)}
                 ownedLanguageMatch={ownedLanguageMatchById.get(card.id) ?? undefined}
+                onLogPurchase={session ? () => setPurchaseModalCard(card) : undefined}
+                hasPurchaseInfo={cardsWithPurchaseInfo.has(card.id)}
               />
             ))}
           </div>
         )
       )}
       {cards && cards.length > 0 && view === "book" && <BinderBook cards={cards} initialPage={initialPage} onPageChange={setBookPage} returnTo={returnTo} />}
+      {purchaseModalCard && (
+        <LogPurchaseModal
+          card={purchaseModalCard}
+          existingLot={primaryLotFor(lots ?? [], purchaseModalCard.id)}
+          onClose={() => setPurchaseModalCard(null)}
+          onSaved={handlePurchaseSaved}
+        />
+      )}
     </main>
   );
 }

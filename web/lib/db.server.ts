@@ -560,6 +560,31 @@ export async function fetchMeta(): Promise<Record<string, string>> {
   return out;
 }
 
+export type BlueprintMatchCandidate = { id: number; name: string; expansionName: string | null };
+
+/** Candidati per il matching nome->carta dell'import Markdown dei lotti
+ * (web/lib/lotImport.server.ts): prima tentativo ESATTO (case-insensitive,
+ * spazi ai bordi ignorati) sul nome - se produce risultati, quelli e solo
+ * quelli sono i candidati (un nome che matcha alla lettera non deve
+ * comunque restare ambiguo solo perche' un'altra carta lo contiene come
+ * sottostringa). Solo se l'esatto non trova NULLA si allarga a un ILIKE
+ * "contiene", piu' permissivo ma anche piu' a rischio di falsi candidati -
+ * per questo il chiamante riceve comunque tutti i candidati e decide se
+ * l'esito e' un match sicuro o ambiguo, mai deciso qui. */
+export async function findBlueprintMatches(name: string): Promise<BlueprintMatchCandidate[]> {
+  const pool = getPgPool();
+  const trimmed = name.trim();
+  if (!trimmed) return [];
+  const exact = await pool.query(
+    `SELECT id, name, expansion_name FROM blueprints WHERE lower(trim(name)) = lower($1)`,
+    [trimmed]
+  );
+  const rows = exact.rows.length > 0
+    ? exact.rows
+    : (await pool.query(`SELECT id, name, expansion_name FROM blueprints WHERE name ILIKE $1`, [`%${trimmed}%`])).rows;
+  return rows.map((r) => ({ id: r.id, name: r.name, expansionName: r.expansion_name ?? null }));
+}
+
 /** Catalogo lean (niente prezzi) per il riconoscimento carte via OCR/hash
  * percettivo (web/lib/scanner/catalog.ts) - sostituiva una lettura diretta
  * di sql.js su TUTTO il catalogo, ora un'unica chiamata API. */
