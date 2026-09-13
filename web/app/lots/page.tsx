@@ -35,6 +35,30 @@ const DEFAULT_SORT_DIRECTION: Record<SortColumn, "asc" | "desc"> = {
   name: "asc", quantity: "desc", provenance: "asc", acquiredAt: "desc", cost: "desc", value: "desc", gain: "desc",
 };
 
+type EnrichedLot = {
+  lot: Lot;
+  card: CardRow | undefined;
+  priceInfo: ReturnType<typeof resolveLotUnitPrice>;
+  lotValue: number | null;
+  gain: number | null;
+};
+
+// Funzione pura di modulo (non dentro LotsPage): non dipende da props/state
+// del componente, solo dagli argomenti e da PROVENANCE_LABELS (costante di
+// modulo) - tenerla qui evita di ricrearla ad ogni render e rende inutile
+// l'eslint-disable altrimenti necessario nelle dipendenze di sortedLots.
+function sortKey(row: EnrichedLot, column: SortColumn): string | number | null {
+  switch (column) {
+    case "name": return row.card?.name ?? `Carta #${row.lot.blueprintId}`;
+    case "quantity": return row.lot.quantity;
+    case "provenance": return PROVENANCE_LABELS[row.lot.provenance];
+    case "acquiredAt": return row.lot.acquiredAt;
+    case "cost": return row.lot.costTotalCents;
+    case "value": return row.lotValue;
+    case "gain": return row.gain;
+  }
+}
+
 // Componente a modulo (non definito dentro LotsPage): un componente
 // ridefinito ad ogni render del genitore smonterebbe e rimonterebbe questi
 // <th> ogni volta, inutile qui dato che bastano props semplici.
@@ -42,15 +66,16 @@ function SortableHeader({ column, sort, onToggle, children }: {
   column: SortColumn; sort: SortState; onToggle: (column: SortColumn) => void; children: ReactNode;
 }) {
   const active = sort?.column === column;
+  const ariaSort = active ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
   return (
-    <th className="px-4 py-3">
+    <th className="p-0" aria-sort={ariaSort}>
       <button
         type="button"
         onClick={() => onToggle(column)}
-        className={`inline-flex items-center gap-1 hover:text-ink-primary transition-colors ${active ? "text-ink-primary" : ""}`}
+        className={`w-full px-4 py-3 flex items-center gap-1 text-left hover:text-ink-primary transition-colors ${active ? "text-ink-primary" : ""}`}
       >
         {children}
-        <span className="text-[9px]">{active ? (sort.direction === "asc" ? "▲" : "▼") : "⇅"}</span>
+        <span className="text-[9px]" aria-hidden="true">{active ? (sort.direction === "asc" ? "▲" : "▼") : "⇅"}</span>
       </button>
     </th>
   );
@@ -236,18 +261,6 @@ export default function LotsPage() {
   // indipendentemente dalla direzione (un costo/valore/plusvalenza
   // sconosciuti non sono "il piu' piccolo", sono semplicemente un dato
   // mancante: metterli in cima ordinando decrescente sarebbe fuorviante).
-  function sortKey(row: (typeof enrichedLots)[number], column: SortColumn): string | number | null {
-    switch (column) {
-      case "name": return row.card?.name ?? `Carta #${row.lot.blueprintId}`;
-      case "quantity": return row.lot.quantity;
-      case "provenance": return PROVENANCE_LABELS[row.lot.provenance];
-      case "acquiredAt": return row.lot.acquiredAt;
-      case "cost": return row.lot.costTotalCents;
-      case "value": return row.lotValue;
-      case "gain": return row.gain;
-    }
-  }
-
   const sortedLots = useMemo(() => {
     if (!sort) return enrichedLots;
     const { column, direction } = sort;
@@ -260,7 +273,6 @@ export default function LotsPage() {
       return direction === "asc" ? cmp : -cmp;
     });
     return withKey.map((w) => w.row);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrichedLots, sort]);
 
   if (status === "loading") {
