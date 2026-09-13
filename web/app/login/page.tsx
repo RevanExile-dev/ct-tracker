@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { ipAddress } from "@vercel/functions";
 import Link from "next/link";
 import { auth, signIn } from "@/lib/auth";
+import { isRateLimited } from "@/lib/rateLimit";
 import SiteHeader from "@/components/SiteHeader";
 
 // Nota su "next-auth/lib/actions.js" (letto direttamente, non a memoria):
@@ -38,6 +41,16 @@ export default async function LoginPage({
 
   async function signInWithEmail(formData: FormData) {
     "use server";
+    // Questa Server Action e' l'unico punto reale da cui la UI invia il
+    // magic link (una POST a /login gestita dal protocollo interno di
+    // Next.js, non da /api/auth/signin - il rate limit di proxy.ts non la
+    // intercetta) - limite qui, non solo li', altrimenti l'unico argine
+    // contro email bombing/esaurimento della quota Resend resterebbe
+    // quello sulla route API diretta, mai toccata dal form vero.
+    const ip = ipAddress(await headers()) ?? "unknown";
+    if (isRateLimited(`login-email:${ip}`, 5, 60_000)) {
+      redirect("/login?error=RateLimited");
+    }
     // redirectTo per il provider email va dentro lo stesso FormData (vedi
     // il campo nascosto piu' sotto nel form): quando le opzioni passate a
     // signIn() sono un FormData, next-auth le converte con

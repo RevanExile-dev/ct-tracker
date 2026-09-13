@@ -5,7 +5,16 @@
 // eccezioni dev-only che andrebbero comunque escluse dal build di prod.
 const contentSecurityPolicy = [
   "default-src 'self'",
-  "script-src 'self'",
+  // 'unsafe-inline': Next.js inietta script inline essenziali per
+  // l'idratazione React e lo streaming dei Server Components
+  // (`self.__next_f.push(...)`) - senza, un script-src 'self' rigido li
+  // bloccherebbe e l'app apparirebbe rotta/non interattiva in produzione
+  // (verificato: e' la stessa forma dell'esempio ufficiale "Without
+  // Nonces" nei doc Next.js installati). Un nonce per-richiesta
+  // eliminerebbe 'unsafe-inline' ma richiede rendering dinamico ovunque
+  // (niente pagine statiche/ISR) - sproporzionato per l'hardening
+  // richiesto qui.
+  "script-src 'self' 'unsafe-inline'",
   // 'unsafe-inline' per style-src: alcuni componenti usano style={{...}}
   // inline (valori dinamici, es. percentuali/colori calcolati) - CSP tratta
   // l'attributo style come style-src alla pari di un tag <style>. Rischio
