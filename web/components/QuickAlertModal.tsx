@@ -3,14 +3,17 @@
 import { useEffect, useState } from "react";
 import type { CardRow } from "@/lib/types";
 import type { PriceAlertTargetType } from "@/lib/types";
+import { fetchConditions, fetchLanguages } from "@/lib/db";
 import { formatCents } from "@/lib/format";
+
+const ANY_OPTION = ""; // select vuoto = "qualunque" (stesso valore sentinella di /account/alerts)
 
 /** Overlay rapida per creare un allarme prezzo su UNA carta gia' nota (id +
  * nome + prezzo attuale), senza passare dalla ricerca di /account/alerts.
- * Volutamente minimale: solo tipo+valore soglia, lingua/condizione/Zero
- * sempre "qualunque" e fireMode sempre "once" - chi vuole di piu' (cooldown,
- * profilo specifico) usa comunque la pagina /account/alerts, che resta
- * intatta e piu' completa. Aperta da due punti diversi (vedi
+ * Stessi controlli di profilo (lingua/condizione/CardTrader Zero) della
+ * pagina completa, qui senza bisogno di cercare la carta - fireMode resta
+ * sempre "once" (chi vuole un allarme ripetibile con cooldown usa comunque
+ * /account/alerts). Aperta da due punti diversi (vedi
  * useWishlistAlertPrompt.tsx e la pagina carta): il chiamante decide cosa
  * fare dopo submit/skip/chiudi, questo componente non tocca mai i desideri. */
 export default function QuickAlertModal({
@@ -25,6 +28,12 @@ export default function QuickAlertModal({
   const currentCents = card.best_price_cents ?? card.latest_price_cents ?? null;
   const currentCurrency = card.best_price_currency ?? card.latest_price_currency ?? "EUR";
 
+  const [language, setLanguage] = useState(ANY_OPTION);
+  const [condition, setCondition] = useState(ANY_OPTION);
+  const [canSellViaHub, setCanSellViaHub] = useState<"any" | "only" | "never">("any");
+  const [languageOptions, setLanguageOptions] = useState<string[]>([]);
+  const [conditionOptions, setConditionOptions] = useState<string[]>([]);
+
   const [targetType, setTargetType] = useState<PriceAlertTargetType>("absolute_cents");
   const [targetInput, setTargetInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -38,6 +47,14 @@ export default function QuickAlertModal({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchLanguages(), fetchConditions()])
+      .then(([langs, conds]) => { if (!cancelled) { setLanguageOptions(langs); setConditionOptions(conds); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -61,6 +78,9 @@ export default function QuickAlertModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blueprintId: card.id,
+          language: language || null,
+          condition: condition || null,
+          canSellViaHub: canSellViaHub === "any" ? null : canSellViaHub === "only" ? 1 : 0,
           targetType,
           targetValue,
           fireMode: "once",
@@ -83,7 +103,7 @@ export default function QuickAlertModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-sm rounded-card border border-base-border bg-base-surface shadow-card p-5">
+      <div className="relative w-full max-w-md rounded-card border border-base-border bg-base-surface shadow-card p-5 max-h-[90vh] overflow-y-auto">
         {done ? (
           <>
             <div className="text-ink-primary font-medium">🔔 Allarme creato</div>
@@ -110,46 +130,92 @@ export default function QuickAlertModal({
               </p>
             )}
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTargetType("absolute_cents")}
-                  className={`flex-1 text-xs font-mono uppercase tracking-wider px-3 py-2 rounded-card border transition-colors ${
-                    targetType === "absolute_cents"
-                      ? "bg-accent/10 border-accent/60 text-accent-bright"
-                      : "bg-base-surface2 border-base-border text-ink-muted"
-                  }`}
-                >
-                  Prezzo fisso
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTargetType("percent_drop")}
-                  className={`flex-1 text-xs font-mono uppercase tracking-wider px-3 py-2 rounded-card border transition-colors ${
-                    targetType === "percent_drop"
-                      ? "bg-accent/10 border-accent/60 text-accent-bright"
-                      : "bg-base-surface2 border-base-border text-ink-muted"
-                  }`}
-                >
-                  Calo %
-                </button>
+            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+              <div>
+                <div className="text-xs font-mono uppercase tracking-wider text-ink-faint mb-2">Profilo</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs text-ink-faint mb-1" htmlFor="quick-alert-language">Lingua</label>
+                    <select
+                      id="quick-alert-language"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full min-h-11 rounded-lg border border-base-border bg-base-surface2 px-3 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      <option value={ANY_OPTION}>Qualunque lingua</option>
+                      {languageOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-faint mb-1" htmlFor="quick-alert-condition">Condizione</label>
+                    <select
+                      id="quick-alert-condition"
+                      value={condition}
+                      onChange={(e) => setCondition(e.target.value)}
+                      className="w-full min-h-11 rounded-lg border border-base-border bg-base-surface2 px-3 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      <option value={ANY_OPTION}>Qualunque condizione</option>
+                      {conditionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs text-ink-faint mb-1" htmlFor="quick-alert-hub">CardTrader Zero</label>
+                    <select
+                      id="quick-alert-hub"
+                      value={canSellViaHub}
+                      onChange={(e) => setCanSellViaHub(e.target.value as typeof canSellViaHub)}
+                      className="w-full min-h-11 rounded-lg border border-base-border bg-base-surface2 px-3 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      <option value="any">Indifferente</option>
+                      <option value="only">Solo CardTrader Zero</option>
+                      <option value="never">Mai CardTrader Zero</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={targetInput}
-                  onChange={(e) => setTargetInput(e.target.value)}
-                  placeholder={targetType === "absolute_cents" ? "es. 10,00" : "es. 20"}
-                  className="flex-1 rounded-card border border-base-border bg-base-surface2 px-3 py-2 text-sm text-ink-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                  autoFocus
-                />
-                <span className="text-sm text-ink-muted">{targetType === "absolute_cents" ? currentCurrency : "%"}</span>
+              <div>
+                <div className="text-xs font-mono uppercase tracking-wider text-ink-faint mb-2">Soglia</div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTargetType("absolute_cents")}
+                    className={`flex-1 text-xs font-mono uppercase tracking-wider px-3 py-2 rounded-card border transition-colors ${
+                      targetType === "absolute_cents"
+                        ? "bg-accent/10 border-accent/60 text-accent-bright"
+                        : "bg-base-surface2 border-base-border text-ink-muted"
+                    }`}
+                  >
+                    Prezzo fisso
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTargetType("percent_drop")}
+                    className={`flex-1 text-xs font-mono uppercase tracking-wider px-3 py-2 rounded-card border transition-colors ${
+                      targetType === "percent_drop"
+                        ? "bg-accent/10 border-accent/60 text-accent-bright"
+                        : "bg-base-surface2 border-base-border text-ink-muted"
+                    }`}
+                  >
+                    Calo %
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={targetInput}
+                    onChange={(e) => setTargetInput(e.target.value)}
+                    placeholder={targetType === "absolute_cents" ? "es. 10,00" : "es. 20"}
+                    className="flex-1 min-h-11 rounded-lg border border-base-border bg-base-surface2 px-3 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                    autoFocus
+                  />
+                  <span className="text-sm text-ink-muted">{targetType === "absolute_cents" ? currentCurrency : "%"}</span>
+                </div>
               </div>
 
-              {error && <p className="text-xs text-signal-down">{error}</p>}
+              {error && <p role="alert" className="text-xs text-signal-down">{error}</p>}
 
               <div className="flex gap-2 pt-1">
                 <button
