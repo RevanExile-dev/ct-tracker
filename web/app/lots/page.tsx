@@ -6,6 +6,8 @@ import { useSession } from "next-auth/react";
 import { CardRow, fetchCards, fetchOwnedLanguagePrices } from "@/lib/db";
 import { formatCents, formatDateLong, languageFlag, languageLabel } from "@/lib/format";
 import type { Lot, LotProvenance } from "@/lib/types";
+import { type LanguagePriceMap, resolveLotUnitPrice, summarizeLotEconomics } from "@/lib/lotSummary";
+import LotImportPanel from "@/components/LotImportPanel";
 import SiteHeader from "@/components/SiteHeader";
 
 const PROVENANCE_LABELS: Record<LotProvenance, string> = {
@@ -20,31 +22,6 @@ const PROVENANCE_OPTIONS = Object.entries(PROVENANCE_LABELS) as [LotProvenance, 
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-type LanguagePriceMap = Record<string, { price_cents: number; price_currency: string | null }>;
-
-/** Stessa euristica "lingua posseduta se nota e disponibile, altrimenti best
- * generale" di web/app/binder/page.tsx (priceInfoById) - qui per-lotto invece
- * che per-carta, perche' due lotti della stessa carta possono avere lingue
- * diverse (es. una copia IT e una JP): la chiave "blueprintId:lingua" (non
- * solo blueprintId) e' quello che distingue i due casi - con solo
- * blueprintId come chiave, i lotti in lingue diverse della stessa carta si
- * sarebbero sovrascritti a vicenda mostrando a entrambi lo stesso prezzo
- * (bug reale, riprodotto con una query diretta durante la review). */
-function resolveLotUnitPrice(
-  lot: Lot,
-  card: CardRow | undefined,
-  languagePrices: LanguagePriceMap
-): { cents: number; currency: string | null } | null {
-  const key = lot.language ? `${lot.blueprintId}:${lot.language}` : null;
-  if (key && languagePrices[key]) {
-    const p = languagePrices[key];
-    return { cents: p.price_cents, currency: p.price_currency };
-  }
-  const bestCents = card?.best_price_cents ?? card?.latest_price_cents ?? null;
-  if (bestCents === null || bestCents === undefined) return null;
-  return { cents: bestCents, currency: card?.best_price_currency ?? card?.latest_price_currency ?? "EUR" };
 }
 
 export default function LotsPage() {
@@ -93,6 +70,11 @@ export default function LotsPage() {
     setProvenance("acquisto"); setAcquiredAt(todayIso()); setCostInput(""); setNote("");
   }
 
+  // reloadTick permette all'importer Markdown sotto (LotImportPanel) di far
+  // ricaricare l'elenco dopo aver creato/aggiornato lotti in blocco, senza
+  // che questo effetto debba conoscere i dettagli di quella richiesta.
+  const [reloadTick, setReloadTick] = useState(0);
+
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -104,7 +86,7 @@ export default function LotsPage() {
       .then((data: Lot[]) => { if (!cancelled) setLots(data); })
       .catch(() => { if (!cancelled) setError("Non riesco a caricare i lotti. Riprova tra poco."); });
     return () => { cancelled = true; };
-  }, [session]);
+  }, [session, reloadTick]);
 
   useEffect(() => {
     // ids sempre passato esplicitamente (anche [] quando lots e' vuoto/non
@@ -186,36 +168,10 @@ export default function LotsPage() {
     }
   }
 
-  const summary = useMemo(() => {
-    let costCents = 0, costKnownCount = 0;
-    let valueCents = 0, valueKnownCount = 0;
-    let gainCents = 0, gainCount = 0, gainExcluded = 0;
-    for (const lot of lots ?? []) {
-      const card = cardsById.get(lot.blueprintId);
-      const priceInfo = resolveLotUnitPrice(lot, card, languagePrices);
-      const lotValue = priceInfo ? priceInfo.cents * lot.quantity : null;
-      if (lot.costTotalCents !== null) { costCents += lot.costTotalCents; costKnownCount++; }
-      if (lotValue !== null) { valueCents += lotValue; valueKnownCount++; }
-      if (lot.costTotalCents !== null && lotValue !== null) {
-        // Somma solo se stessa valuta (di norma sempre EUR): un confronto tra
-        // valute diverse spacciato per un unico totale sarebbe un numero
-        // sbagliato, non solo impreciso - meglio escluderlo ed esporlo.
-        const costCurrency = lot.costCurrency ?? "EUR";
-        if (costCurrency === (priceInfo?.currency ?? "EUR")) {
-          gainCents += lotValue - lot.costTotalCents;
-          gainCount++;
-        } else {
-          gainExcluded++;
-        }
-      }
-    }
-    return {
-      totalLots: lots?.length ?? 0,
-      costCents, costKnownCount, costUnknownCount: (lots?.length ?? 0) - costKnownCount,
-      valueCents, valueKnownCount, valueUnknownCount: (lots?.length ?? 0) - valueKnownCount,
-      gainCents, gainCount, gainExcluded,
-    };
-  }, [lots, cardsById, languagePrices]);
+  const summary = useMemo(
+    () => summarizeLotEconomics(lots ?? [], cardsById, languagePrices),
+    [lots, cardsById, languagePrices]
+  );
 
   if (status === "loading") {
     return (
@@ -274,6 +230,8 @@ export default function LotsPage() {
           </div>
         </div>
       )}
+
+      <LotImportPanel onImported={() => setReloadTick((t) => t + 1)} />
 
       <form onSubmit={submitLot} className="mb-8 rounded-card border border-base-border bg-base-surface/70 p-5">
         <h2 className="font-display text-lg font-semibold mb-4">Nuovo lotto</h2>

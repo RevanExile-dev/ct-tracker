@@ -7,12 +7,13 @@ import {
   fetchCards, fetchCardsCount, fetchCardsSummary, fetchCatalogStats, fetchConditions, fetchExpansions,
   fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
 } from "@/lib/db";
-import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getBinderIds } from "@/lib/binder";
 import { getWishlistIds } from "@/lib/wishlist";
 import { FilterPreset } from "@/lib/filterPreset";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
+import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 import CardTile from "@/components/CardTile";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
@@ -82,6 +83,7 @@ function HomeContent() {
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
+  const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
   const [visibleCount, setVisibleCount] = useState(() => {
     const shown = Number(searchParams.get("shown"));
     return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
@@ -224,8 +226,8 @@ function HomeContent() {
     );
   }
 
-  function handleToggleBinderCard(id: number) {
-    setBinderIds(new Set(toggleBinder(id)));
+  function handleToggleBinderCard(card: CardRow) {
+    setBinderIds((prev) => new Set(promptBinderToggle(card, prev.has(card.id))));
   }
 
   function handleToggleWishlistCard(card: CardRow) {
@@ -429,7 +431,7 @@ function HomeContent() {
                   card={card}
                   index={i}
                   inBinder={binderIds.has(card.id)}
-                  onToggleBinder={() => handleToggleBinderCard(card.id)}
+                  onToggleBinder={() => handleToggleBinderCard(card)}
                   inWishlist={wishlistIds.has(card.id)}
                   onToggleWishlist={() => handleToggleWishlistCard(card)}
                   returnTo={returnTo}
@@ -451,6 +453,7 @@ function HomeContent() {
         </>
       )}
       {wishlistPromptOverlay}
+      {binderPromptOverlay}
     </main>
   );
 }

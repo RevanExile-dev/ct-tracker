@@ -372,6 +372,56 @@ export async function updateLot(
   }
 }
 
+/** Crea o aggiorna il lotto "acquisto" di una carta per l'import Markdown
+ * (web/lib/lotImport.server.ts, POST /api/account/lots/import): se esiste
+ * gia' un lotto con provenance "acquisto" per questa carta (il piu' vecchio,
+ * se ce ne fosse piu' di uno) ne aggiorna SOLO i campi passati - stesso
+ * principio "mai un rimpiazzo totale" di updateLot sopra. Sia costTotalCents
+ * sia acquiredAt vanno OMESSI dal patch (non passati come null/undefined)
+ * quando la riga di import non li conosce, non solo acquiredAt: un
+ * ri-import con una cella prezzo mal formattata non deve cancellare un
+ * costo gia' registrato in precedenza su un lotto esistente (rilievo
+ * review, verificato: la versione precedente passava sempre
+ * costTotalCents, azzerando un costo noto ogni volta che una riga aveva un
+ * prezzo illeggibile). Se non esiste ancora nessun lotto "acquisto" per
+ * questa carta, ne crea uno nuovo (qui l'assenza di acquiredAt ricade sul
+ * default CURRENT_DATE di createLot, stesso comportamento del form manuale
+ * di /lotti; l'assenza di costTotalCents diventa costo sconosciuto, valore
+ * di partenza legittimo per un lotto nuovo). */
+export async function upsertPurchaseLot(
+  userId: string,
+  blueprintId: number,
+  patch: { costTotalCents?: number | null; acquiredAt?: string }
+): Promise<{ lot: Lot; created: boolean }> {
+  const pool = getPgPool();
+  const { rows } = await pool.query(
+    `SELECT id FROM binder_lots WHERE user_id = $1 AND blueprint_id = $2 AND provenance = 'acquisto'
+     ORDER BY created_at ASC LIMIT 1`,
+    [userId, blueprintId]
+  );
+  if (rows[0]) {
+    const updated = await updateLot(userId, rows[0].id, {
+      ...(patch.costTotalCents !== undefined
+        ? { costTotalCents: patch.costTotalCents, costCurrency: patch.costTotalCents !== null ? "EUR" : null }
+        : {}),
+      ...(patch.acquiredAt !== undefined ? { acquiredAt: patch.acquiredAt } : {}),
+    });
+    // updated puo' essere null solo se il lotto e' stato eliminato tra la
+    // SELECT sopra e questa UPDATE (race con un'eliminazione manuale
+    // dall'utente su /lotti, in un'altra scheda) - trattato come "nessun
+    // lotto esistente", crea un lotto nuovo invece di propagare un errore.
+    if (updated) return { lot: updated, created: false };
+  }
+  const costTotalCents = patch.costTotalCents ?? null;
+  const created = await createLot(userId, {
+    blueprintId, quantity: 1, provenance: "acquisto",
+    acquiredAt: patch.acquiredAt,
+    costTotalCents,
+    costCurrency: costTotalCents !== null ? "EUR" : null,
+  });
+  return { lot: created, created: true };
+}
+
 export async function deleteLot(userId: string, lotId: string): Promise<void> {
   const pool = getPgPool();
   const client = await pool.connect();

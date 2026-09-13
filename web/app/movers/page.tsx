@@ -13,13 +13,14 @@ import {
   normalizeRarity,
 } from "@/lib/db";
 import { MOVERS_TIERS, findMoversTier } from "@/lib/moversTiers";
-import { getBinderIds, toggleBinder } from "@/lib/binder";
+import { getBinderIds } from "@/lib/binder";
 import { getWishlistIds } from "@/lib/wishlist";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
+import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 
 function MoversSkeleton() {
   return (
@@ -122,6 +123,7 @@ function MoversContent() {
   const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
+  const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
   const [rarities, setRarities] = useState<string[]>([]);
   const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
     splitCsv(searchParams.get("rarity")).map(normalizeRarity)
@@ -197,8 +199,8 @@ function MoversContent() {
     };
   }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage]);
 
-  function handleToggleBinderCard(id: number) {
-    setBinderIds(new Set(toggleBinder(id)));
+  function handleToggleBinderCard(card: CardRow) {
+    setBinderIds((prev) => new Set(promptBinderToggle(card, prev.has(card.id))));
   }
 
   function handleToggleWishlistCard(card: CardRow) {
@@ -456,7 +458,7 @@ function MoversContent() {
                         index={i}
                         priceProfile="exact"
                         inBinder={binderIds.has(card.id)}
-                        onToggleBinder={() => handleToggleBinderCard(card.id)}
+                        onToggleBinder={() => handleToggleBinderCard(card)}
                         inWishlist={wishlistIds.has(card.id)}
                         onToggleWishlist={() => handleToggleWishlistCard(card)}
                         returnTo={returnTo}
@@ -489,7 +491,7 @@ function MoversContent() {
                         index={i}
                         priceProfile="exact"
                         inBinder={binderIds.has(card.id)}
-                        onToggleBinder={() => handleToggleBinderCard(card.id)}
+                        onToggleBinder={() => handleToggleBinderCard(card)}
                         inWishlist={wishlistIds.has(card.id)}
                         onToggleWishlist={() => handleToggleWishlistCard(card)}
                         returnTo={returnTo}
@@ -504,6 +506,7 @@ function MoversContent() {
         </>
       )}
       {wishlistPromptOverlay}
+      {binderPromptOverlay}
     </main>
   );
 }

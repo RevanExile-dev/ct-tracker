@@ -26,6 +26,8 @@ export default function BinderTable({
   quantities,
   onQuantityChange,
   ownedLanguageMatches,
+  onLogPurchase,
+  cardsWithPurchaseInfo,
 }: {
   cards: CardRow[];
   trends?: Record<number, CardTrend>;
@@ -39,6 +41,10 @@ export default function BinderTable({
    * ownedLanguageMatch in CardTile.tsx (cents null = lingua nota ma nessuna
    * corrispondenza trovata, mai un fallback silenzioso). */
   ownedLanguageMatches?: Map<number, { language: string; cents: number | null; currency: string | null }>;
+  /** Stessa convenzione di onLogPurchase/hasPurchaseInfo in CardTile.tsx -
+   * passato SOLO dal binder, apre LogPurchaseModal per la carta cliccata. */
+  onLogPurchase?: (card: CardRow) => void;
+  cardsWithPurchaseInfo?: Set<number>;
 }) {
   const showQuantity = quantities !== undefined && onQuantityChange !== undefined;
   return (
@@ -52,6 +58,7 @@ export default function BinderTable({
             {showQuantity && <th className="px-4 py-3 font-normal text-center">Q.tà</th>}
             <th className="px-4 py-3 font-normal text-right">Prezzo</th>
             <th className="px-4 py-3 font-normal text-right">vs media 30gg</th>
+            {onLogPurchase && <th className="px-4 py-3 font-normal" />}
           </tr>
         </thead>
         <tbody className="divide-y divide-base-border">
@@ -149,6 +156,17 @@ export default function BinderTable({
                     <span className="text-ink-faint">—</span>
                   )}
                 </td>
+                {onLogPurchase && (
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onLogPurchase(card)}
+                      className="text-xs text-ink-muted hover:text-accent-bright transition-colors whitespace-nowrap"
+                    >
+                      {cardsWithPurchaseInfo?.has(card.id) ? "💰 Modifica" : "💰 Acquisto"}
+                    </button>
+                  </td>
+                )}
               </tr>
             );
           })}
