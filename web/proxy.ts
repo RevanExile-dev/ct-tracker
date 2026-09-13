@@ -18,9 +18,17 @@ const RATE_LIMIT_RULES: RateLimitRule[] = [
     windowMs: 60_000,
   },
   // Resto delle API pubbliche (catalogo/prezzi/binder/wishlist/alert...):
-  // limite piu' permissivo, pensato per fermare scraping massivo o un bug
-  // client che martella un endpoint, non l'uso normale della UI.
-  { id: "api-general", matches: (req) => req.nextUrl.pathname.startsWith("/api/"), limit: 60, windowMs: 10_000 },
+  // limite alto apposta - misurato con Playwright che una singola apertura
+  // della home fa gia' ~10 fetch quasi simultanei (expansions/rarities/
+  // languages/conditions/meta/catalog-stats/cards/cards-count/session x2),
+  // e un limite di 60/10s (il valore iniziale di questa PR) bloccava con
+  // 429 reali gia' dopo poche ricariche di pagina/tab aperte in parallelo
+  // sullo stesso IP - verificato che causava proprio questo il fallimento
+  // del test CI "UI smoke", non un problema del test. 400/10s lascia
+  // ampio margine all'uso normale (anche piu' utenti dietro lo stesso NAT)
+  // mentre rallenta comunque uno scraping sostenuto dell'intero catalogo
+  // (29mila carte) a poche decine di minuti invece che pochi secondi.
+  { id: "api-general", matches: (req) => req.nextUrl.pathname.startsWith("/api/"), limit: 400, windowMs: 10_000 },
 ];
 
 export function proxy(request: NextRequest) {
