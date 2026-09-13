@@ -172,11 +172,19 @@ function ResolveRow({
  * com'e'. "Lascia com'è" non chiama nessuna API: la riga semplicemente
  * smette di comparire tra quelle da confermare, senza aver scritto nulla. */
 function ConfirmUpdateRow({
-  outcome, onUpdated, onSkipped,
+  outcome, onUpdated, onSkipped, disabled,
 }: {
   outcome: Extract<ImportOutcome, { status: "confirm_update" }>;
   onUpdated: (rowNumber: number, result: { matchedName: string; matchedExpansion: string | null }) => void;
   onSkipped: (rowNumber: number) => void;
+  /** True mentre "Aggiorna tutte" sta girando (rilievo review, verificato
+   * reale): senza questo, un click su "Lascia com'è" durante il bulk non
+   * impedisce affatto la scrittura di questa riga - il bulk ha gia' letto
+   * l'elenco delle righe pendenti all'avvio e la processera' comunque,
+   * ignorando la scelta appena fatta dall'utente. Disabilitare ENTRAMBI i
+   * pulsanti mentre il bulk gira evita che l'utente creda di aver skippato
+   * una riga che invece verra' comunque aggiornata. */
+  disabled?: boolean;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -208,7 +216,7 @@ function ConfirmUpdateRow({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={submitting}
+          disabled={submitting || disabled}
           onClick={update}
           className="text-xs px-3 py-1.5 rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 transition-colors disabled:opacity-50"
         >
@@ -216,7 +224,7 @@ function ConfirmUpdateRow({
         </button>
         <button
           type="button"
-          disabled={submitting}
+          disabled={submitting || disabled}
           onClick={() => onSkipped(outcome.rowNumber)}
           className="text-xs px-3 py-1.5 rounded-card border border-base-border bg-base-surface2 text-ink-muted hover:text-ink-primary transition-colors disabled:opacity-50"
         >
@@ -292,14 +300,25 @@ export default function LotImportPanel({ onImported }: { onImported: () => void 
 
   async function updateAllPending() {
     setBulkUpdating(true);
+    setError(null);
+    // Promise.allSettled (non un for...await sequenziale, rilievo review):
+    // ogni riga e' una richiesta indipendente, aspettarle una alla volta
+    // significherebbe una latenza di rete moltiplicata per il numero di
+    // carte da confermare, senza nessun vantaggio - bulkUpdating disabilita
+    // gia' i pulsanti delle singole righe (vedi ConfirmUpdateRow), quindi
+    // qui non c'e' rischio di doppia scrittura in parallelo sulla stessa
+    // riga.
+    const settled = await Promise.allSettled(
+      pendingConfirms.map(async (outcome) => ({
+        rowNumber: outcome.rowNumber,
+        result: await postImportResolve(outcome.matchedId, outcome.priceCents, outcome.acquiredAt),
+      }))
+    );
     const updates: ResolvedState = {};
     let failures = 0;
-    for (const outcome of pendingConfirms) {
-      try {
-        updates[outcome.rowNumber] = await postImportResolve(outcome.matchedId, outcome.priceCents, outcome.acquiredAt);
-      } catch {
-        failures++;
-      }
+    for (const settledResult of settled) {
+      if (settledResult.status === "fulfilled") updates[settledResult.value.rowNumber] = settledResult.value.result;
+      else failures++;
     }
     setResolved((prev) => ({ ...prev, ...updates }));
     setBulkUpdating(false);
@@ -388,6 +407,7 @@ export default function LotImportPanel({ onImported }: { onImported: () => void 
                       <ConfirmUpdateRow
                         key={o.rowNumber}
                         outcome={o}
+                        disabled={bulkUpdating}
                         onUpdated={(rowNumber, r) => setResolved((prev) => ({ ...prev, [rowNumber]: r }))}
                         onSkipped={(rowNumber) => setSkipped((prev) => new Set(prev).add(rowNumber))}
                       />
