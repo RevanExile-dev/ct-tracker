@@ -319,52 +319,12 @@ body::after {
   }
 }
 
-/* --- Binder virtuale: simulazione di un raccoglitore con pagine 3D.
-   Le regole base qui sotto sono completate dagli override responsive nella
-   sezione "Binder immersivo". --- */
-.binder-stage {
-  perspective: 2400px;
-  perspective-origin: 50% 40%;
-  display: flex;
-  justify-content: center;
-  padding: 12px 0 28px;
-}
-
-.binder-spread {
-  position: relative;
-  display: flex;
-  width: min(100%, 760px);
-  aspect-ratio: 16 / 10;
-  transform-style: preserve-3d;
-  filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.55));
-}
-
-.binder-slot {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.binder-slot-left {
-  border-radius: 10px 2px 2px 10px;
-}
-.binder-slot-right {
-  border-radius: 2px 10px 10px 2px;
-}
-
-.binder-spine {
-  position: relative;
-  z-index: 5;
-  width: 22px;
-  flex: none;
-  background: linear-gradient(90deg, #0a0c0e, #1a1e23 45%, #0a0c0e);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-evenly;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
-}
-
+/* --- Binder virtuale: raccoglitore sfogliabile con motore di piega reale
+   (@gullabs/react-flipbook, vedi BinderBook.tsx) invece di una simulazione
+   fatta a mano - queste regole coprono solo il CONTENUTO di ogni pagina
+   (copertina/tasche) e il "case" decorativo attorno al motore; il motore
+   possiede lui stesso posizione/dimensione/piega dei fogli (selettori
+   .stf__*, vedi la sezione "Binder: case ed effetto libro" piu' sotto). --- */
 .binder-ring {
   width: 12px;
   height: 12px;
@@ -449,51 +409,10 @@ body::after {
   pointer-events: none;
 }
 
-.binder-flip {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: calc(50% - 11px);
-  z-index: 10;
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-  transition: transform 0.72s cubic-bezier(0.45, 0.05, 0.15, 1);
-  box-shadow: 0 0 24px rgba(0, 0, 0, 0.4);
-}
-
-.binder-flip-right {
-  right: 0;
-  transform-origin: left center;
-}
-
-.binder-flip-left {
-  left: 0;
-  transform-origin: right center;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .binder-flip {
-    transition: none;
-  }
-}
-
 @media (max-width: 640px) {
-  .binder-stage {
-    perspective: 1200px;
-  }
-  .binder-spread {
-    aspect-ratio: 10 / 11;
-  }
-  .binder-spine {
-    width: 14px;
-  }
   .binder-ring {
     width: 9px;
     height: 9px;
-  }
-  .binder-page-sheet .grid {
-    gap: 4px;
-    padding: 6px;
   }
 }
 
@@ -579,50 +498,50 @@ body::after {
   84% { transform: scale(1.28) rotate(12deg); opacity: 1; }
 }
 
-/* --- Binder immersivo: override del prototipo con layout responsive reale. --- */
-.binder-stage {
-  perspective: 2600px;
-  perspective-origin: 50% 42%;
-  padding: 8px 0 20px;
-  touch-action: pan-y;
-  user-select: none;
-  cursor: grab;
+/* --- Binder: case ed effetto libro. Il motore di sfoglio (@gullabs/
+   react-flipbook) possiede posizione/dimensione/piega di ogni foglio - qui
+   si veste solo la cornice esterna ("case", spessore, cerniera stile
+   Vaultx) e si stila il contenuto (via .binder-page, .stf__item) dentro
+   ciascun foglio. Selettori stabili del motore usati sotto: .stf__parent
+   (radice), .stf__item (un foglio). --- */
+.binder-case {
+  position: relative;
+  margin: 0 auto;
+  border-radius: 20px;
+  padding: clamp(14px, 2vw, 26px) clamp(16px, 2.4vw, 30px) clamp(20px, 3vw, 34px);
+  background: linear-gradient(155deg, #262a31 0%, #16181c 55%, #0d0e10 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 2px 0 #0b0c0e,
+    0 4px 0 #0a0b0d,
+    0 6px 0 #08090b,
+    0 8px 0 #07080a,
+    0 34px 64px rgba(0, 0, 0, 0.6);
 }
-.binder-stage-dragging {
-  cursor: grabbing;
+.binder-case.is-single {
+  width: min(100%, 460px);
 }
-.binder-stage-spread .binder-spread {
-  width: min(100%, calc((100dvh - 250px) * 10 / 7), 1320px);
-  aspect-ratio: 10 / 7;
+.binder-case.is-spread {
+  width: min(100%, calc((100dvh - 260px) * 10 / 7), 1220px);
 }
-.binder-stage-single .binder-spread {
-  width: min(100%, calc((100dvh - 245px) * 5 / 7), 560px);
-  aspect-ratio: 5 / 7;
+.binder-book-frame {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  border-radius: 10px;
+  /* Fodera interna del case: quando una pagina "hardCovers" (copertina o
+     ultimo foglio) e' mostrata da sola dentro uno spread piu' largo, la
+     meta' priva di foglio non resta un vuoto piatto ma legge come l'interno
+     rivestito del case, non un rendering rotto. */
+  background: radial-gradient(120% 140% at 50% 15%, #23272e 0%, #16181c 55%, #101216 100%);
 }
-.binder-spread {
-  min-width: 0;
-  filter: drop-shadow(0 30px 50px rgba(0, 0, 0, 0.58));
-}
-.binder-spread.is-single .binder-slot-left {
-  width: 100%;
-  flex: 1 1 100%;
-  border-radius: 14px;
-}
-.binder-slot {
-  overflow: visible;
+.stf__item {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.22), 0 20px 44px rgba(0, 0, 0, 0.45);
 }
 .binder-page {
-  border-color: rgba(255, 255, 255, 0.11);
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.22);
-}
-.binder-slot-left .binder-page {
-  border-radius: 14px 3px 3px 14px;
-}
-.binder-slot-right .binder-page {
-  border-radius: 3px 14px 14px 3px;
-}
-.is-single .binder-page {
-  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
 }
 .binder-sheet-grid {
   display: grid;
@@ -670,167 +589,67 @@ body::after {
   0%, 65%, 100% { transform: translateX(-36%) rotate(2deg); }
   82% { transform: translateX(42%) rotate(2deg); }
 }
-.binder-spine {
-  width: clamp(14px, 1.6vw, 24px);
-}
-
-/* Blocco di pagine: qualche riga sottile offset dietro il dorso di ogni
-   meta', cosi' il binder si legge come "tante pagine" e non un foglio
-   solo - trucco statico via ::after, nessun costo di layout. */
-.binder-slot-left::after,
-.binder-slot-right::after {
-  content: "";
+/* Dorso centrale con anelli, visibile solo nello spread a doppia pagina
+   (BinderBook lo monta solo quando orientation === "landscape") - il motore
+   di sfoglio centra sempre lo spread nel proprio riquadro, quindi il centro
+   geometrico del case coincide con la piega senza dover leggere le
+   coordinate interne del motore. */
+.binder-center-spine {
   position: absolute;
-  top: 8px;
-  bottom: 8px;
-  width: 5px;
-  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 3px);
-  opacity: 0.5;
+  top: 4%;
+  bottom: 4%;
+  left: 50%;
+  width: clamp(16px, 2.2vw, 26px);
+  transform: translateX(-50%);
+  z-index: 5;
   pointer-events: none;
+  background: linear-gradient(90deg, #0a0c0e, #1a1e23 45%, #0a0c0e);
+  border-radius: 3px;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6), 0 2px 14px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
 }
-.binder-slot-left::after { right: -3px; }
-.binder-slot-right::after { left: -3px; }
 
-/* --- Sfoglio: cerniera a due pannelli (near = attaccato al dorso, far =
-   lembo libero, nidificato dentro near) invece di un'unica lastra rigida.
-   Un rotateY piatto su un solo pannello sparisce del tutto a meta' gesto
-   (di taglio verso la camera, a 90 gradi) - una pagina vera non lo fa mai,
-   resta sempre visibile come sagoma curva. Nidificando due pannelli e
-   facendo "ritardare" near mentre far piega di piu' (la differenza,
-   --flip-bend-deg, e' 0 agli estremi e massima a meta' gesto) si ottiene
-   una vera "V" di carta che non collassa mai a una linea, restando piatta
-   e indistinguibile da oggi a riposo (progress 0 o 1). Vedi paintProgress
-   in BinderBook.tsx per la matematica (aNear/bFarLocal). --- */
-.binder-flip {
-  top: 0;
-  bottom: 0;
-  width: calc(50% - clamp(7px, .8vw, 12px));
-  /* Azzera lo shadow statico del blocco "prototipo" piu' sopra nel file:
-     l'ombra dinamica vera vive ora su .binder-flip-near. */
-  box-shadow: none;
-  /* Puramente decorativo durante l'animazione: la pagina cliccabile e'
-     quella statica sottostante, rivelata a fine sfoglio. Senza questo le
-     carte duplicate dentro near/far (necessarie per il ritaglio a due
-     meta', vedi .binder-flip-window) sarebbero brevemente cliccabili
-     anche loro durante il gesto. */
+/* Cerniera decorativa stile "zip binder" (Vaultx e simili) lungo i tre bordi
+   esterni del case, piu' un tiretto - puramente estetico, nessun asset
+   esterno: denti finti via repeating-linear-gradient. */
+.binder-zip {
+  position: absolute;
   pointer-events: none;
+  z-index: 6;
+  opacity: 0.9;
 }
-.binder-flip-single {
-  left: 0;
-  width: 100%;
+.binder-zip-top,
+.binder-zip-bottom {
+  left: 20px;
+  right: 20px;
+  height: 6px;
+  background-image: repeating-linear-gradient(90deg, #cfd3d8 0 3px, #7d8288 3px 4px, transparent 4px 7px);
+  border-radius: 3px;
 }
-.binder-flip[data-direction="next"] { right: 0; }
-.binder-flip[data-direction="prev"] { left: 0; }
-
-.binder-flip-near,
-.binder-flip-far {
+.binder-zip-top { top: 5px; }
+.binder-zip-bottom { bottom: 5px; }
+.binder-zip-right {
+  top: 22px;
+  bottom: 22px;
+  right: 5px;
+  width: 6px;
+  background-image: repeating-linear-gradient(180deg, #cfd3d8 0 3px, #7d8288 3px 4px, transparent 4px 7px);
+  border-radius: 3px;
+}
+.binder-zip-pull {
   position: absolute;
-  top: 0;
-  height: 100%;
-  width: 50%;
-  transform-style: preserve-3d;
-  transition: none; /* BinderBook animates curved progress via rAF. */
-}
-.binder-flip[data-direction="next"] .binder-flip-near { left: 0; transform-origin: left center; }
-.binder-flip[data-direction="prev"] .binder-flip-near { right: 0; transform-origin: right center; }
-.binder-flip[data-direction="next"] .binder-flip-far { left: 100%; transform-origin: left center; }
-.binder-flip[data-direction="prev"] .binder-flip-far { right: 100%; transform-origin: right center; }
-
-/* L'intensita' di ombra/piega/luce segue --flip-shadow (0-1, scritta ad
-   ogni frame dal trascinamento in BinderBook.tsx - stessa curva sin(),
-   picco a meta' gesto) - a riposo/0 non produce alcun effetto visibile.
-   Impostata su .binder-flip-near: eredita su .binder-flip-far (nidificato)
-   e su tutti i layer decorativi dentro entrambi. */
-.binder-flip-near {
-  box-shadow: 0 0 calc(var(--flip-shadow, 0) * 40px) calc(var(--flip-shadow, 0) * 6px) rgba(0, 0, 0, calc(var(--flip-shadow, 0) * 0.5));
-}
-
-/* Durante il trascinamento attivo il transform e' scritto ad ogni frame
-   via ref (segue il dito/cursore 1:1) - nessuna transizione CSS deve
-   interpolare quei valori, altrimenti la pagina "insegue" il gesto con
-   un ritardo percepibile invece di aderirvi. Anche l'assestamento segue
-   la stessa curva via rAF: gli estremi CSS piatti non curvavano la pagina. */
-.binder-flip-live .binder-flip-near,
-.binder-flip-live .binder-flip-far {
-  transition: none;
-}
-
-.binder-flip-face {
-  position: absolute;
-  inset: 0;
-  backface-visibility: hidden;
-  overflow: hidden;
-}
-.binder-flip-back {
-  transform: rotateY(180deg);
-  /* Leggera differenza di luce fronte/retro, come una pagina reale vista
-     dal verso: il retro (rivelato a meta' del giro) e' appena piu' scuro. */
-  filter: brightness(0.92);
-}
-
-/* Il contenuto reale (ScreenView) di una pagina in sfoglio viene renderizzato
-   per intero dentro ciascuna meta' (near/far), a doppia larghezza, e
-   ritagliato dalla finestra overflow:hidden - cosi' near mostra solo la
-   meta' sinistra della pagina e far solo la destra, ricostruendo il tutto
-   quando sono piatte (progress 0/1) esattamente come oggi. */
-.binder-flip-window {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-.binder-flip-slice {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  width: 200%;
-}
-.binder-flip[data-direction="next"] .binder-flip-near .binder-flip-slice { left: 0; }
-.binder-flip[data-direction="next"] .binder-flip-far .binder-flip-slice { left: -100%; }
-.binder-flip[data-direction="prev"] .binder-flip-near .binder-flip-slice { left: -100%; }
-.binder-flip[data-direction="prev"] .binder-flip-far .binder-flip-slice { left: 0; }
-
-/* Luce/ombra dinamica che spazza la pagina mentre si piega (il lato che si
-   solleva verso la luce si schiarisce, quello che si allontana si scurisce)
-   + la linea di piega vera e propria al bordo interno di "near" - copre
-   anche l'eventuale scarto di un frame tra le due meta', che su un foglio
-   vero avrebbe comunque un'ombra li'. */
-.binder-flip-shade {
-  position: absolute;
-  inset: 0;
+  top: -3px;
+  right: 26px;
+  width: 12px;
+  height: 18px;
+  z-index: 7;
   pointer-events: none;
-  mix-blend-mode: soft-light;
-  background: linear-gradient(90deg,
-    rgba(255, 255, 255, calc(var(--flip-shadow, 0) * .5)),
-    transparent 55%,
-    rgba(0, 0, 0, calc(var(--flip-shadow, 0) * .4))
-  );
-}
-.binder-flip[data-direction="prev"] .binder-flip-shade {
-  background: linear-gradient(270deg,
-    rgba(255, 255, 255, calc(var(--flip-shadow, 0) * .5)),
-    transparent 55%,
-    rgba(0, 0, 0, calc(var(--flip-shadow, 0) * .4))
-  );
-}
-.binder-flip-crease {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  pointer-events: none;
-  opacity: var(--flip-shadow, 0);
-  background: linear-gradient(180deg, rgba(0, 0, 0, .4), rgba(255, 255, 255, .55) 50%, rgba(0, 0, 0, .4));
-  filter: blur(.5px);
-}
-.binder-flip[data-direction="next"] .binder-flip-near .binder-flip-crease { right: 0; }
-.binder-flip[data-direction="prev"] .binder-flip-near .binder-flip-crease { left: 0; }
-@keyframes binder-page-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.binder-page-fade {
-  animation: binder-page-fade-in 260ms ease-out;
-  will-change: opacity;
+  background: linear-gradient(180deg, #e6e9ec, #9198a0);
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 @media (hover: none) {
@@ -840,8 +659,6 @@ body::after {
 
 @media (max-width: 767px), (max-width: 1023px) and (orientation: portrait) {
   .binder-shell { padding-left: 12px; padding-right: 12px; }
-  .binder-stage { perspective: 1500px; }
-  .binder-stage-single .binder-spread { width: min(100%, 540px); }
   .binder-view-switch { width: 100%; }
   .binder-view-switch > a { flex: 1; justify-content: center; padding-inline: .75rem; }
 }
@@ -860,13 +677,8 @@ body::after {
   .brand-card,
   .brand-wave,
   .binder-pocket-caption,
-  .binder-flip-near,
-  .binder-flip-far,
   .filter-panel-anim {
     transition: none !important;
-  }
-  .binder-page-fade {
-    animation: none !important;
   }
 }
 
