@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -13,11 +13,11 @@ import {
   normalizeRarity,
 } from "@/lib/db";
 import { MOVERS_TIERS, findMoversTier } from "@/lib/moversTiers";
-import { getBinderIds } from "@/lib/binder";
-import { getWishlistIds } from "@/lib/wishlist";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
+import { splitCsv } from "@/lib/queryParams";
+import { useBinderWishlistIds } from "@/lib/useBinderWishlistIds";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
@@ -98,10 +98,6 @@ function scrollSectionToTop(ref: React.RefObject<HTMLElement | null>) {
   ref.current?.scrollIntoView({ behavior: "instant", block: "start" });
 }
 
-function splitCsv(value: string | null): string[] {
-  return value ? value.split(",").filter(Boolean) : [];
-}
-
 function parsePage(value: string | null): number {
   const n = value ? parseInt(value, 10) : 1;
   return Number.isFinite(n) && n >= 1 ? n : 1;
@@ -137,8 +133,7 @@ function MoversContent() {
   const [rises, setRises] = useState<MoversPageResult | null>(null);
   const [drops, setDrops] = useState<MoversPageResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
-  const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
+  const { binderIds, setBinderIds, wishlistIds, setWishlistIds } = useBinderWishlistIds();
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
   const [rarities, setRarities] = useState<string[]>([]);
@@ -188,12 +183,7 @@ function MoversContent() {
   }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage, activeTab, pathname, router]);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setBinderIds(getBinderIds());
-      setWishlistIds(getWishlistIds());
-    });
     fetchRarities().then(setRarities).catch(() => {});
-    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -218,13 +208,16 @@ function MoversContent() {
     };
   }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage]);
 
-  function handleToggleBinderCard(card: CardRow) {
+  // useCallback: CardTile e' memo (vedi components/CardTile.tsx), un
+  // riferimento stabile qui evita di ri-renderizzare tutte le tile di
+  // rialzi+cali ad ogni singolo toggle stella/cuore.
+  const handleToggleBinderCard = useCallback((card: CardRow) => {
     setBinderIds((prev) => new Set(promptBinderToggle(card, prev.has(card.id))));
-  }
+  }, [promptBinderToggle, setBinderIds]);
 
-  function handleToggleWishlistCard(card: CardRow) {
+  const handleToggleWishlistCard = useCallback((card: CardRow) => {
     setWishlistIds((prev) => new Set(promptWishlistToggle(card, prev.has(card.id))));
-  }
+  }, [promptWishlistToggle, setWishlistIds]);
 
   // Ogni handler di filtro riparte esplicitamente dalla prima pagina di
   // entrambe le liste (non un useEffect separato che osserva i filtri e
@@ -477,9 +470,9 @@ function MoversContent() {
                         index={i}
                         priceProfile="exact"
                         inBinder={binderIds.has(card.id)}
-                        onToggleBinder={() => handleToggleBinderCard(card)}
+                        onToggleBinder={handleToggleBinderCard}
                         inWishlist={wishlistIds.has(card.id)}
-                        onToggleWishlist={() => handleToggleWishlistCard(card)}
+                        onToggleWishlist={handleToggleWishlistCard}
                         returnTo={returnTo}
                       />
                     ))}
@@ -517,9 +510,9 @@ function MoversContent() {
                         index={i}
                         priceProfile="exact"
                         inBinder={binderIds.has(card.id)}
-                        onToggleBinder={() => handleToggleBinderCard(card)}
+                        onToggleBinder={handleToggleBinderCard}
                         inWishlist={wishlistIds.has(card.id)}
-                        onToggleWishlist={() => handleToggleWishlistCard(card)}
+                        onToggleWishlist={handleToggleWishlistCard}
                         returnTo={returnTo}
                       />
                     ))}

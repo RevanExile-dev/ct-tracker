@@ -1,15 +1,15 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, CardsSummary, ExpansionInfo, SortOption,
   fetchCards, fetchCardsCount, fetchCardsSummary, fetchCatalogStats, fetchConditions, fetchExpansions,
   fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
 } from "@/lib/db";
-import { getBinderIds } from "@/lib/binder";
-import { getWishlistIds } from "@/lib/wishlist";
 import { FilterPreset } from "@/lib/filterPreset";
+import { splitCsv } from "@/lib/queryParams";
+import { useBinderWishlistIds } from "@/lib/useBinderWishlistIds";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
@@ -20,10 +20,6 @@ import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
 
 const PAGE_SIZE = 60;
-
-function splitCsv(v: string | null): string[] {
-  return v ? v.split(",").filter(Boolean) : [];
-}
 
 function HomeContent() {
   const router = useRouter();
@@ -80,8 +76,7 @@ function HomeContent() {
   const [sortBy, setSortBy] = useState<SortOption>(
     () => (searchParams.get("sort") as SortOption) || "expansion"
   );
-  const [binderIds, setBinderIds] = useState<Set<number>>(new Set());
-  const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
+  const { binderIds, setBinderIds, wishlistIds, setWishlistIds } = useBinderWishlistIds();
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
   const [visibleCount, setVisibleCount] = useState(() => {
@@ -124,10 +119,6 @@ function HomeContent() {
   }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router]);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setBinderIds(getBinderIds());
-      setWishlistIds(getWishlistIds());
-    });
     fetchExpansions().then(setExpansions).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
     fetchLanguages().then(setLanguages).catch(() => {});
@@ -138,7 +129,6 @@ function HomeContent() {
     fetchCatalogStats()
       .then((s) => setTotalCards(s.totalCards))
       .catch(() => {});
-    return () => cancelAnimationFrame(frame);
   }, []);
 
   // Ricarica le carte quando cambiano i filtri lato-query (ricerca,
@@ -226,13 +216,17 @@ function HomeContent() {
     );
   }
 
-  function handleToggleBinderCard(card: CardRow) {
+  // useCallback (non funzioni semplici): CardTile e' memo (vedi
+  // components/CardTile.tsx) - un riferimento stabile qui e' cio' che
+  // permette a un toggle su UNA carta di ri-renderizzare solo quella tile
+  // invece dell'intera griglia visibile.
+  const handleToggleBinderCard = useCallback((card: CardRow) => {
     setBinderIds((prev) => new Set(promptBinderToggle(card, prev.has(card.id))));
-  }
+  }, [promptBinderToggle, setBinderIds]);
 
-  function handleToggleWishlistCard(card: CardRow) {
+  const handleToggleWishlistCard = useCallback((card: CardRow) => {
     setWishlistIds((prev) => new Set(promptWishlistToggle(card, prev.has(card.id))));
-  }
+  }, [promptWishlistToggle, setWishlistIds]);
 
   const hasActiveFilters = Boolean(
     search || expansionCode || selectedRarities.length || selectedLanguages.length ||
@@ -431,9 +425,9 @@ function HomeContent() {
                   card={card}
                   index={i}
                   inBinder={binderIds.has(card.id)}
-                  onToggleBinder={() => handleToggleBinderCard(card)}
+                  onToggleBinder={handleToggleBinderCard}
                   inWishlist={wishlistIds.has(card.id)}
-                  onToggleWishlist={() => handleToggleWishlistCard(card)}
+                  onToggleWishlist={handleToggleWishlistCard}
                   returnTo={returnTo}
                 />
               ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import InteractiveCard from "./InteractiveCard";
@@ -14,7 +14,16 @@ const STAGGER_CAP = 16; // oltre questo indice niente piu' ritardo, altrimenti l
 // apposta lato client, vedi commento li' sul perche' del tetto).
 const MAX_QUANTITY = 999;
 
-export default function CardTile({
+// Componente puro (memo): renderizzato a griglie fino a qualche centinaio di
+// tile (catalogo, movimenti, binder), un toggle stella/cuore su UNA carta
+// altrimenti ri-renderizza l'intera griglia ad ogni click. Perche' il memo
+// sia efficace i callback (onToggleBinder/onToggleWishlist/...) devono
+// restare STABILI da un render all'altro: per questo ricevono l'intera
+// `card` come argomento invece di essere chiusi (closure) su di essa dal
+// chiamante - ogni pagina puo' cosi' passare un unico useCallback condiviso
+// da tutte le tile della griglia invece di una funzione inline diversa per
+// ognuna, che vanificherebbe il memo ad ogni render del genitore.
+function CardTile({
   card,
   index = 0,
   inBinder,
@@ -32,14 +41,14 @@ export default function CardTile({
   card: CardRow;
   index?: number;
   inBinder?: boolean;
-  onToggleBinder?: () => void;
+  onToggleBinder?: (card: CardRow) => void;
   /** Analogo a inBinder/onToggleBinder ma per la lista desideri (cuore
    * invece di stella) - usato dalla pagina /wishlist per rimuovere una
    * carta direttamente dalla griglia, senza aprirla. Le due liste sono
    * indipendenti: una pagina passa l'uno o l'altro, mai entrambi insieme
    * in pratica. */
   inWishlist?: boolean;
-  onToggleWishlist?: () => void;
+  onToggleWishlist?: (card: CardRow) => void;
   returnTo?: string;
   // "best": prezzo a cascata (Near Mint + CardTrader Zero quando esiste,
   // qualunque lingua, altrimenti il piu' economico salvato) - usato SOLO dal
@@ -56,7 +65,7 @@ export default function CardTile({
    * Mostra uno stepper +/- solo quando entrambi quantity e onQuantityChange
    * sono passati insieme. */
   quantity?: number;
-  onQuantityChange?: (next: number) => void;
+  onQuantityChange?: (card: CardRow, next: number) => void;
   /** Passato SOLO dal binder quando la copia posseduta ha una lingua nota
    * (BinderEntry.language): sovrascrive il prezzo "best" con quello trovato
    * nella lingua posseduta, quando disponibile - `cents: null` significa
@@ -69,7 +78,7 @@ export default function CardTile({
    * per registrare/modificare prezzo pagato e data di questa carta. Assente
    * altrove (catalogo/desideri/movimenti), dove "quanto l'hai pagata" non ha
    * senso - stessa convenzione di quantity/onQuantityChange sopra. */
-  onLogPurchase?: () => void;
+  onLogPurchase?: (card: CardRow) => void;
   /** True se esiste gia' un lotto per questa carta: cambia solo l'etichetta
    * del pulsante (mai il comportamento), cosi' non sembra un'azione "da
    * fare la prima volta" quando in realta' aggiorna un dato gia' presente. */
@@ -268,7 +277,7 @@ export default function CardTile({
                   type="button"
                   onClick={() => {
                     setPoppingWishlist(true);
-                    onToggleWishlist();
+                    onToggleWishlist(card);
                   }}
                   onAnimationEnd={() => setPoppingWishlist(false)}
                   aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
@@ -288,7 +297,7 @@ export default function CardTile({
                   type="button"
                   onClick={() => {
                     setPopping(true);
-                    onToggleBinder();
+                    onToggleBinder(card);
                   }}
                   onAnimationEnd={() => setPopping(false)}
                   aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
@@ -312,7 +321,7 @@ export default function CardTile({
             <button
               type="button"
               disabled={quantity <= 1}
-              onClick={() => onQuantityChange(quantity - 1)}
+              onClick={() => onQuantityChange(card, quantity - 1)}
               aria-label="Diminuisci quantità"
               className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
             >
@@ -324,7 +333,7 @@ export default function CardTile({
             <button
               type="button"
               disabled={quantity >= MAX_QUANTITY}
-              onClick={() => onQuantityChange(quantity + 1)}
+              onClick={() => onQuantityChange(card, quantity + 1)}
               aria-label="Aumenta quantità"
               className="w-7 h-7 shrink-0 rounded-full border border-base-border bg-base-surface2 text-ink-muted flex items-center justify-center transition-colors hover:text-ink-primary hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none"
             >
@@ -337,7 +346,7 @@ export default function CardTile({
           <div className="px-3 pb-3 -mt-1">
             <button
               type="button"
-              onClick={onLogPurchase}
+              onClick={() => onLogPurchase(card)}
               className="w-full text-xs text-ink-muted hover:text-accent-bright transition-colors text-left"
             >
               {hasPurchaseInfo ? "💰 Modifica prezzo di acquisto" : "💰 Aggiungi prezzo di acquisto"}
@@ -348,3 +357,5 @@ export default function CardTile({
     </div>
   );
 }
+
+export default memo(CardTile);

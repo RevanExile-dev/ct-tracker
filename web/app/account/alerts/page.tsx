@@ -41,6 +41,68 @@ function targetLabel(alert: PriceAlert): string {
   return `calo del ${alert.targetValue}%${baseline}`;
 }
 
+// Etichetta del bottone di attivazione/disattivazione: distinta da "Attiva"
+// quando l'allarme e' "fired", per rendere visivamente chiaro che si tratta
+// di RIattivare un allarme già scattato (non di attivarne uno nuovo).
+function toggleActionLabel(alert: PriceAlert): string {
+  if (alert.state === "armed") return "Disattiva";
+  if (alert.state === "fired") return "Riattiva";
+  return "Attiva";
+}
+
+type AlertListItemProps = {
+  alert: PriceAlert;
+  card: CardRow | undefined;
+  highlighted?: boolean;
+  onToggle: (alert: PriceAlert) => void;
+  onRemove: (id: number) => void;
+};
+
+function AlertListItem({ alert, card, highlighted, onToggle, onRemove }: AlertListItemProps) {
+  return (
+    <li
+      className={`rounded-card border px-5 py-4 ${
+        highlighted
+          ? "border-accent-bright/40 bg-accent/5"
+          : "border-base-border bg-base-surface/70"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-ink-primary font-medium">
+            {card ? <>{card.name} <span className="text-ink-faint">— {card.expansion_name}</span></> : `Carta #${alert.blueprintId}`}
+          </div>
+          <div className="text-sm text-ink-muted mt-0.5">{profileLabel(alert)}</div>
+          <div className="text-sm text-ink-muted">{targetLabel(alert)}</div>
+          <div className="text-xs font-mono text-ink-faint mt-1">
+            {alert.fireMode === "once" ? "Una volta sola" : `Ripetibile ogni ${alert.rearmCooldownHours}h`}
+            {" · "}creato il {formatDateLong(alert.createdAt)}
+            {alert.firedAt && <> · scattato il {formatDateLong(alert.firedAt)}</>}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={`text-xs font-mono uppercase tracking-wider ${STATE_CLASSES[alert.state]}`}>{STATE_LABELS[alert.state]}</span>
+          <button
+            type="button"
+            onClick={() => onToggle(alert)}
+            className={
+              alert.state === "fired"
+                ? "btn-lift text-xs min-h-8 px-2.5 rounded-lg border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 transition-colors"
+                : "text-xs text-ink-muted hover:text-accent-bright min-h-8 px-2 border border-base-border rounded-lg"
+            }
+          >
+            {toggleActionLabel(alert)}
+          </button>
+          <button type="button" onClick={() => onRemove(alert.id)}
+            className="text-xs text-ink-muted hover:text-signal-down min-h-8 px-2 border border-base-border rounded-lg">
+            Elimina
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export default function PriceAlertsPage() {
   const { data: session, status } = useSession();
   const [alerts, setAlerts] = useState<PriceAlert[] | null>(null);
@@ -348,40 +410,57 @@ export default function PriceAlertsPage() {
       ) : alerts.length === 0 ? (
         <p className="text-ink-faint text-sm">Nessun allarme creato finora.</p>
       ) : (
-        <ul className="space-y-3">
-          {alerts.map((alert) => {
-            const card = cardsById.get(alert.blueprintId);
-            return (
-              <li key={alert.id} className="rounded-card border border-base-border bg-base-surface/70 px-5 py-4">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="text-ink-primary font-medium">
-                      {card ? <>{card.name} <span className="text-ink-faint">— {card.expansion_name}</span></> : `Carta #${alert.blueprintId}`}
-                    </div>
-                    <div className="text-sm text-ink-muted mt-0.5">{profileLabel(alert)}</div>
-                    <div className="text-sm text-ink-muted">{targetLabel(alert)}</div>
-                    <div className="text-xs font-mono text-ink-faint mt-1">
-                      {alert.fireMode === "once" ? "Una volta sola" : `Ripetibile ogni ${alert.rearmCooldownHours}h`}
-                      {" · "}creato il {formatDateLong(alert.createdAt)}
-                      {alert.firedAt && <> · scattato il {formatDateLong(alert.firedAt)}</>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={`text-xs font-mono uppercase tracking-wider ${STATE_CLASSES[alert.state]}`}>{STATE_LABELS[alert.state]}</span>
-                    <button type="button" onClick={() => toggleAlert(alert)}
-                      className="text-xs text-ink-muted hover:text-accent-bright min-h-8 px-2 border border-base-border rounded-lg">
-                      {alert.state === "armed" ? "Disattiva" : "Attiva"}
-                    </button>
-                    <button type="button" onClick={() => removeAlert(alert.id)}
-                      className="text-xs text-ink-muted hover:text-signal-down min-h-8 px-2 border border-base-border rounded-lg">
-                      Elimina
-                    </button>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        (() => {
+          const firedAlerts = alerts.filter((a) => a.state === "fired");
+          const otherAlerts = alerts.filter((a) => a.state !== "fired");
+          return (
+            <div className="space-y-8">
+              {firedAlerts.length > 0 && (
+                <section>
+                  <h2 className="font-display text-lg font-bold text-accent-bright mb-1">
+                    Scattati ({firedAlerts.length})
+                  </h2>
+                  <p className="text-sm text-ink-muted mb-3">
+                    La soglia è stata raggiunta: riattivali per continuare a monitorarli.
+                  </p>
+                  <ul className="space-y-3">
+                    {firedAlerts.map((alert) => (
+                      <AlertListItem
+                        key={alert.id}
+                        alert={alert}
+                        card={cardsById.get(alert.blueprintId)}
+                        highlighted
+                        onToggle={toggleAlert}
+                        onRemove={removeAlert}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {otherAlerts.length > 0 && (
+                <section>
+                  {firedAlerts.length > 0 && (
+                    <h2 className="font-display text-lg font-bold text-ink-primary mb-3">
+                      Altri allarmi ({otherAlerts.length})
+                    </h2>
+                  )}
+                  <ul className="space-y-3">
+                    {otherAlerts.map((alert) => (
+                      <AlertListItem
+                        key={alert.id}
+                        alert={alert}
+                        card={cardsById.get(alert.blueprintId)}
+                        onToggle={toggleAlert}
+                        onRemove={removeAlert}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
+          );
+        })()
       )}
     </main>
   );
