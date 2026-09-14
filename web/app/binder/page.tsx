@@ -74,9 +74,18 @@ function BinderContent() {
     [entries]
   );
 
-  function changeQuantity(id: number, quantity: number) {
+  const changeQuantity = useCallback((id: number, quantity: number) => {
     setEntries(setBinderQuantity(id, quantity));
-  }
+  }, []);
+
+  // CardTile riceve la carta intera (vedi components/CardTile.tsx), non
+  // solo l'id: un piccolo wrapper stabile invece di una closure inline per
+  // ogni tile, cosi' il memo di CardTile puo' effettivamente saltare le
+  // carte non toccate da un cambio di quantita'.
+  const handleCardQuantityChange = useCallback(
+    (card: CardRow, quantity: number) => changeQuantity(card.id, quantity),
+    [changeQuantity]
+  );
 
   const entryById = useMemo(() => new Map(entries.map((entry) => [entry.blueprintId, entry])), [entries]);
 
@@ -275,11 +284,13 @@ function BinderContent() {
   const returnTo = query ? `${pathname}?${query}` : pathname;
   useScrollRestoration("binder", cards !== null || error !== null, returnTo);
 
-  function removeFromBinder(id: number) {
-    toggleBinder(id);
-    setCards((current) => current?.filter((card) => card.id !== id) ?? current);
-    setEntries((current) => current.filter((entry) => entry.blueprintId !== id));
-  }
+  // useCallback: CardTile e' memo, un riferimento stabile evita di
+  // ri-renderizzare l'intera griglia del binder ad ogni singola rimozione.
+  const removeFromBinder = useCallback((card: CardRow) => {
+    toggleBinder(card.id);
+    setCards((current) => current?.filter((c) => c.id !== card.id) ?? current);
+    setEntries((current) => current.filter((entry) => entry.blueprintId !== card.id));
+  }, []);
 
   return (
     <main className="binder-shell mx-auto w-full max-w-[1600px] px-4 sm:px-8 py-8 sm:py-10">
@@ -368,7 +379,7 @@ function BinderContent() {
             quantities={quantityById}
             onQuantityChange={changeQuantity}
             ownedLanguageMatches={ownedLanguageMatchById}
-            onLogPurchase={session ? (card) => setPurchaseModalCard(card) : undefined}
+            onLogPurchase={session ? setPurchaseModalCard : undefined}
             cardsWithPurchaseInfo={cardsWithPurchaseInfo}
           />
         ) : (
@@ -384,13 +395,13 @@ function BinderContent() {
                 card={card}
                 index={index}
                 inBinder
-                onToggleBinder={() => removeFromBinder(card.id)}
+                onToggleBinder={removeFromBinder}
                 returnTo={returnTo}
                 priceProfile="best"
                 quantity={quantityById.get(card.id) ?? 1}
-                onQuantityChange={(quantity) => changeQuantity(card.id, quantity)}
+                onQuantityChange={handleCardQuantityChange}
                 ownedLanguageMatch={ownedLanguageMatchById.get(card.id) ?? undefined}
-                onLogPurchase={session ? () => setPurchaseModalCard(card) : undefined}
+                onLogPurchase={session ? setPurchaseModalCard : undefined}
                 hasPurchaseInfo={cardsWithPurchaseInfo.has(card.id)}
               />
             ))}
