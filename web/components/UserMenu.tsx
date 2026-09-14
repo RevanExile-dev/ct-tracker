@@ -1,20 +1,53 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 
 /** Bottone account nell'header: "Accedi" da sloggato, avatar + menu a
- * tendina (solo "Esci" per ora) da loggato. Stesso pattern minimale di
- * click-fuori-per-chiudere gia' usato altrove (FilterDropdown), qui senza
- * bisogno della complessita' di quel componente (nessuna ricerca, nessun
- * posizionamento speciale - una sola voce di menu). */
+ * tendina (Allarmi prezzo/Notifiche Telegram/Esci) da loggato. Stesso
+ * pattern minimale di click-fuori-per-chiudere gia' usato altrove
+ * (FilterDropdown). Il bottone vive in un header con `flex flex-wrap`
+ * (SiteHeader) il cui contenuto cambia da pagina a pagina (alcuni link
+ * sono nascosti sulla pagina su cui ci si trova gia') - su schermi stretti
+ * questo sposta il bottone tra piu' posizioni orizzontali a seconda di
+ * dove va a capo. Il menu qui sotto e' ancorato con right-0 (bordo destro
+ * del menu = bordo destro del bottone): se il bottone finisce vicino al
+ * bordo SINISTRO dello schermo, un menu largo min-w-48 ancorato cosi'
+ * sborda a sinistra fuori dal viewport (bug reale segnalato dall'utente su
+ * mobile). Corretto con la stessa tecnica gia' usata per il popover
+ * desktop di FilterDropdown: dopo il mount, misura la posizione reale del
+ * bottone e trasla il menu solo quanto serve per restare dentro al
+ * viewport, mai oltre quanto serve per non uscire nemmeno a destra. */
 export default function UserMenu() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const menu = menuRef.current;
+    const root = rootRef.current;
+    if (!menu || !root) return;
+    function reposition() {
+      if (!menu || !root) return;
+      const rootRect = root.getBoundingClientRect();
+      const margin = 12;
+      const naturalLeft = rootRect.right - menu.offsetWidth; // posizione senza correzioni (right-0)
+      let shift = naturalLeft < margin ? margin - naturalLeft : 0;
+      shift = Math.min(shift, Math.max(window.innerWidth - margin - rootRect.right, 0)); // mai cosi' a destra da uscire anche li'
+      menu.style.setProperty("--tw-translate-x", shift ? `${shift}px` : "0px");
+    }
+    reposition();
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      menu.style.removeProperty("--tw-translate-x");
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,8 +113,9 @@ export default function UserMenu() {
 
       {open && (
         <div
+          ref={menuRef}
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 min-w-48 rounded-card border border-base-border bg-base-surface shadow-card overflow-hidden"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 min-w-48 max-w-[calc(100vw-1.5rem)] translate-x-0 rounded-card border border-base-border bg-base-surface shadow-card overflow-hidden"
         >
           <div className="px-4 py-3 border-b border-base-border">
             <div className="text-sm text-ink-primary truncate">{label}</div>
