@@ -53,6 +53,7 @@ function cardsFilterParams(opts: CardsFilterOpts): Record<string, unknown> {
     languages: opts.languages,
     conditions: opts.conditions,
     onlyZero: opts.onlyZero,
+    onlyPremium: opts.onlyPremium,
     ids: opts.ids,
     // Un array ids vuoto non appende nessun parametro "ids" alla query
     // string (il loop su Array.isArray in apiFetch non ha nulla da

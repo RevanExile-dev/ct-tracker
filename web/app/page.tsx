@@ -18,6 +18,7 @@ import CardTile from "@/components/CardTile";
 import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
+import HomeHighlights from "@/components/HomeHighlights";
 
 const PAGE_SIZE = 60;
 
@@ -339,6 +340,15 @@ function HomeContent() {
           </span>
         </button>
       </div>
+
+      <HomeHighlights
+        active={!hasActiveFilters}
+        binderIds={binderIds}
+        onToggleBinder={handleToggleBinderCard}
+        wishlistIds={wishlistIds}
+        onToggleWishlist={handleToggleWishlistCard}
+        returnTo={returnTo}
+      />
 
       {expansionSummary && (
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-card border border-base-border bg-base-surface px-5 py-4">

@@ -64,6 +64,11 @@ export type CardsFilterOpts = {
   languages?: string[];
   conditions?: string[];
   onlyZero?: boolean;
+  // Solo carte con b.is_premium = 1 (flag gia' calcolato in sync da parole
+  // chiave sul nome: full art, illustration rare, secret rare, alternate
+  // art, ...) - usato dagli highlight in home (vedi HomeHighlights), nessun
+  // dato nuovo da raccogliere.
+  onlyPremium?: boolean;
   // Filtra su un insieme esplicito di ID invece che sull'intero catalogo -
   // usato da binder/wishlist (vedi fetchCards).
   ids?: number[];
