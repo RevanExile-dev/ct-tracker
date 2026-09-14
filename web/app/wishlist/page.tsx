@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { CardRow, fetchCards } from "@/lib/db";
@@ -50,10 +50,13 @@ function WishlistContent() {
   const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
   useScrollRestoration("wishlist", cards !== null || error !== null, returnTo);
 
-  function handleRemove(id: number) {
-    setWishlistIds(new Set(toggleWishlist(id)));
-    setCards((current) => current?.filter((c) => c.id !== id) ?? current);
-  }
+  // useCallback: CardTile e' memo (vedi components/CardTile.tsx), un
+  // riferimento stabile evita di ri-renderizzare l'intera lista ad ogni
+  // singola rimozione.
+  const handleRemove = useCallback((card: CardRow) => {
+    setWishlistIds(new Set(toggleWishlist(card.id)));
+    setCards((current) => current?.filter((c) => c.id !== card.id) ?? current);
+  }, []);
 
   const dropsCount = useMemo(() => {
     if (!sorted) return 0;
@@ -121,7 +124,7 @@ function WishlistContent() {
               card={card}
               index={i}
               inWishlist={wishlistIds.has(card.id)}
-              onToggleWishlist={() => handleRemove(card.id)}
+              onToggleWishlist={handleRemove}
               returnTo={returnTo}
             />
           ))}
