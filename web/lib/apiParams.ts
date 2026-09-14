@@ -11,6 +11,7 @@ export function parseCardsFilterOpts(sp: URLSearchParams): CardsFilterOpts {
     languages: sp.getAll("languages"),
     conditions: sp.getAll("conditions"),
     onlyZero: sp.get("onlyZero") === "1",
+    onlyPremium: sp.get("onlyPremium") === "1",
     // "idsProvided" (non sp.has("ids")): un array ids VUOTO lato client non
     // produce alcun parametro "ids" in query string (niente da appendere),
     // quindi senza questo flag esplicito il server non potrebbe distinguere

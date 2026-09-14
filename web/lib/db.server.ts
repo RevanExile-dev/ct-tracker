@@ -93,6 +93,9 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
     const rarityFilters = expandRarityFilters(opts.rarities);
     where.push(`b.rarity = ANY(${p.add(rarityFilters)})`);
   }
+  if (opts.onlyPremium) {
+    where.push("b.is_premium = 1");
+  }
   if (opts.ids) {
     // Array vuoto (es. binder/wishlist senza ancora nessuna carta salvata):
     // nessuna riga puo' corrispondere, "false" evita comunque una query
