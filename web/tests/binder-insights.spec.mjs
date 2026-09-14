@@ -98,18 +98,21 @@ test('mixed currencies never produce an apparently comparable return', async ({ 
   await expect(page.getByRole('slider', { name: 'Esplora lo storico' })).toHaveCount(0);
 });
 
-test('button page turn bends between endpoints; chart keys cannot turn the book', async ({ page }) => {
+test('button page turn advances the book; chart keys cannot turn it', async ({ page }) => {
   await arrange(page);
   await page.goto(`${BASE}/binder?view=book`);
+  // Copertina: "hardCovers" la mostra da sola anche in modalita' spread.
+  await expect(page.locator('.binder-controls [aria-live]')).toHaveText('1/4');
+  // Il focus resta sullo slider del grafico: le sue frecce non devono
+  // raggiungere il gestore tastiera del binder (motore di sfoglio), che
+  // reagisce solo quando il libro stesso ha il focus.
   await page.getByRole('slider', { name: 'Esplora lo storico' }).press('ArrowLeft');
-  await expect(page.locator('.binder-controls [aria-live]')).toHaveText('1–2/4');
+  await expect(page.locator('.binder-controls [aria-live]')).toHaveText('1/4');
   await page.getByRole('button', { name: 'Pagina succ.', exact: false }).click();
-  await expect.poll(() => page.locator('.binder-flip-far').evaluateAll((nodes) => nodes.some((node) => {
-    const degrees = parseFloat(node.style.transform.replace('rotateY(', ''));
-    return Math.abs(degrees) > 2;
-  })), { intervals: [16, 16, 32] }).toBe(true);
-  await expect(page.locator('.binder-controls [aria-live]')).toHaveText('3–4/4');
-  await expect(page.locator('.binder-flip')).toHaveCount(0);
+  await expect(page.locator('.binder-controls [aria-live]')).toHaveText('2–3/4');
+  await page.getByRole('button', { name: 'Pagina succ.', exact: false }).click();
+  // Ultimo foglio: anch'esso "hardCovers", di nuovo da solo.
+  await expect(page.locator('.binder-controls [aria-live]')).toHaveText('4/4');
 });
 
 test.describe('touch on a phone', () => {
