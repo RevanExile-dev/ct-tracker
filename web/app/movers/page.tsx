@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -81,6 +81,23 @@ function Pagination({
   );
 }
 
+/** Cambiare pagina sostituisce la griglia di carte ma lascia lo scroll dov'era
+ * (in fondo alla pagina precedente, se e' li' che si trovava il bottone
+ * "Successiva") - senza questo lo scroll resterebbe fermo sul fondo della
+ * nuova pagina invece di mostrarne l'inizio, comportamento segnalato
+ * dall'utente sia su mobile che su desktop.
+ *
+ * Istantaneo, non "smooth": l'effetto piu' sotto che sincronizza
+ * risePage/dropPage nell'URL (router.replace) scatta a sua volta subito
+ * dopo questo click, e un replaceState mentre un'animazione di scroll
+ * "smooth" e' ancora in corso la interrompe a meta' (silenziosamente, senza
+ * errori) - risultato verificato: lo scroll restava fermo esattamente dove
+ * si trovava prima del click, come se questa funzione non facesse nulla.
+ * Istantaneo evita la corsa del tutto. */
+function scrollSectionToTop(ref: React.RefObject<HTMLElement | null>) {
+  ref.current?.scrollIntoView({ behavior: "instant", block: "start" });
+}
+
 function splitCsv(value: string | null): string[] {
   return value ? value.split(",").filter(Boolean) : [];
 }
@@ -142,6 +159,8 @@ function MoversContent() {
   const [activeTab, setActiveTab] = useState<"rises" | "drops">(() =>
     searchParams.get("tab") === "drops" ? "drops" : "rises"
   );
+  const riseSectionRef = useRef<HTMLElement | null>(null);
+  const dropSectionRef = useRef<HTMLElement | null>(null);
 
   // La tab attiva (solo mobile, dove rialzi/cali si vedono uno alla volta)
   // deve stare nell'URL come gli altri filtri: e' quella che decide quale
@@ -437,7 +456,7 @@ function MoversContent() {
           </div>
 
           <div className="grid lg:grid-cols-2 gap-x-8 gap-y-12 mt-4 lg:mt-8">
-            <section className={activeTab === "rises" ? "" : "hidden lg:block"}>
+            <section ref={riseSectionRef} className={activeTab === "rises" ? "" : "hidden lg:block"}>
               <h3 className="font-display font-medium text-signal-up flex items-center gap-2 mb-4">
                 ▲ Maggiori rialzi
                 {rises !== null && (
@@ -465,12 +484,19 @@ function MoversContent() {
                       />
                     ))}
                   </div>
-                  <Pagination page={risePage} totalCount={rises.totalCount} onChange={setRisePage} />
+                  <Pagination
+                    page={risePage}
+                    totalCount={rises.totalCount}
+                    onChange={(p) => {
+                      setRisePage(p);
+                      scrollSectionToTop(riseSectionRef);
+                    }}
+                  />
                 </>
               )}
             </section>
 
-            <section className={activeTab === "drops" ? "" : "hidden lg:block"}>
+            <section ref={dropSectionRef} className={activeTab === "drops" ? "" : "hidden lg:block"}>
               <h3 className="font-display font-medium text-signal-down flex items-center gap-2 mb-4">
                 ▼ Maggiori cali
                 {drops !== null && (
@@ -498,7 +524,14 @@ function MoversContent() {
                       />
                     ))}
                   </div>
-                  <Pagination page={dropPage} totalCount={drops.totalCount} onChange={setDropPage} />
+                  <Pagination
+                    page={dropPage}
+                    totalCount={drops.totalCount}
+                    onChange={(p) => {
+                      setDropPage(p);
+                      scrollSectionToTop(dropSectionRef);
+                    }}
+                  />
                 </>
               )}
             </section>
