@@ -7,6 +7,14 @@
 // server (web/app/api/account/lots/import/route.ts, che aggiunge poi il
 // matching contro il catalogo - separato apposta perche' quella parte
 // richiede il DB e questa no).
+//
+// Il formato Markdown "sicuro" (riconosciuto senza mai finire tra le righe
+// ambigue/non trovate) e' documentato per intero in
+// docs/lot_import_markdown_format_2026-09-13.md - derivato simulando un
+// import reale di 78 carte contro il catalogo Postgres e verificando riga
+// per riga cosa il matching NON riconosceva automaticamente.
+
+import { normalizeRarity } from "./rarity";
 
 export type ParsedImportRow = {
   rowNumber: number; // 1-based, posizione nella tabella (non il valore della colonna "#" se presente)
@@ -179,6 +187,14 @@ const TYPE_ABBREVIATION_HINTS: Record<string, string> = {
   ir: "illustration rare",
   sir: "special illustration rare",
   promo: "promo",
+  // "IR TG" (Illustration Rare della Trainer Gallery) - verificato sul
+  // catalogo reale (simulazione import 2026-09-13): le stampe Trainer
+  // Gallery NON hanno una rarita' distinta, sono taggate "Illustration
+  // Rare" come le IR del set principale, quindi lo stesso hint di "ir"
+  // basta a restringere anche queste - senza, una riga con "IR TG" restava
+  // ambigua tra la Common e la Illustration Rare dello stesso set (nessuna
+  // delle due abbreviazioni sopra la intercettava).
+  "ir tg": "illustration rare",
 };
 
 /** Restringe (mai allarga) un elenco di candidati gia' ambiguo usando il
@@ -205,6 +221,16 @@ export function narrowByDeclaredType<T extends { rarity: string | null }>(candid
   // rarita' sono diverse, non una sottostringa dell'altra, vanno
   // confrontate carattere per carattere (bug reale di una versione
   // precedente, trovato in review).
-  const narrowed = candidates.filter((c) => (c.rarity ?? "").trim().toLowerCase() === hint);
+  //
+  // normalizeRarity PRIMA del confronto (non solo trim/lowercase): il
+  // catalogo reale ha rarity "Special Illustration" (Dark Phantasma) e
+  // "Special Illustraion Rare" - refuso, Fusion Strike, vedi
+  // web/lib/rarity.ts) invece del canonico "Special Illustration Rare" per
+  // alcuni set - senza normalizzare, un "SIR" dichiarato su una di quelle
+  // carte non avrebbe mai trovato corrispondenza (verificato sul catalogo
+  // reale, anche se nessuna riga del campione di simulazione del
+  // 2026-09-13 capitava proprio in quei due set - stesso pattern del bug
+  // gia' noto in web/lib/db.server.ts per il filtro rarita' delle API).
+  const narrowed = candidates.filter((c) => normalizeRarity((c.rarity ?? "").trim()).toLowerCase() === hint);
   return narrowed.length > 0 ? narrowed : candidates;
 }
