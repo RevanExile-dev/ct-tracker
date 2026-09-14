@@ -12,6 +12,19 @@ export function useScrollRestoration(scope: string, ready: boolean, currentUrl: 
   // caricamento impedirebbe per sempre ogni ripristino successivo, un
   // ref per-URL invece lo permette ogni volta che si torna su un URL
   // diverso da quello appena controllato (bug reale, verificato).
+  // Anche il segnale "abbiamo gia' TENTATO un ripristino per questo URL"
+  // (indipendentemente dal trovare o meno qualcosa da ripristinare): finche'
+  // non e' successo, il salvataggio piu' sotto resta sospeso. Un ripristino
+  // nativo del browser sullo storico (o qualunque altro scroll automatico
+  // che accade mentre i dati stanno ancora caricando, quindi prima che
+  // l'effetto sotto possa scattare) genera comunque un evento "scroll"
+  // reale - senza questa guardia il listener lo salverebbe subito,
+  // sovrascrivendo per sempre la posizione buona salvata PRIMA di lasciare
+  // la pagina con quella posizione transitoria e sbagliata, cosicche' il
+  // ripristino vero (che arriva solo a `ready`) troverebbe gia' corrotto il
+  // valore che doveva applicare (bug reale, verificato con "indietro" del
+  // browser nativo: la posizione restava un salto intermedio invece di
+  // tornare esattamente dov'era l'utente).
   const lastRestoredUrl = useRef<string | null>(null);
 
   const restoreFor = useCallback((url: string) => {
@@ -46,6 +59,7 @@ export function useScrollRestoration(scope: string, ready: boolean, currentUrl: 
     let leavingResetTimer: ReturnType<typeof setTimeout> | null = null;
     function save() {
       if (leaving) return;
+      if (lastRestoredUrl.current !== currentUrl) return;
       try {
         sessionStorage.setItem(`carta-viva:scroll:${scope}`, JSON.stringify({
           url: currentUrl,

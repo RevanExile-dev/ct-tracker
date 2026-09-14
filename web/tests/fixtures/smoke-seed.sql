@@ -83,6 +83,32 @@ INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_
   (344562, CURRENT_DATE, now(), 120, 'EUR', 1)
 ON CONFLICT (blueprint_id) DO NOTHING;
 
+-- 13 rialzi + 13 cali (MOVERS_PAGE_SIZE=12, vedi web/lib/types.ts): servono
+-- piu' di una pagina in entrambe le direzioni per tests/movers-pagination.spec.mjs
+-- ("Successiva"/"Precedente" e ripristino scroll su /movers), altrimenti il
+-- bottone di paginazione non comparirebbe nemmeno.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium)
+SELECT
+  901000 + n,
+  'Mover Card ' || n,
+  n || '/26',
+  1, 73, 900001, 'smoketest', 'Smoke Test Set',
+  'https://cardtrader.com/uploads/blueprints/image/900000/mover-card-' || n || '-smoke-test-set.jpg',
+  'Common',
+  0
+FROM generate_series(1, 26) AS n
+ON CONFLICT (id) DO NOTHING;
+
+-- n=1..13 in rialzo (prezzo attuale > precedente), n=14..26 in calo.
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents)
+SELECT
+  901000 + n, CURRENT_DATE, now(), 1000 + n, 'EUR', 1,
+  CASE WHEN n <= 13 THEN 1000 + n ELSE 500 + n END,
+  'EUR',
+  CASE WHEN n <= 13 THEN 500 + n ELSE 1000 + n END
+FROM generate_series(1, 26) AS n
+ON CONFLICT (blueprint_id) DO NOTHING;
+
 INSERT INTO meta (key, value) VALUES
   ('last_price_sync', now()::text),
   ('last_catalog_sync', now()::text)
