@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { HOLO_FRAGMENT_SHADER, HOLO_VERTEX_SHADER } from "@/lib/holoShader";
 
 /**
  * Spike Three.js isolato (vedi PR #6, proposta ChatGPT del 2026-08-31 e
@@ -18,39 +19,6 @@ import * as THREE from "three";
  * frameloop="demand" nel Canvas + invalidate() solo quando la rotazione
  * sta ancora convergendo: a scena ferma non c'e' alcun render loop attivo.
  */
-
-const VERTEX_SHADER = `
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    vNormal = normalize(mat3(modelMatrix) * normal);
-    vViewDir = normalize(cameraPosition - worldPos.xyz);
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
-  }
-`;
-
-const FRAGMENT_SHADER = `
-  uniform sampler2D uMap;
-  uniform float uIntensity;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying vec2 vUv;
-
-  void main() {
-    vec4 tex = texture2D(uMap, vUv);
-    float fresnel = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0), 2.2);
-    vec3 iridescent = vec3(
-      0.5 + 0.5 * sin(fresnel * 8.0 + vUv.x * 6.0),
-      0.5 + 0.5 * sin(fresnel * 8.0 + vUv.x * 6.0 + 2.094),
-      0.5 + 0.5 * sin(fresnel * 8.0 + vUv.x * 6.0 + 4.189)
-    );
-    vec3 color = mix(tex.rgb, tex.rgb + iridescent * fresnel * uIntensity, fresnel * uIntensity);
-    gl_FragColor = vec4(color, tex.a);
-  }
-`;
 
 const MAX_TILT_RAD = 0.26; // ~15 gradi, coerente con l'ampiezza gia' usata da InteractiveCard.tsx a livello "detail"
 
@@ -157,8 +125,8 @@ function CardPlane({
     <mesh ref={meshRef}>
       <planeGeometry args={[1.6, 2.24, 1, 1]} />
       <shaderMaterial
-        vertexShader={VERTEX_SHADER}
-        fragmentShader={FRAGMENT_SHADER}
+        vertexShader={HOLO_VERTEX_SHADER}
+        fragmentShader={HOLO_FRAGMENT_SHADER}
         uniforms={{
           uMap: { value: texture },
           uIntensity: { value: isPremium ? 1 : 0.45 },
