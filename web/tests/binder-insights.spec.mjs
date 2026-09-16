@@ -145,6 +145,11 @@ test.describe('touch on a phone', () => {
     // invece di sfogliare (touch-action: pan-y), congelando il gesto a
     // meta' non appena lo scroll nativo vince la corsa.
     const box = await page.locator('.binder-book-frame').boundingBox();
+    // Altrimenti l'assert "nessuno scroll durante il drag" sarebbe un falso
+    // positivo se la pagina non avesse comunque altezza da scrollare in
+    // questo viewport (rilievo review): scrollY resterebbe 0 anche con
+    // allowTouchScroll lasciato al default rotto.
+    expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
     const scrollBefore = await page.evaluate(() => window.scrollY);
     const client = await context.newCDPSession(page);
     async function touch(type, x, y) {

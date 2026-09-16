@@ -82,7 +82,7 @@ function ScreenView({ screen, returnTo }: { screen: Screen; returnTo: string }) 
                 su HTMLFlipBook), quindi molto piu' stretta di quanto
                 questo testo assumesse quando la copertina poteva occupare
                 l'intera larghezza in modalita' a pagina singola. */}
-            <h2 className="font-display text-[clamp(1.1rem,4vw,4.5rem)] font-bold text-white mt-2 leading-[0.98]">La mia<br />collezione</h2>
+            <h2 className="font-display text-[clamp(0.95rem,4vw,4.5rem)] font-bold text-white mt-2 leading-[0.98]">La mia<br />collezione</h2>
           </div>
           <div>
             <div className="text-[clamp(8px,1vw,12px)] font-mono uppercase tracking-wider text-white/65">{screen.count} carte · valore stimato</div>
