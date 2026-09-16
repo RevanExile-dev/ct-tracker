@@ -126,4 +126,44 @@ test.describe('touch on a phone', () => {
     await expect(page.getByRole('button', { name: '1g', exact: true })).toHaveAttribute('aria-pressed', 'true');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
+
+  test('a real corner-drag turns the page without hijacking page scroll, and opens onto two facing pages', async ({ page, context }) => {
+    await arrange(page);
+    await page.goto(`${BASE}/binder?view=book`);
+    await page.locator('.binder-book-frame').scrollIntoViewIfNeeded();
+    // Anche su telefono il binder e' sempre a due facciate una volta
+    // aperto (usePortrait={false} su HTMLFlipBook) - solo la copertina
+    // ("hardCovers") resta da sola.
+    await page.getByRole('button', { name: 'Avanti', exact: false }).click();
+    await expect(page.locator('.binder-controls [aria-live]')).toHaveText('2–3/6');
+    await expect(page.locator('.binder-center-spine')).toBeVisible();
+
+    // Un vero drag col dito (eventi Touch reali via CDP, non un .click()
+    // sintetico ne' page.mouse) - regressione di un bug reale: il CSS
+    // spedito con il motore di sfoglio lascia per default che un
+    // trascinamento con una minima componente verticale scrolli la pagina
+    // invece di sfogliare (touch-action: pan-y), congelando il gesto a
+    // meta' non appena lo scroll nativo vince la corsa.
+    const box = await page.locator('.binder-book-frame').boundingBox();
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    const client = await context.newCDPSession(page);
+    async function touch(type, x, y) {
+      await client.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    }
+    const startX = box.x + box.width - 14;
+    const startY = box.y + box.height - 14;
+    const endX = box.x - 30;
+    const endY = startY - 30; // un dito vero non e' mai perfettamente orizzontale
+    await touch('touchStart', startX, startY);
+    const steps = 12;
+    for (let i = 1; i <= steps; i++) {
+      await touch('touchMove', startX + (endX - startX) * (i / steps), startY + (endY - startY) * (i / steps));
+      await page.waitForTimeout(20);
+    }
+    const scrollDuringDrag = await page.evaluate(() => window.scrollY);
+    await touch('touchEnd', endX, endY);
+
+    expect(scrollDuringDrag).toBe(scrollBefore);
+    await expect(page.locator('.binder-controls [aria-live]')).toHaveText('4–5/6');
+  });
 });

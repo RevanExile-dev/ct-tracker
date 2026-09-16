@@ -518,6 +518,9 @@ body::after {
     0 8px 0 #07080a,
     0 34px 64px rgba(0, 0, 0, 0.6);
 }
+/* Sempre due facciate affiancate (vedi usePortrait={false} in
+   BinderBook.tsx) - "is-single"/"is-spread" scelgono solo quanto grande
+   puo' diventare il case, non se ci sono una o due pagine. */
 .binder-case.is-single {
   width: min(100%, 460px);
 }
@@ -529,6 +532,18 @@ body::after {
   display: flex;
   justify-content: center;
   border-radius: 10px;
+  /* Altezza dettata dal CSS (rapporto 10:7 - due facciate 5:7 affiancate,
+     vedi LEAF_SIZE in BinderBook.tsx), non da quanto il motore di sfoglio
+     dimensiona i propri elementi interni via JS - trascinare un lembo
+     attiva pagine vicine (lazyRadius) che passano da un placeholder
+     collassato alla loro vera dimensione, e per un istante il loro DOM
+     puo' risultare piu' alto del box del libro; senza un'altezza propria
+     qui quell'istante rialza l'altezza dell'intero documento e la pagina
+     scorre sotto al dito (bug reale riprodotto con drag touch: la
+     document.scrollHeight cresceva proprio a inizio gesto). overflow:hidden
+     scarta quell'eccesso invece di lasciarlo trapelare nel resto della pagina. */
+  aspect-ratio: 10 / 7;
+  overflow: hidden;
   /* Fodera interna del case: quando una pagina "hardCovers" (copertina o
      ultimo foglio) e' mostrata da sola dentro uno spread piu' largo, la
      meta' priva di foglio non resta un vuoto piatto ma legge come l'interno

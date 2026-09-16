@@ -74,14 +74,19 @@ function ScreenView({ screen, returnTo }: { screen: Screen; returnTo: string }) 
     return (
       <div className="binder-page binder-page-cover">
         <div className="binder-cover-shine" />
-        <div className="relative z-10 flex flex-col h-full justify-between p-[clamp(1.25rem,4vw,3rem)]">
+        <div className="relative z-10 flex flex-col h-full justify-between p-[clamp(0.85rem,4vw,3rem)]">
           <div>
-            <div className="font-mono text-[clamp(9px,1vw,12px)] uppercase tracking-[0.3em] text-white/75">Carta Viva</div>
-            <h2 className="font-display text-[clamp(2rem,4vw,4.5rem)] font-bold text-white mt-2 leading-[0.92]">La mia<br />collezione</h2>
+            <div className="font-mono text-[clamp(8px,1vw,12px)] uppercase tracking-[0.2em] text-white/75">Carta Viva</div>
+            {/* min piu' basso di prima: la copertina e' sempre meta' di uno
+                spread a due pagine (anche su telefono, vedi usePortrait
+                su HTMLFlipBook), quindi molto piu' stretta di quanto
+                questo testo assumesse quando la copertina poteva occupare
+                l'intera larghezza in modalita' a pagina singola. */}
+            <h2 className="font-display text-[clamp(1.1rem,4vw,4.5rem)] font-bold text-white mt-2 leading-[0.98]">La mia<br />collezione</h2>
           </div>
           <div>
-            <div className="text-[clamp(9px,1vw,12px)] font-mono uppercase tracking-wider text-white/65">{screen.count} carte · valore stimato</div>
-            <div className="font-display text-[clamp(1.25rem,2.3vw,2.5rem)] font-bold text-white">{formatCents(screen.totalCents, screen.currency)}</div>
+            <div className="text-[clamp(8px,1vw,12px)] font-mono uppercase tracking-wider text-white/65">{screen.count} carte · valore stimato</div>
+            <div className="font-display text-[clamp(0.9rem,2.3vw,2.5rem)] font-bold text-white">{formatCents(screen.totalCents, screen.currency)}</div>
           </div>
         </div>
       </div>
@@ -101,13 +106,13 @@ function ScreenView({ screen, returnTo }: { screen: Screen; returnTo: string }) 
 // Dimensioni di progetto di UNA singola pagina (rapporto 5:7, quello di una
 // carta), passate al motore di sfoglio - sizing:"responsive" lo adatta poi
 // entro min/max alla larghezza disponibile in binder-book-frame (vedi CSS).
-// "singlePage" (mobile/tablet stretto) usa un min/maxWidth che due pagine non
-// possono mai condividere nello spazio concesso dal frame - e' cosi', non con
-// un flag dedicato, che si forza la modalita' a pagina singola: la libreria
-// decide da sola landscape/portrait confrontando 2x pageWidth con lo spazio
-// misurato (usePortrait la abilita a farlo).
+// Sempre due pagine affiancate (vedi usePortrait={false} piu' sotto): un
+// vero binder aperto si legge sempre come due facciate, anche su telefono -
+// "singlePage" (mobile/tablet stretto) sceglie solo la coppia di dimensioni
+// (meta' spread piu' piccola) e la densita' di tasche per facciata (4 invece
+// di 9, altrimenti le tasche diventerebbero troppo piccole per il tocco).
 const LEAF_SIZE = {
-  single: { width: 380, height: 532, minWidth: 240, maxWidth: 420, minHeight: 336, maxHeight: 588 },
+  single: { width: 170, height: 238, minWidth: 128, maxWidth: 220, minHeight: 180, maxHeight: 308 },
   spread: { width: 460, height: 644, minWidth: 240, maxWidth: 560, minHeight: 336, maxHeight: 784 },
 } as const;
 
@@ -195,9 +200,31 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
             minHeight={size.minHeight}
             maxHeight={size.maxHeight}
             sizing="responsive"
-            usePortrait
+            // Sempre landscape (mai una pagina sola): oltre a corrispondere
+            // a un binder vero (si vedono sempre due facciate una volta
+            // aperto), la modalita' "portrait" del motore ha un bug reale
+            // riprodotto con drag touch reali - durante lo sfoglio il
+            // "clip-path" della pagina di destinazione resta a area zero per
+            // tutto il gesto (verificato ispezionando il DOM live), quindi
+            // si rivede la pagina di PARTENZA nell'area scoperta invece
+            // della prossima - "le stesse carte" segnalato dall'utente. In
+            // landscape la stessa ispezione mostra il clip-path della pagina
+            // di destinazione crescere correttamente da subito.
+            usePortrait={false}
             hardCovers
             respectInteractiveContent
+            // Di default il motore lascia che un trascinamento verticale
+            // scrolli la pagina invece di sfogliare (CSS spedito con la
+            // libreria: touch-action: pan-y sul contenitore) - un vero dito
+            // non e' mai perfettamente orizzontale, quindi lo scroll nativo
+            // vince quasi subito la corsa e congela il gesto di sfoglio a
+            // meta' (riprodotto con eventi touch reali via CDP: dopo il primo
+            // pointermove il clip-path/transform della pagina in piega non
+            // si aggiornava piu'). false forza il libro a catturare per
+            // intero il drag - si perde la possibilita' di scorrere la
+            // pagina iniziando esattamente sopra il libro, accettabile per
+            // un binder pensato per essere sfogliato.
+            allowTouchScroll={false}
             flippingTime={620}
             lazyRadius={2}
             pageBackground="#171b21"
