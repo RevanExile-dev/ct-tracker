@@ -18,8 +18,16 @@ on:
     types: [completed]
   schedule:
     # Backfill incrementale del resto del catalogo: la cache rende ogni run
-    # economica dopo la prima, quindi un limite basso e' sufficiente.
-    - cron: "15 */6 * * *"
+    # economica dopo la prima, quindi un limite basso e' sufficiente. Una
+    # volta al giorno (non piu' ogni 6h): ogni commit di questo workflow
+    # innesca un deploy Vercel di produzione completo (git.deploymentEnabled.
+    # main=true in web/vercel.json), che va sommato all'altro trigger gia'
+    # presente (workflow_run dopo sync_catalog.yml, giornaliero alle 4:30
+    # UTC) - 4 run/giorno stavano esaurendo il tetto gratuito di Function
+    # Storage di Vercel (ogni deploy trattenuto pesa sul tetto, non solo le
+    # modifiche di codice). Orario scelto a 12h di distanza dal trigger
+    # post-sync per non sovrapporsi.
+    - cron: "15 16 * * *"
 
 permissions:
   contents: write
