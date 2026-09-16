@@ -49,6 +49,7 @@ function HighlightRow({
               <CardTile
                 card={card}
                 index={i}
+                horizontalScroll
                 inBinder={binderIds.has(card.id)}
                 onToggleBinder={onToggleBinder}
                 inWishlist={wishlistIds.has(card.id)}

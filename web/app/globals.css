@@ -93,6 +93,18 @@ body::after {
   cursor: grabbing;
 }
 
+/* Dentro una riga che scorre orizzontalmente al tocco (vedi HomeHighlights):
+   pan-y qui sopra impedisce lo swipe nativo orizzontale quando il dito tocca
+   la carta invece dello spazio vuoto intorno - su mobile la carta copre
+   quasi tutta la riga, quindi il carosello non si trascinava mai (bug
+   segnalato dall'utente: funzionava su desktop solo perche' li' lo scroll
+   arriva da mouse/trackpad, non da un vero touch-action). touch-action:auto
+   lascia decidere al browser la direzione in base al gesto reale
+   (orizzontale scorre la riga, verticale scorre la pagina). */
+.interactive-card--free-scroll {
+  touch-action: auto;
+}
+
 .interactive-card img {
   -webkit-user-drag: none;
 }

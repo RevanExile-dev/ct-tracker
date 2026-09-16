@@ -37,6 +37,7 @@ function CardTile({
   ownedLanguageMatch,
   onLogPurchase,
   hasPurchaseInfo,
+  horizontalScroll,
 }: {
   card: CardRow;
   index?: number;
@@ -83,6 +84,13 @@ function CardTile({
    * del pulsante (mai il comportamento), cosi' non sembra un'azione "da
    * fare la prima volta" quando in realta' aggiorna un dato gia' presente. */
   hasPurchaseInfo?: boolean;
+  /** True quando questa tile vive dentro una riga che scorre
+   * orizzontalmente al tocco (vedi HomeHighlights.tsx) - toglie il
+   * touch-action:pan-y di .interactive-card, che altrimenti impedisce lo
+   * swipe orizzontale nativo perche' il dito tocca quasi sempre la carta,
+   * non lo spazio vuoto intorno. Assente ovunque la tile stia in una
+   * griglia normale, dove pan-y resta il default. */
+  horizontalScroll?: boolean;
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -172,7 +180,9 @@ function CardTile({
           stessa carta interattiva. */}
       <InteractiveCard
         level="tile"
-        className="bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow"
+        className={`bg-base-surface border border-base-border overflow-hidden transition-shadow duration-300 group-hover:shadow-glow ${
+          horizontalScroll ? "interactive-card--free-scroll" : ""
+        }`}
       >
         <Link
           href={returnTo ? `/card/${card.id}?from=${encodeURIComponent(returnTo)}` : `/card/${card.id}`}
