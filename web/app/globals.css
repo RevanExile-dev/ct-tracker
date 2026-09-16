@@ -101,7 +101,7 @@ body::after {
    arriva da mouse/trackpad, non da un vero touch-action). touch-action:auto
    lascia decidere al browser la direzione in base al gesto reale
    (orizzontale scorre la riga, verticale scorre la pagina). */
-.interactive-card--free-scroll {
+.interactive-card.interactive-card--free-scroll {
   touch-action: auto;
 }
 
