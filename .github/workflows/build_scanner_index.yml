@@ -26,8 +26,11 @@ on:
     # UTC) - 4 run/giorno stavano esaurendo il tetto gratuito di Function
     # Storage di Vercel (ogni deploy trattenuto pesa sul tetto, non solo le
     # modifiche di codice). Orario scelto a 12h di distanza dal trigger
-    # post-sync per non sovrapporsi.
-    - cron: "15 16 * * *"
+    # post-sync per non sovrapporsi, e sul minuto :40 (non multiplo di 15)
+    # per non scattare nello stesso istante di sync_prices_priority.yml
+    # (*/15 * * * *, stesso concurrency group ct-tracker-db-write) -
+    # rilievo review Gemini, verificato sul cron reale dell'altro workflow.
+    - cron: "40 16 * * *"
 
 permissions:
   contents: write
