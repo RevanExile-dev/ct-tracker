@@ -1,0 +1,6 @@
+{
+  "model": "opus",
+  "worktree": {
+    "baseRef": "head"
+  }
+}
