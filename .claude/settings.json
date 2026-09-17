@@ -1,4 +1,5 @@
 {
+  "agent": "ct-orchestrator",
   "model": "opus",
   "worktree": {
     "baseRef": "head"
