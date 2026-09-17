@@ -159,7 +159,14 @@ function HomeContent() {
     // trovato verificando in browser il fix del punto 2 della review AI).
     if (searchParams.get("three") === "1") params.set("three", "1");
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    // Guardia difensiva (suggerita in review, provider groq): con
+    // searchParams tra le dipendenze, un router.replace verso la stessa
+    // query string potrebbe in teoria far ripartire l'effetto se una
+    // futura versione di Next.js smettesse di trattarlo come no-op -
+    // confrontare le stringhe qui evita quel loop a prescindere.
+    if (qs !== searchParams.toString()) {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
   }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router, searchParams]);
 
   useEffect(() => {
