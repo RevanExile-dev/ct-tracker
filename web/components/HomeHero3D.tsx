@@ -36,12 +36,26 @@ const MAX_GROUP_TILT = 0.16; // rad, tilt massimo dell'intero ventaglio al passa
 
 type Layout = { x: number; y: number; z: number; rotY: number; rotZ: number };
 
-const LAYOUT: Layout[] = [
-  { x: -2.05, y: -0.1, z: -0.55, rotY: -0.4, rotZ: -0.07 },
-  { x: -0.7, y: 0.06, z: 0.05, rotY: -0.14, rotZ: -0.025 },
-  { x: 0.7, y: 0.06, z: 0.05, rotY: 0.14, rotZ: 0.025 },
-  { x: 2.05, y: -0.1, z: -0.55, rotY: 0.4, rotZ: 0.07 },
-];
+/** Posizione/rotazione della carta all'indice `i` su un totale di `count`,
+ * calcolata dalla distanza dal centro del ventaglio (mai da un array fisso
+ * a 4 posizioni indicizzato con `i % 4`: con meno di 4 carte con immagine
+ * disponibili - il minimo prima che scatti onFallback e' 2 - quell'indicizzazione
+ * pescava sempre le stesse posizioni di sinistra, sbilanciando il ventaglio
+ * invece di centrarlo, bug segnalato in review). I coefficienti sono
+ * calibrati sul caso a 4 carte gia' verificato visivamente (offset ±0.5 e
+ * ±1.5) ed estrapolati linearmente per qualunque altro conteggio. */
+function layoutFor(i: number, count: number): Layout {
+  const offset = i - (count - 1) / 2;
+  const abs = Math.abs(offset);
+  const sign = Math.sign(offset);
+  return {
+    x: offset * 1.4,
+    y: 0.06 - 0.16 * (abs - 0.5),
+    z: 0.05 - 0.6 * (abs - 0.5),
+    rotY: sign * (0.14 + 0.26 * (abs - 0.5)),
+    rotZ: sign * (0.025 + 0.045 * (abs - 0.5)),
+  };
+}
 
 function HeroCard({
   imageUrl, layout, delay, onError,
@@ -191,7 +205,7 @@ export default function HomeHero3D({ onFallback }: {
             <HeroCard
               key={card.id}
               imageUrl={card.image_url as string}
-              layout={LAYOUT[i % LAYOUT.length]}
+              layout={layoutFor(i, cards.length)}
               delay={i * STAGGER}
               onError={handleCardError}
             />

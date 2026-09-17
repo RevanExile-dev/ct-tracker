@@ -120,7 +120,17 @@ function HomeContent() {
   // visivo, la home resta semplicemente senza hero.
   const [heroThreeMode, setHeroThreeMode] = useState<"off" | "on">("off");
   useEffect(() => {
-    if (searchParams.get("three") !== "1") return;
+    if (searchParams.get("three") !== "1") {
+      // Una navigazione client-side (es. una ricerca che aggiorna la query
+      // string senza includere "three", vedi l'effetto di sincronizzazione
+      // URL sopra) puo' far sparire il flag senza rismontare il componente:
+      // senza questo reset esplicito heroThreeMode restava "on" (bug reale
+      // trovato in review), mostrando l'hero anche senza il flag nell'URL.
+      // setState va dentro un callback (rAF), mai sincrono nel corpo
+      // dell'effetto (regola di lint del progetto, react-hooks/set-state-in-effect).
+      const offFrame = requestAnimationFrame(() => setHeroThreeMode("off"));
+      return () => cancelAnimationFrame(offFrame);
+    }
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const canvas = document.createElement("canvas");
     const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
@@ -141,9 +151,16 @@ function HomeContent() {
     if (onlyZero) params.set("zero", "1");
     if (sortBy !== "expansion") params.set("sort", sortBy);
     if (visibleCount > PAGE_SIZE) params.set("shown", String(visibleCount));
+    // "three" non e' un filtro del catalogo ma un flag di visualizzazione
+    // (hero 3D decorativo, vedi heroThreeMode sotto): va preservato qui,
+    // altrimenti questo stesso effetto lo cancella dalla URL un istante
+    // dopo il mount (gia' al primo giro, essendo un effetto - non solo ad
+    // ogni cambio di filtro), rispegnendo l'hero appena acceso (bug reale
+    // trovato verificando in browser il fix del punto 2 della review AI).
+    if (searchParams.get("three") === "1") params.set("three", "1");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router]);
+  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router, searchParams]);
 
   useEffect(() => {
     fetchExpansions().then(setExpansions).catch(() => {});
