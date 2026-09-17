@@ -6,11 +6,11 @@ These rules define the default Claude Code execution model for this repository. 
 
 The user speaks in normal product language. Never require the user to know or select a skill, subagent, model, or command. Infer the domains involved, load relevant skills automatically, and delegate automatically when useful.
 
-The project setting starts the main Claude Code thread on **Opus**. Treat that main thread as the coordinator/judge, not the default code typist. Subagents have their own fixed model in `.claude/agents/`; invoking them is the model switch. Do not ask the user to run `/model` for routine delegation.
+Project settings start `ct-orchestrator` as the main thread. That agent runs **Opus** and intentionally cannot use `Write`, `Edit`, or `NotebookEdit`. Subagents have their own fixed model in `.claude/agents/`; invoking them is the routine model switch. Do not ask the user to run `/model` for delegation and do not override subagent model frontmatter during normal routing.
 
 ## Default routing
 
-- Main Opus: understand intent, make architectural/product decisions, decompose work, choose agents/skills, integrate results, resolve conflicts, judge acceptance, and decide whether external review is needed.
+- `ct-orchestrator` (Opus): understand intent, make architectural/product decisions, decompose work, choose agents/skills, integrate results, resolve conflicts, judge acceptance, and decide whether external review is needed.
 - `ct-explorer` (Haiku): cheap read-only repository discovery, dependency tracing, locating files/patterns, and collecting evidence before implementation.
 - `ct-code-executor` (Sonnet): default bounded implementation agent. Only one write-capable executor may modify the current task worktree at a time.
 - `ct-parallel-executor` (Sonnet): only for genuinely independent implementation units. It is worktree-isolated; do not use it merely because a task is large.
@@ -25,13 +25,13 @@ For substantive implementation/debug/refactor work, prefer:
 1. Opus interprets the product request and identifies domains/risk.
 2. Use Haiku exploration when repository discovery would otherwise consume meaningful Opus context. Skip this step for obvious/local changes.
 3. Opus creates a bounded implementation plan and acceptance criteria.
-4. Sonnet executor implements. Opus should not independently duplicate the same implementation.
+4. Sonnet executor implements. Opus does not independently duplicate the implementation.
 5. Sonnet verifier runs the relevant real checks and reports observed evidence without fixing failures.
 6. Opus judges: ACCEPT, REVISE, or (when scope is wrong) REPLAN.
 7. On REVISE, send concrete failed criteria back to an executor; then verify again.
 8. For significant work, use the existing Gemini/Groq final review and CI rules from `CLAUDE.md` before completion/merge.
 
-Opus may make a tiny direct edit when delegation would cost more context/coordination than the edit itself (for example a one-line typo or orchestration metadata), or when subagents are unavailable. This is the exception, not the default for product code.
+If the task is so small that agent overhead dominates, Opus should still delegate the write directly to `ct-code-executor`; the executor can complete a one-line change cheaply without an exploration phase. The coordinator may edit orchestration configuration only through an explicitly authorized maintenance path/session that is not running under the restricted `ct-orchestrator` main agent.
 
 ## Skills
 
