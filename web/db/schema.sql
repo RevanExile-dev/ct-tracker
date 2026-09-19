@@ -310,7 +310,7 @@ CREATE TABLE IF NOT EXISTS binder_lots (
   finish TEXT,
   provenance TEXT NOT NULL DEFAULT 'non_specificata'
     CHECK (provenance IN ('acquisto', 'pacchetto', 'regalo', 'scambio', 'non_specificata')),
-  acquired_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  acquired_at DATE,
   cost_total_cents INTEGER CHECK (cost_total_cents IS NULL OR cost_total_cents >= 0),
   cost_currency TEXT,
   note TEXT,
