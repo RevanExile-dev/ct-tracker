@@ -10,6 +10,17 @@ prezzi. Tre modalita' indipendenti:
 3. Watchlist (con soglia per-carta): le carte con 'alert_below' impostato
    vengono riportate solo quando il prezzo scende a quel valore o sotto.
 
+Il prezzo usato ovunque qui e' COALESCE(best_price_cents, min_price_cents) -
+best_price_cents (Near Mint + CardTrader Zero quando esiste, vedi
+_pick_best_listing in scripts/db.py) e' lo stesso campo mostrato in
+evidenza sul resto del sito (pagina carta, wishlist, binder, movers): usare
+il min_price_cents "grezzo" (piu' economica IN ASSOLUTO, qualunque
+condizione/lingua/venditore) mandava notifiche con prezzi molto piu' bassi
+di quello che l'utente vede poi aprendo la carta, perche' la piu' economica
+in assoluto e' spesso una copia Played, non italiana o di un venditore
+senza CardTrader Zero - non un errore di sync, solo un campo diverso da
+quello "vero" mostrato altrove.
+
 Non fa nulla (esce silenziosamente) se i secret TELEGRAM_BOT_TOKEN e
 TELEGRAM_CHAT_ID non sono configurati: la funzione resta opzionale, il
 resto della pipeline continua a funzionare senza.
@@ -49,13 +60,17 @@ def find_drops(conn, threshold_pct: float):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT b.id, b.name, b.expansion_name, lp.min_price_cents,
-               lp.min_price_currency, lp.prev_price_cents
+        SELECT b.id, b.name, b.expansion_name,
+               COALESCE(lp.best_price_cents, lp.min_price_cents) AS price_cents,
+               COALESCE(lp.best_price_currency, lp.min_price_currency) AS price_currency,
+               COALESCE(lp.prev_best_price_cents, lp.prev_price_cents) AS prev_price_cents
         FROM blueprints b
         JOIN latest_prices lp ON lp.blueprint_id = b.id
-        WHERE lp.min_price_cents IS NOT NULL
-          AND lp.prev_price_cents IS NOT NULL AND lp.prev_price_cents > 0
-          AND lp.min_price_cents < lp.prev_price_cents
+        WHERE COALESCE(lp.best_price_cents, lp.min_price_cents) IS NOT NULL
+          AND COALESCE(lp.prev_best_price_cents, lp.prev_price_cents) IS NOT NULL
+          AND COALESCE(lp.prev_best_price_cents, lp.prev_price_cents) > 0
+          AND COALESCE(lp.best_price_cents, lp.min_price_cents)
+              < COALESCE(lp.prev_best_price_cents, lp.prev_price_cents)
         """
     )
     rows = cur.fetchall()
@@ -90,8 +105,10 @@ def load_watchlist(conn):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT b.id, b.name, b.expansion_name, lp.min_price_cents,
-               lp.min_price_currency, lp.prev_price_cents
+        SELECT b.id, b.name, b.expansion_name,
+               COALESCE(lp.best_price_cents, lp.min_price_cents) AS price_cents,
+               COALESCE(lp.best_price_currency, lp.min_price_currency) AS price_currency,
+               COALESCE(lp.prev_best_price_cents, lp.prev_price_cents) AS prev_price_cents
         FROM blueprints b
         LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
         WHERE b.id = ANY(%s)
