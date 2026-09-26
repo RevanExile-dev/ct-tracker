@@ -72,6 +72,25 @@ BUDGET_SECONDS = 240  # ~4 minuti di richieste per run, vedi il piano
 # numero di righe arbitrariamente grande se il budget venisse alzato in futuro.
 FETCH_LIMIT = 1000
 
+# Bug di starvation reale (trovato controllando i log del 2026-09-26 dopo che
+# l'utente ha segnalato il set "30th Celebration" senza prezzi): fetch_priority_batch
+# ordina PRIMA per fascia (allarmi/desideri/binder/catalogo) e SOLO ALL'INTERNO
+# di ciascuna fascia per anzianita' - ma il loop qui sotto si ferma non appena
+# il budget scade, quindi se le fasce 0-2 (allarmi+desideri+binder) da sole
+# riempiono gia' l'intero budget (come e' successo: ogni run recente processa
+# 17 allarmi + 53 desideri + 40-90 binder e si ferma li', "catalogo=0" in
+# ogni singolo run), la fascia 3 (PRIORITY_CATALOG, ~30.000 carte - l'intero
+# resto del catalogo, incluso qualunque set appena uscito) non viene MAI
+# raggiunta: puo' restare bloccata a zero prezzi per settimane, a prescindere
+# da quanto spesso giri lo scheduler. Fix: si riordina il batch gia' ordinato
+# per priorita' spostando le carte di fascia 3 subito dopo le prime
+# MAX_NON_CATALOG_PER_RUN carte di fascia 0-2 (invece che tutte in fondo),
+# cosi' il catalogo ottiene sempre una fetta garantita di ogni run invece di
+# passare avanti solo se avanza budget dopo binder - le eventuali carte
+# 0-2 rimaste (binder molto numeroso) restano comunque nel batch, processate
+# dopo se il budget lo consente ancora.
+MAX_NON_CATALOG_PER_RUN = 100
+
 # Stessa soglia di scripts/sync_prices.py: se troppe carte di fila falliscono
 # (qualunque sia il motivo), fermarsi invece di continuare a perdere tempo -
 # qui il danno di un giro sprecato e' comunque limitato al budget di 4 minuti,
@@ -160,6 +179,13 @@ def main():
     if not batch:
         print("Nessuna carta nel catalogo. Lancia prima scripts/sync_catalog.py")
         sys.exit(1)
+
+    # Vedi il commento su MAX_NON_CATALOG_PER_RUN sopra: senza questo riordino
+    # la fascia 3 (resto del catalogo) puo' non essere mai raggiunta se le
+    # fasce piu' urgenti da sole riempiono il budget del run.
+    non_catalog = [row for row in batch if row[3] != db.PRIORITY_CATALOG]
+    catalog = [row for row in batch if row[3] == db.PRIORITY_CATALOG]
+    batch = non_catalog[:MAX_NON_CATALOG_PER_RUN] + catalog + non_catalog[MAX_NON_CATALOG_PER_RUN:]
 
     print(f"Batch prioritario: {len(batch)} carte candidate, budget {BUDGET_SECONDS}s.")
 
