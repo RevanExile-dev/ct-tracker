@@ -1,0 +1,41 @@
+name: Ispeziona blueprint (diagnostica, sola lettura)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expansion_code:
+        description: "Codice espansione (es. 30c)"
+        type: string
+        required: true
+      blueprint_id:
+        description: "ID del blueprint da ispezionare (vuoto = elenca tutti gli id/nomi dell'espansione)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-blueprint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Ispeziona
+        env:
+          CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
+        working-directory: scripts
+        run: |
+          if [ -n "${{ inputs.blueprint_id }}" ]; then
+            python inspect_blueprint.py "${{ inputs.expansion_code }}" "${{ inputs.blueprint_id }}"
+          else
+            python inspect_blueprint.py "${{ inputs.expansion_code }}"
+          fi
