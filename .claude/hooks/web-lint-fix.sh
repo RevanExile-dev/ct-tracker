@@ -6,8 +6,10 @@
 # stderr.
 set -euo pipefail
 
+command -v jq >/dev/null 2>&1 || exit 0
+
 input=$(cat)
-file=$(echo "$input" | jq -r '.tool_response.filePath // .tool_input.file_path // empty')
+file=$(echo "$input" | jq -r '.tool_response.filePath // .tool_input.file_path // empty' 2>/dev/null || echo "")
 
 case "$file" in
   */web/*.ts|*/web/*.tsx|*/web/*.js|*/web/*.jsx|*/web/*.mjs)
