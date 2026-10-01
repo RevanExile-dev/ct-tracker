@@ -136,6 +136,21 @@ class CardTraderClient:
         data = self._get("/blueprints/export", params={"expansion_id": expansion_id})
         return data or []
 
+    def get_blueprint(self, blueprint_id: int):
+        """Dettaglio di un singolo blueprint (GET /blueprints/{id}).
+
+        Esiste perche' /blueprints/export (bulk, usato da get_blueprints) puo'
+        restituire dati immagine non allineati: quando CardTrader rielabora/
+        rinomina un file (es. toglie un suffisso di versione "(2)" o aggiunge
+        la rarita' allo slug), l'export bulk non si aggiorna di conseguenza,
+        ma questo endpoint singolo si' (verificato su un caso reale, blueprint
+        406700: l'export dava ...-039-128-30th-celebration(2).jpg - 404 - e
+        questo endpoint da' ...-holo-rare-039-128-30th-celebration.jpg, che
+        corrisponde al file reale servito dal sito). Troppo lento per
+        sostituire il bulk su tutto il catalogo (un GET per carta, rate limit
+        4/s), ma adatto a un backfill mirato sul sottoinsieme sospetto."""
+        return self._get(f"/blueprints/{blueprint_id}")
+
     def get_marketplace_products(self, blueprint_id: int):
         """Fino alle 25 offerte più economiche per quel blueprint."""
         data = self._get(
