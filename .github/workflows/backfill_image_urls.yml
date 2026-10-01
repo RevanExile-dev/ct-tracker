@@ -3,9 +3,12 @@ name: Backfill image_url (correggi URL immagine disallineati)
 # Corregge image_url per i blueprint con URL sospetto ("(2).jpg" - versione
 # obsoleta che l'export bulk di CardTrader non ha aggiornato dopo che il
 # file e' stato rielaborato/rinominato sul loro storage, vedi
-# scripts/backfill_image_urls.py). Manuale, non schedulato: non serve
-# rilanciarlo di routine, solo quando si sospetta che altre carte siano
-# entrate nello stesso stato.
+# scripts/backfill_image_urls.py). Non e' legato all'uscita di nuove
+# espansioni: il disallineamento nasce quando CardTrader rielabora una foto
+# gia' pubblicata, che puo' succedere mesi dopo su carte vecchie quanto
+# nuove - per questo gira anche in automatico una volta a settimana
+# (domenica 03:00 UTC, prima del sync catalogo delle 04:30), non solo a
+# mano. Query leggera (pochi ms) quando non c'e' nulla da correggere.
 on:
   workflow_dispatch:
     inputs:
@@ -13,6 +16,8 @@ on:
         description: "Mostra solo cosa cambierebbe, senza scrivere sul DB"
         type: boolean
         default: true
+  schedule:
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
