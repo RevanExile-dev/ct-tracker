@@ -1,7 +1,9 @@
 #!/bin/bash
 # Dopo ogni Edit/Write su un file sotto web/, lancia eslint --fix su quel
-# file soltanto (non l'intero progetto) - stile pulito senza doverci
-# pensare a fine sessione.
+# file soltanto (non l'intero progetto). Silenzioso a meno che non corregga
+# davvero qualcosa - eslint scrive il report su stdout (non stderr), quindi
+# va confrontato il contenuto prima/dopo invece di limitarsi a sopprimere
+# stderr.
 set -euo pipefail
 
 input=$(cat)
@@ -15,7 +17,12 @@ case "$file" in
     if [ ! -d "$CLAUDE_PROJECT_DIR/web/node_modules" ]; then
       exit 0
     fi
-    (cd "$CLAUDE_PROJECT_DIR/web" && npx eslint --fix "$file") 2>/dev/null || true
+    before=$(md5sum "$file" 2>/dev/null | cut -d' ' -f1)
+    (cd "$CLAUDE_PROJECT_DIR/web" && npx eslint --fix "$file") >/dev/null 2>&1 || true
+    after=$(md5sum "$file" 2>/dev/null | cut -d' ' -f1)
+    if [ "$before" != "$after" ]; then
+      echo "eslint --fix ha corretto $file"
+    fi
     ;;
 esac
 exit 0

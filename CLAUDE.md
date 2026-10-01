@@ -141,6 +141,18 @@ tipo di lavoro (schema/API/sync) da cui è stato ricavato: l'autorizzazione
 a mergiare in autonomia, senza chiedere conferma ad ogni sotto-parte, è
 inclusa quando quel ciclo è stato seguito per intero.
 
+**Autorizzazione permanente (richiesta esplicita dell'utente, 2026-10-01):**
+questa autonomia non è limitata ai task esplicitamente scomposti in
+sotto-parti — è la postura di default per qualunque lavoro in questo repo.
+L'utente non vuole essere interrotto con richieste di conferma quando la
+verifica è stata fatta sul serio: niente "vuoi che proceda?" prima di un
+merge se CI è verde, i rilievi di review (AI o umana) sono stati
+verificati/risolti uno per uno, e non è in corso un workflow bloccante
+(vedi punto 4 sotto). Questo non sospende le regole di sicurezza di base
+(mai force-push, mai bypassare hook/CI, mai toccare segreti in chiaro, mai
+azioni distruttive non richieste) — resta un'autorizzazione a *procedere*
+dopo verifica reale, non a saltare la verifica.
+
 ## Disciplina di verifica (non ripetere gli stessi errori)
 
 Regole nate da errori reali commessi in sessione, non teoria astratta —
