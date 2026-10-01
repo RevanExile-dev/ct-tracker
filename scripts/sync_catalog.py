@@ -5,7 +5,8 @@ per tutte le espansioni elencate in config/tracked_sets.json.
 Va lanciato quando aggiungi una nuova espansione da tracciare, o quando
 esce un set nuovo. Non serve rilanciare sempre il catalogo completo: la
 modalita' --only-missing sincronizza soltanto i codici tracciati che non
-hanno ancora carte nel database ed e' adatta al controllo automatico
+hanno ancora carte nel database (o che hanno una data di uscita recente,
+vedi RECENT_RELEASE_GRACE_DAYS) ed e' adatta al controllo automatico
 periodico dei set appena aggiunti da CardTrader.
 
 Uso:
@@ -14,13 +15,48 @@ Uso:
 """
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from api_client import CardTraderClient
 import db
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "tracked_sets.json"
+RELEASE_DATES_PATH = (
+    Path(__file__).resolve().parent.parent / "web" / "config" / "expansion_release_dates.json"
+)
+
+# Giorni dopo l'uscita ufficiale (da web/config/expansion_release_dates.json)
+# entro cui un'espansione viene ricontrollata in --only-missing anche se ha
+# gia' almeno una carta nel DB. Bug reale (30th Celebration, uscita
+# 2026-09-16): CardTrader pubblica il checklist completo a scaglioni nei
+# giorni intorno al lancio, non tutto insieme - un'espansione con anche una
+# sola carta preview sincronizzata PRIMA del lancio veniva esclusa per
+# sempre dal check "solo mancanti" (existing_codes la considera gia' fatta),
+# quindi le decine di carte aggiunte da CardTrader il giorno dell'uscita
+# vera non venivano mai riprese senza un resync manuale completo.
+RECENT_RELEASE_GRACE_DAYS = 14
+
+
+def load_release_dates() -> dict[str, str]:
+    if not RELEASE_DATES_PATH.exists():
+        return {}
+    return json.loads(RELEASE_DATES_PATH.read_text(encoding="utf-8"))
+
+
+def is_recently_released(code: str, release_dates: dict[str, str], today: date) -> bool:
+    """True se `code` ha una data di uscita verificata compresa tra oggi e
+    RECENT_RELEASE_GRACE_DAYS fa: usato per ri-controllare anche le
+    espansioni gia' presenti nel DB, non solo quelle del tutto assenti."""
+    raw = release_dates.get(code)
+    if not raw:
+        return False
+    try:
+        release_date = date.fromisoformat(raw)
+    except ValueError:
+        return False
+    return release_date <= today <= release_date + timedelta(days=RECENT_RELEASE_GRACE_DAYS)
+
 
 # Categoria CardTrader "Pokémon Singles" (le carte vere e proprie). Ogni
 # espansione su CardTrader mischia le carte con prodotti sigillati/accessori
@@ -72,18 +108,29 @@ def main():
         # CardTrader puo' pubblicare prima il contenitore del set e aggiungere
         # i blueprint Singles in un secondo momento. In quel caso vogliamo
         # continuare a riprovarci nei giri automatici successivi.
+        #
+        # Non basta pero' neanche per un'espansione che ha GIA' qualche carta:
+        # vedi RECENT_RELEASE_GRACE_DAYS sopra, un'uscita recente resta
+        # candidata finche' non e' passata la finestra di grazia, anche se
+        # existing_codes la considera gia' presente.
         cur.execute(
             "SELECT DISTINCT expansion_code FROM blueprints WHERE expansion_code IS NOT NULL"
         )
         existing_codes = {row[0] for row in cur.fetchall()}
-        codes = [code for code in codes if code not in existing_codes]
+        release_dates = load_release_dates()
+        today = datetime.now(timezone.utc).date()
+        codes = [
+            code for code in codes
+            if code not in existing_codes or is_recently_released(code, release_dates, today)
+        ]
         if not codes:
             print("Nessuna espansione tracciata mancante: catalogo invariato.")
             conn.close()
             return
         print(
             f"Modalita' --only-missing: controllo {len(codes)} codici "
-            "non ancora presenti nel catalogo."
+            "non ancora presenti nel catalogo (o usciti di recente, entro "
+            f"{RECENT_RELEASE_GRACE_DAYS} giorni)."
         )
 
     client = CardTraderClient()
