@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow, CardsSummary, ExpansionInfo, SortOption,
@@ -19,6 +20,12 @@ import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
 import HomeHighlights from "@/components/HomeHighlights";
+
+// Spike Three.js isolato (PR #6, stesso flag di ThreeCardHero in
+// card/[id]): mai importato/scaricato nel percorso di default - ssr:false +
+// import dinamico tengono three/@react-three/fiber fuori dal bundle server
+// e da quello iniziale del client finche' non serve davvero.
+const HomeHero3D = dynamic(() => import("@/components/HomeHero3D"), { ssr: false });
 
 const PAGE_SIZE = 60;
 
@@ -103,6 +110,35 @@ function HomeContent() {
   const [anyFilterOpen, setAnyFilterOpen] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useHideOnScrollDown(toolbarWrapRef, undefined, undefined, anyFilterOpen);
 
+  // Hero 3D decorativo, stesso flag ?three=1 e stessa disciplina di
+  // ThreeCardHero (card/[id]/page.tsx, PR #6): "off" per default, passa a
+  // "on" solo se il flag e' presente, prefers-reduced-motion non e' attivo
+  // e il browser supporta davvero WebGL - controllo fatto in un effetto
+  // (richiede window/canvas, non disponibile server-side). onFallback
+  // (passato a HomeHero3D) riporta a "off" per qualunque motivo il
+  // componente non possa continuare a mostrarsi: qui non serve un fallback
+  // visivo, la home resta semplicemente senza hero.
+  const [heroThreeMode, setHeroThreeMode] = useState<"off" | "on">("off");
+  useEffect(() => {
+    if (searchParams.get("three") !== "1") {
+      // Una navigazione client-side (es. una ricerca che aggiorna la query
+      // string senza includere "three", vedi l'effetto di sincronizzazione
+      // URL sopra) puo' far sparire il flag senza rismontare il componente:
+      // senza questo reset esplicito heroThreeMode restava "on" (bug reale
+      // trovato in review), mostrando l'hero anche senza il flag nell'URL.
+      // setState va dentro un callback (rAF), mai sincrono nel corpo
+      // dell'effetto (regola di lint del progetto, react-hooks/set-state-in-effect).
+      const offFrame = requestAnimationFrame(() => setHeroThreeMode("off"));
+      return () => cancelAnimationFrame(offFrame);
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) return;
+    const frame = requestAnimationFrame(() => setHeroThreeMode("on"));
+    return () => cancelAnimationFrame(frame);
+  }, [searchParams]);
+
   // Specchia i filtri nella URL (senza aggiungere una entry nella cronologia
   // ad ogni singola modifica: solo la navigazione verso una carta la crea).
   useEffect(() => {
@@ -115,9 +151,23 @@ function HomeContent() {
     if (onlyZero) params.set("zero", "1");
     if (sortBy !== "expansion") params.set("sort", sortBy);
     if (visibleCount > PAGE_SIZE) params.set("shown", String(visibleCount));
+    // "three" non e' un filtro del catalogo ma un flag di visualizzazione
+    // (hero 3D decorativo, vedi heroThreeMode sotto): va preservato qui,
+    // altrimenti questo stesso effetto lo cancella dalla URL un istante
+    // dopo il mount (gia' al primo giro, essendo un effetto - non solo ad
+    // ogni cambio di filtro), rispegnendo l'hero appena acceso (bug reale
+    // trovato verificando in browser il fix del punto 2 della review AI).
+    if (searchParams.get("three") === "1") params.set("three", "1");
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router]);
+    // Guardia difensiva (suggerita in review, provider groq): con
+    // searchParams tra le dipendenze, un router.replace verso la stessa
+    // query string potrebbe in teoria far ripartire l'effetto se una
+    // futura versione di Next.js smettesse di trattarlo come no-op -
+    // confrontare le stringhe qui evita quel loop a prescindere.
+    if (qs !== searchParams.toString()) {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router, searchParams]);
 
   useEffect(() => {
     fetchExpansions().then(setExpansions).catch(() => {});
@@ -269,6 +319,10 @@ function HomeContent() {
         totalCards={totalCards}
         onLogoClick={hasActiveFilters ? resetAllFilters : undefined}
       />
+
+      {heroThreeMode === "on" && !hasActiveFilters && (
+        <HomeHero3D onFallback={() => setHeroThreeMode("off")} />
+      )}
 
       <div ref={toolbarWrapRef} data-testid="toolbar-collapse" className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 bg-base-bg/85 backdrop-blur-sm">
         <div
