@@ -62,6 +62,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verifica migrazione date di acquisizione sul vecchio schema
+        run: node tests/acquisition-migration.integration.mjs
+
       - name: Avvia server
         run: |
           npm run start -- -p 3000 > /tmp/ct-tracker-next.log 2>&1 &
