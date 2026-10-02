@@ -15,8 +15,37 @@ Uso:
 """
 import sys
 
+import psycopg2
+
 import db
 from api_client import CardTraderClient
+
+MAX_DB_RETRIES = 3
+
+
+def _update_image_url(conn, bp_id, new_url):
+    """Scrive l'UPDATE con un retry automatico se la connessione cade a
+    meta' - osservato in produzione (run 36995062905): la run intera dura
+    ~10 minuti per ~2.464 blueprint, rallentata dal rate limit di
+    CardTraderClient (4 req/s), e a meta' l'endpoint pooled di Neon ha
+    chiuso la connessione ("SSL connection has been closed unexpectedly"),
+    facendo fallire l'intero script ben PRIMA di arrivare ai blueprint con
+    id piu' alto (es. 30th Celebration) in fondo alla lista ordinata per
+    id - quindi proprio le carte piu' recenti, le piu' probabili ad avere
+    l'URL disallineato, restavano non corrette. Ritorna la connessione
+    (nuova se ha dovuto riconnettersi), da riassegnare nel chiamante."""
+    for attempt in range(1, MAX_DB_RETRIES + 1):
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE blueprints SET image_url = %s WHERE id = %s", (new_url, bp_id))
+            conn.commit()
+            return conn
+        except psycopg2.OperationalError as exc:
+            if attempt == MAX_DB_RETRIES:
+                raise
+            print(f"    connessione caduta ({exc}), riconnessione (tentativo {attempt}/{MAX_DB_RETRIES})...",
+                  file=sys.stderr)
+            conn = db.get_connection()
 
 
 def main():
@@ -62,8 +91,7 @@ def main():
               f"      dopo:  {new_url}")
         updated += 1
         if not dry_run:
-            cur.execute("UPDATE blueprints SET image_url = %s WHERE id = %s", (new_url, bp_id))
-            conn.commit()
+            conn = _update_image_url(conn, bp_id, new_url)
 
     print(f"\nFatto. {updated} aggiornati, {unchanged} invariati, "
           f"{missing} non trovati, {errors} errori su {len(rows)} totali.")
