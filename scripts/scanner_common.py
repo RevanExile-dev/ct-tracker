@@ -1,5 +1,6 @@
 """Logica di hashing condivisa tra lo spike M1a (scanner_m1_spike.py) e
-l'indice fingerprint di produzione (build_scanner_index.py).
+l'ex indice fingerprint di produzione (build_scanner_index.py, rimosso:
+vedi docs/card_scanner_architecture.md).
 
 Deliberatamente un modulo a parte invece di duplicare il codice: full_hash e
 art_hash generati qui devono restare bit-per-bit lo stesso algoritmo usato
