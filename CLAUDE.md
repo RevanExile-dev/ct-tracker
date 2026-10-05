@@ -220,17 +220,14 @@ o mergiare su `main` mentre uno di questi tre è in corso è quindi sicuro** —
 verificato leggendo il codice reale di tutti e quattro gli script (nessun
 `subprocess`/comando `git`) prima di agire di conseguenza, non per supposizione.
 
-La regola resta però pienamente valida per `build_scanner_index.yml`: quel
-workflow gira con `permissions: contents: write`, è nello stesso gruppo di
-concorrenza (`ct-tracker-db-write`) dei sync DB, ed esegue esplicitamente
-`git commit -m "chore: aggiorna indice visivo scanner"` + `git push` su
-`main` a ogni run (schedulato ogni 6 ore, dopo ogni `sync_catalog.yml`, e su
-workflow_dispatch) — è esattamente il tipo di bot-commit-in-parallelo che
-questa regola serve a evitare. Quindi: prima di un push/merge su `main`,
-controllare comunque quali workflow sono `in_progress` e trattare come
-bloccante solo `build_scanner_index.yml` (o qualunque futuro workflow con
-`permissions: contents: write` e uno step che fa commit/push) — non più i
-tre sync Postgres sopra.
+La regola resta valida per qualunque workflow con `permissions: contents: write`
+e uno step che fa commit/push su `main`: prima di un push/merge su `main`,
+controllare quali workflow sono `in_progress` e trattare come bloccante un
+workflow del genere. Oggi non ne esiste nessuno: `build_scanner_index.yml`
+(che committava l'indice visivo dello scanner ogni giorno e dopo ogni sync
+catalogo, generando un deploy Vercel completo ad ogni commit) e' stato
+rimosso insieme all'indice visivo - i tre sync Postgres sopra non sono
+bloccanti.
 
 **5. Prima di dire "fatto"/"tutto a posto" all'utente, un ultimo passaggio
 esplicito**: rileggere l'elenco delle cose toccate in questo giro e chiedersi

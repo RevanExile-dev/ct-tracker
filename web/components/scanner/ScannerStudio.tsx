@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCents, languageFlag } from "@/lib/format";
 import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
-import { ARTWORK_BOX, assessQuality, cropRegion, detectCardRegions, dhash, expandRegionForOcr } from "@/lib/scanner/image";
+import { assessQuality, cropRegion, detectCardRegions, expandRegionForOcr } from "@/lib/scanner/image";
 import {
+  extractCollectorNumber,
   hydrateScannerCard,
   loadScannerCatalog,
-  loadVisualIndex,
   rankScannerCandidates,
 } from "@/lib/scanner/catalog";
 import { detectLanguage, ocrEngineNotice, recognizeText } from "@/lib/scanner/ocr";
@@ -171,7 +171,7 @@ export default function ScannerStudio() {
     setBusy(true);
     setGlobalError(null);
     try {
-      const [catalog, visualIndex] = await Promise.all([loadScannerCatalog(), loadVisualIndex()]);
+      const catalog = await loadScannerCatalog();
       catalogRef.current = catalog;
       let cursor = 0;
       const workerCount = Math.min(2, prepared.length);
@@ -183,27 +183,13 @@ export default function ScannerStudio() {
           const item = prepared[index];
           try {
             updateItem(item.id, { status: "reading", error: null });
-            let text = "";
-            let ocrConfidence = 0;
-            try {
-              const ocr = await recognizeText(item.ocrCropUrl);
-              text = ocr.text;
-              ocrConfidence = ocr.confidence;
-            } catch (ocrError) {
-              // Se l'indice visivo di M1 e' presente possiamo ancora tentare
-              // un match; altrimenti il risultato resta correggibile a mano.
-              if (!visualIndex.size) throw ocrError;
-            }
+            const ocr = await recognizeText(item.ocrCropUrl);
+            const text = ocr.text;
+            const ocrConfidence = ocr.confidence;
 
             updateItem(item.id, { status: "matching", ocrText: text, ocrConfidence });
-            const [scanHash, language] = await Promise.all([
-              Promise.all([
-                dhash(item.cropUrl).catch(() => null),
-                dhash(item.cropUrl, ARTWORK_BOX).catch(() => null),
-              ]).then(([full, art]) => (full ? { full, art } : null)),
-              Promise.resolve(detectLanguage(text)),
-            ]);
-            const candidates = rankScannerCandidates(text, catalog, scanHash, visualIndex, 5);
+            const language = detectLanguage(text);
+            const candidates = rankScannerCandidates(text, catalog, 5);
             const top = candidates[0];
             if (!top) {
               updateItem(item.id, {
@@ -218,7 +204,11 @@ export default function ScannerStudio() {
 
             const second = candidates[1]?.score ?? 0;
             const margin = Math.max(0, top.score - second);
-            const combined = Math.min(0.99, top.score * 0.72 + Math.min(1, ocrConfidence / 100) * 0.2 + Math.min(1, margin * 3) * 0.08);
+            const rawConfidence = Math.min(0.99, top.score * 0.72 + Math.min(1, ocrConfidence / 100) * 0.2 + Math.min(1, margin * 3) * 0.08);
+            // Senza un numero di collezione leggibile il match si basa solo sul
+            // nome OCR, che puo' combaciare per caso con una carta scorrelata:
+            // mai presentarlo come sicuro, l'utente deve confermare.
+            const combined = extractCollectorNumber(text) ? rawConfidence : Math.min(rawConfidence, 0.6);
             const hydrated = await hydrateScannerCard(top.id, language.code);
             updateItem(item.id, {
               status: "done",
@@ -343,7 +333,7 @@ export default function ScannerStudio() {
     try {
       const catalog = catalogRef.current ?? await loadScannerCatalog();
       catalogRef.current = catalog;
-      const candidates = rankScannerCandidates(query, catalog, null, new Map(), 8);
+      const candidates = rankScannerCandidates(query, catalog, 8);
       updateItem(itemId, {
         candidates,
         status: candidates.length ? "done" : "error",

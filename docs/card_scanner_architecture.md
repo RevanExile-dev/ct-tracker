@@ -4,6 +4,16 @@ Status: proposed architecture for issue #20.
 Coordinator: Claude Code.  
 Purpose of this document: make the scanner implementation reproducible across sessions and keep product/technical decisions out of chat history.
 
+> **Aggiornamento (ottobre 2026): l'indice visivo e' stato rimosso.**
+> Le sezioni che descrivono dHash, `scripts/build_scanner_index.py`,
+> `web/public/data/scanner_index.json` e il workflow `build_scanner_index.yml`
+> sono storiche. Ogni run di quel workflow committava su `main` e generava un
+> deploy Vercel completo (consumo di Function Storage), per una funzione poco
+> usata e fragile con foto reali. Lo scanner ora usa solo OCR zonale (nome e
+> numero di collezione) e mostra le carte candidate tra cui l'utente sceglie;
+> senza numero leggibile la confidenza resta sempre "bassa". Lo spike
+> `scripts/scanner_m1_spike.py` resta come misura storica.
+
 ## 1. Product goal
 
 Add a first-class scanner to CartaViva that can identify one or more physical Pokémon TCG cards from either:

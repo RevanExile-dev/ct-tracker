@@ -79,7 +79,7 @@ const entry = (id, version, name = 'Pikachu') => ({
   image_url: null, rarity: null,
 });
 
-test('reported Pikachu beats other Pikachu printings without a visual index', () => {
+test('reported Pikachu beats other Pikachu printings', () => {
   const entries = [entry(1, '005/030'), entry(2, 'TG06/TG30'), entry(3, 'GG05/GG30'),
     entry(221649, 'Ultra Rare | TG05/TG30')];
   const ranked = catalog.rankScannerCandidates('Pikachu\nTG O5 / TG 3O\ndebolezza resistenza ritirata', entries);
@@ -96,30 +96,6 @@ test('number in name and URL works; ordinary numbers still disambiguate', () => 
   correct.image_url = 'https://example.test/pikachu-tg05-tg30.jpg';
   assert.equal(catalog.rankScannerCandidates('Pikachu TG05/TG30', [entry(1, 'TG06/TG30'), correct])[0].id, 221649);
   assert.equal(catalog.rankScannerCandidates('Blitzle I95/I82', [entry(1, '194/182', 'Blitzle'), entry(2, '195/182', 'Blitzle')])[0].id, 2);
-});
-
-test('a decisive visual match beats a spurious full name match when the number is unreadable (real bug: Weakness Policy)', () => {
-  // Caso reale: foto vera di "Hisuian Samurott V" (GG51/GG70, Crown Zenith).
-  // Il font decorativo di quel numero di collezione si e' rivelato illeggibile
-  // per Tesseract anche con un ritaglio ben posizionato (verificato con test
-  // end-to-end reali, non supposizione) - senza numero, l'unico frammento di
-  // OCR utilizzabile era corto e coincideva per intero, per puro rumore, con
-  // il nome di una carta scorrelata ("Weakness Policy"): nameScore=1 su una
-  // carta sbagliata. L'hash visivo della carta giusta era pero' un match
-  // pressoche' esatto - un segnale molto piu' difficile da ottenere per puro
-  // caso di un nameScore=1 da rumore OCR su un nome corto. Con il vecchio peso
-  // 0.72 nome / 0.28 visivo la carta sbagliata vinceva comunque (0.66 contro
-  // 0.26); con 0.3/0.7 vince quella giusta.
-  const correct = { id: 501, name: 'Hisuian Samurott V', version: 'GG51/GG70', expansion_code: 'crz', expansion_name: 'Crown Zenith', image_url: null, rarity: null };
-  const wrong = { id: 999, name: 'Weakness Policy', version: null, expansion_code: 'sm2plus', expansion_name: 'Detective Pikachu', image_url: null, rarity: null };
-  const scanHash = { full: '0000000000000000', art: '0000000000000000' };
-  // Solo la carta giusta ha un ingresso nell'indice visivo con hash quasi
-  // identico a quello scansionato; quella sbagliata non ha alcun dato visivo,
-  // come nella maggior parte dei casi reali di mismatch da rumore OCR.
-  const visualIndex = new Map([[501, { full: '0000000000000000', art: '0000000000000000' }]]);
-  const ranked = catalog.rankScannerCandidates('weakness policy', [correct, wrong], scanHash, visualIndex, 5);
-  assert.equal(ranked[0].id, 501);
-  assert.ok(ranked[0].score > ranked.find(row => row.id === 999).score);
 });
 
 test('collector code cannot disambiguate two sets with identical name and code', () => {
