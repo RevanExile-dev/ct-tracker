@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   sync-prices-full:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 720
     steps:
       - uses: actions/checkout@v4

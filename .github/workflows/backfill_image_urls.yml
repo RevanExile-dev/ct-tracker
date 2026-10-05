@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   backfill-image-urls:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

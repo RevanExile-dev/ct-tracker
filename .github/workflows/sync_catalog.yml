@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   sync-catalog:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
