@@ -79,16 +79,14 @@ sudo mkdir -p /etc/ct-tracker
 sudo sh -c 'umask 077; read -r -p "Incolla il token: " T; echo "GH_DISPATCH_TOKEN=$T" > /etc/ct-tracker/dispatch.env'
 sudo chown ubuntu:ubuntu /etc/ct-tracker/dispatch.env && sudo chmod 600 /etc/ct-tracker/dispatch.env
 ```
-3. Scarica lo script e prova una volta a mano:
+3. Copia lo script sulla VM (dal tuo PC, nella cartella del repo; il repo e'
+   privato quindi non si puo' scaricare da internet) e installalo:
 ```bash
-sudo curl -fsSL -o /usr/local/bin/ct-dispatch-sync \
-  https://raw.githubusercontent.com/RevanExile-dev/ct-tracker/main/scripts/oracle/dispatch_sync.sh
+scp -i chiave.key scripts/oracle/dispatch_sync.sh ubuntu@IP_PUBBLICO:/tmp/
+ssh -i chiave.key ubuntu@IP_PUBBLICO "sudo install -m 755 /tmp/dispatch_sync.sh /usr/local/bin/ct-dispatch-sync"
 ```
-   (repo privato: il raw non e' pubblico. In quel caso copia il file con
-   `scp -i chiave.key scripts/oracle/dispatch_sync.sh ubuntu@IP:/tmp/` e poi
-   `sudo install -m 755 /tmp/dispatch_sync.sh /usr/local/bin/ct-dispatch-sync`.)
+   Poi sulla VM, prova una volta a mano:
 ```bash
-sudo chmod 755 /usr/local/bin/ct-dispatch-sync
 ct-dispatch-sync    # deve stampare "dispatch ok"
 ```
 4. Cron ogni 15 minuti (a minuti "dispari" per evitare le ore di punta):
