@@ -28,7 +28,6 @@ export type ScannerCandidate = ScannerCatalogEntry & {
   score: number;
   nameScore: number;
   numberScore: number;
-  visualScore: number;
 };
 
 export type DetectedLanguage = {

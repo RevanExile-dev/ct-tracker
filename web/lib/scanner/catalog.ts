@@ -4,11 +4,7 @@ import type { ScannerCandidate, ScannerCatalogEntry } from "./types";
 import { collectorParts, extractCollectorNumber, stripCollectorNumbers } from "./collector-number";
 export { extractCollectorNumber } from "./collector-number";
 
-export type VisualIndexEntry = { full: string; art: string | null };
-export type ScanHash = { full: string; art: string | null };
-
 let catalogPromise: Promise<ScannerCatalogEntry[]> | null = null;
-let visualIndexPromise: Promise<Map<number, VisualIndexEntry>> | null = null;
 
 function normalize(value: string) {
   return value
@@ -124,20 +120,6 @@ function entryCollectorNumber(entry: ScannerCatalogEntry) {
   );
 }
 
-function hammingHex(a: string, b: string) {
-  try {
-    let value = BigInt(`0x${a}`) ^ BigInt(`0x${b}`);
-    let count = 0;
-    while (value) {
-      count += Number(value & BigInt(1));
-      value >>= BigInt(1);
-    }
-    return count;
-  } catch {
-    return 64;
-  }
-}
-
 export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   if (!catalogPromise) {
     catalogPromise = (async () => {
@@ -161,42 +143,9 @@ export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   return catalogPromise;
 }
 
-const HASH_PATTERN = /^[0-9a-f]{16}$/i;
-
-export async function loadVisualIndex(): Promise<Map<number, VisualIndexEntry>> {
-  if (!visualIndexPromise) {
-    visualIndexPromise = fetch("/data/scanner_index.json", { cache: "no-cache" })
-      .then(async (response) => {
-        if (!response.ok) return new Map<number, VisualIndexEntry>();
-        const payload = await response.json() as unknown;
-        const rows = Array.isArray(payload)
-          ? payload
-          : typeof payload === "object" && payload && "entries" in payload
-            ? (payload as { entries?: unknown }).entries
-            : [];
-        const map = new Map<number, VisualIndexEntry>();
-        if (!Array.isArray(rows)) return map;
-        for (const raw of rows) {
-          if (!raw || typeof raw !== "object") continue;
-          const row = raw as Record<string, unknown>;
-          const id = Number(row.blueprint_id ?? row.id);
-          const full = String(row.full_hash ?? row.full_dhash ?? row.dhash ?? "");
-          const artRaw = row.art_hash ?? row.art_dhash ?? null;
-          const art = artRaw != null && HASH_PATTERN.test(String(artRaw)) ? String(artRaw) : null;
-          if (Number.isFinite(id) && HASH_PATTERN.test(full)) map.set(id, { full, art });
-        }
-        return map;
-      })
-      .catch(() => new Map<number, VisualIndexEntry>());
-  }
-  return visualIndexPromise;
-}
-
 export function rankScannerCandidates(
   text: string,
   catalog: ScannerCatalogEntry[],
-  scanHash?: ScanHash | null,
-  visualIndex: Map<number, VisualIndexEntry> = new Map(),
   limit = 5,
 ): ScannerCandidate[] {
   const normalizedText = normalize(text);
@@ -232,63 +181,27 @@ export function rankScannerCandidates(
     const expectedNumber = entryCollectorNumber(entry);
     const numberScore = collectorSimilarity(observedNumber, expectedNumber);
 
-    let visualScore = 0;
-    const visualEntry = scanHash ? visualIndex.get(entry.id) : undefined;
-    if (scanHash && visualEntry) {
-      const fullScore = Math.max(0, 1 - hammingHex(scanHash.full, visualEntry.full) / 32);
-      if (scanHash.art && visualEntry.art) {
-        // L'artwork da solo e' molto piu' resistente alle differenze di
-        // lingua/testo stampato rispetto alla carta intera (sezione 8.1 di
-        // docs/card_scanner_architecture.md): pesa di piu' quando e'
-        // disponibile su entrambi i lati (indice + foto scansionata).
-        const artScore = Math.max(0, 1 - hammingHex(scanHash.art, visualEntry.art) / 32);
-        visualScore = artScore * 0.62 + fullScore * 0.38;
-      } else {
-        visualScore = fullScore;
-      }
-    }
-
-    if (nameScore < 0.38 && numberScore < 0.55 && visualScore < 0.62) continue;
+    if (nameScore < 0.38 && numberScore < 0.55) continue;
 
     const hasNumberEvidence = Boolean(observedNumber && expectedNumber);
-    const hasVisual = Boolean(scanHash && visualIndex.size > 0);
     let score: number;
 
     if (hasNumberEvidence) {
-      score = nameScore * 0.34 + numberScore * 0.56 + (hasVisual ? visualScore * 0.1 : 0);
+      score = nameScore * 0.34 + numberScore * 0.56;
       if (numberScore === 1) {
-        score = Math.max(score, 0.58 + nameScore * 0.36 + (hasVisual ? visualScore * 0.06 : 0));
+        score = Math.max(score, 0.58 + nameScore * 0.36);
       } else if (numberScore === 0) {
         score *= 0.34;
       }
-    } else if (hasVisual) {
-      // *0.92: un candidato senza alcuna evidenza sul numero di collezione
-      // non deve MAI poter superare un altro candidato il cui numero e'
-      // stato verificato (branch hasNumberEvidence sopra, tetto ~0.94 con
-      // numberScore=1) - l'assenza di un dato non e' evidenza a favore.
-      //
-      // Il nome pesa MOLTO meno del visivo (0.3 contro 0.7) quando manca il
-      // numero, non il contrario come nella versione precedente (0.72/0.28).
-      // Caso reale che ha rivelato il problema (foto vera, Hisuian Samurott
-      // V GG51/GG70): l'OCR su un font decorativo (contorno sottile, corsivo)
-      // ha prodotto un nome completamente illeggibile, MA per puro rumore
-      // due parole corte di una carta sbagliata ("Weakness"/"Aron") hanno
-      // combaciato per intero con l'unico frammento di testo letto -
-      // nameScore=1 su una carta del tutto scorrelata. L'hash visivo della
-      // carta giusta era invece nettamente il piu' vicino fra tutti i
-      // candidati (distanza Hamming sull'artwork 11/32, il piu' vicino fra
-      // gli altri era 28/32) - un hash cosi' vicino e' molto piu' difficile
-      // da ottenere per puro caso di quanto lo sia un nameScore=1 da rumore
-      // OCR su nomi brevi. Con il peso 0.72/0.28 precedente la carta
-      // sbagliata vinceva comunque; verificato con Hamming distance reali
-      // (non supposizione) che 0.3/0.7 la ribalta con margine anche nel
-      // caso peggiore (nameScore=0 per la carta giusta).
-      score = (nameScore * 0.3 + visualScore * 0.7) * 0.92;
     } else {
+      // Senza numero di collezione verificato il solo nome non basta a dare
+      // certezza (un frammento OCR corto puo' combaciare per caso con una
+      // carta scorrelata): il tetto 0.92 tiene questi candidati sotto
+      // qualunque carta con numero verificato (tetto ~0.94 con numberScore=1).
       score = nameScore * 0.92;
     }
 
-    ranked.push({ ...entry, score: Math.min(1, score), nameScore, numberScore, visualScore });
+    ranked.push({ ...entry, score: Math.min(1, score), nameScore, numberScore });
   }
 
   return ranked.sort((a, b) => b.score - a.score).slice(0, limit);
