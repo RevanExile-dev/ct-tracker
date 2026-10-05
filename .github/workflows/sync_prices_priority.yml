@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   sync-prices-priority:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
     # Il budget interno allo script (TRACKED_BUDGET_SECONDS, 10 minuti) e' controllato
     # SOLO tra una carta e la successiva, non dentro il retry/backoff di una
     # singola chiamata (api_client.py, max_retries=5, backoff 2^tentativo):

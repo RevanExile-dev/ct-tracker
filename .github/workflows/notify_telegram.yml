@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   notify-telegram:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
     # Sola lettura sul Postgres (nessuna scrittura, vedi scripts/notify_telegram.py):
     # non serve condividere il concurrency group ct-tracker-db-write con i
     # sync, puo' girare in qualunque momento senza rischio di conflitto.
