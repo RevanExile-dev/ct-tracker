@@ -1,6 +1,6 @@
 """
 Scheduler di sync prezzi a batch prioritari (docs/binder_reserved_work_plan_2026-09-11.md,
-punto 3), pensato per girare spesso (ogni 3 ore con run lunghi, vedi
+punto 3), pensato per girare spesso (due modalita': --tracked ogni 30 minuti e --catalog 4 volte al giorno, vedi
 .github/workflows/sync_prices_priority.yml) invece dei tre cron fissi che
 sostituisce (i due di scripts/sync_prices.py --only-daily alle 06:00/18:00
 UTC e quello settimanale --force completo): quei cron avevano un problema
@@ -70,7 +70,15 @@ import db
 # cron ogni 3 ore: il vecchio budget di 4 minuti con cron a 15 minuti
 # (di fatto 4-6 run al giorno, GitHub scarta i cron troppo frequenti)
 # copriva solo ~1000 carte/giorno su ~30.000.
-BUDGET_SECONDS = 3000
+BUDGET_SECONDS = 3000  # default (nessun argomento): tutte le fasce, come prima
+# Due modalita' separate (vedi .github/workflows/sync_prices_priority.yml e
+# sync_prices_catalog.yml): le carte tracciate (allarmi/desideri/binder,
+# ~200 oggi) vanno aggiornate spesso con un run breve; il resto del
+# catalogo (~30.000) puo' essere piu' lento, con un run lungo e raro.
+# Un budget corto basta alle tracciate (~200 carte a 1 req/s = ~3,5 minuti);
+# il tetto serve solo a fermare il run se le tracciate crescono molto.
+TRACKED_BUDGET_SECONDS = 600
+CATALOG_BUDGET_SECONDS = 2700
 # Margine ampio sopra quante carte un budget di 50 minuti a 1 richiesta/secondo
 # puo' mai processare davvero (~3000): solo per non caricare in memoria un
 # numero di righe arbitrariamente grande se il budget venisse alzato in futuro.
@@ -169,6 +177,14 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
 
 
 def main():
+    global BUDGET_SECONDS
+    mode = "all"
+    if "--tracked" in sys.argv:
+        mode = "tracked"
+        BUDGET_SECONDS = TRACKED_BUDGET_SECONDS
+    elif "--catalog" in sys.argv:
+        mode = "catalog"
+        BUDGET_SECONDS = CATALOG_BUDGET_SECONDS
     db.init_db()
     client = CardTraderClient()
     conn = db.get_connection()
@@ -189,9 +205,14 @@ def main():
     # fasce piu' urgenti da sole riempiono il budget del run.
     non_catalog = [row for row in batch if row[3] != db.PRIORITY_CATALOG]
     catalog = [row for row in batch if row[3] == db.PRIORITY_CATALOG]
-    batch = non_catalog[:MAX_NON_CATALOG_PER_RUN] + catalog + non_catalog[MAX_NON_CATALOG_PER_RUN:]
+    if mode == "tracked":
+        batch = non_catalog
+    elif mode == "catalog":
+        batch = catalog
+    else:
+        batch = non_catalog[:MAX_NON_CATALOG_PER_RUN] + catalog + non_catalog[MAX_NON_CATALOG_PER_RUN:]
 
-    print(f"Batch prioritario: {len(batch)} carte candidate, budget {BUDGET_SECONDS}s.")
+    print(f"Batch prioritario [{mode}]: {len(batch)} carte candidate, budget {BUDGET_SECONDS}s.")
 
     ok, errors, consecutive_errors = 0, 0, 0
     alerts_fired = 0
