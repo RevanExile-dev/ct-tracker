@@ -1,6 +1,6 @@
 """
 Scheduler di sync prezzi a batch prioritari (docs/binder_reserved_work_plan_2026-09-11.md,
-punto 3), pensato per girare spesso (ogni 5-15 minuti, vedi
+punto 3), pensato per girare spesso (ogni 3 ore con run lunghi, vedi
 .github/workflows/sync_prices_priority.yml) invece dei tre cron fissi che
 sostituisce (i due di scripts/sync_prices.py --only-daily alle 06:00/18:00
 UTC e quello settimanale --force completo): quei cron avevano un problema
@@ -47,7 +47,7 @@ watchlist di scripts/notify_telegram.py (che non salva nessuno stato
 deliberatamente a un cron 2x/giorno per non ripetere lo stesso avviso un
 centinaio di volte), un price_alert ha uno stato per-utente vero
 (state='fired' dopo lo scatto): puo' quindi essere valutato ad ogni batch
-(ogni 5-15 minuti) senza ripetersi, perche' semplicemente non e' piu'
+(ad ogni run) senza ripetersi, perche' semplicemente non e' piu'
 'armed' finche' non viene ri-armato (fire_mode='rearm', dopo il cooldown -
 db.rearm_due_price_alerts) o l'utente lo riattiva a mano. La vecchia
 watchlist (config/watchlist.json) resta com'era, sul suo cron separato
@@ -66,11 +66,15 @@ import requests
 from api_client import CardTraderClient
 import db
 
-BUDGET_SECONDS = 240  # ~4 minuti di richieste per run, vedi il piano
-# Margine ampio sopra quante carte un budget di 4 minuti a 1 richiesta/secondo
-# puo' mai processare davvero (~240): solo per non caricare in memoria un
+# ~50 minuti di richieste per run (~3000 carte a 1 richiesta/secondo), con
+# cron ogni 3 ore: il vecchio budget di 4 minuti con cron a 15 minuti
+# (di fatto 4-6 run al giorno, GitHub scarta i cron troppo frequenti)
+# copriva solo ~1000 carte/giorno su ~30.000.
+BUDGET_SECONDS = 3000
+# Margine ampio sopra quante carte un budget di 50 minuti a 1 richiesta/secondo
+# puo' mai processare davvero (~3000): solo per non caricare in memoria un
 # numero di righe arbitrariamente grande se il budget venisse alzato in futuro.
-FETCH_LIMIT = 1000
+FETCH_LIMIT = 5000
 
 # Bug di starvation reale (trovato controllando i log del 2026-09-26 dopo che
 # l'utente ha segnalato il set "30th Celebration" senza prezzi): fetch_priority_batch
@@ -89,11 +93,11 @@ FETCH_LIMIT = 1000
 # passare avanti solo se avanza budget dopo binder - le eventuali carte
 # 0-2 rimaste (binder molto numeroso) restano comunque nel batch, processate
 # dopo se il budget lo consente ancora.
-MAX_NON_CATALOG_PER_RUN = 100
+MAX_NON_CATALOG_PER_RUN = 300
 
 # Stessa soglia di scripts/sync_prices.py: se troppe carte di fila falliscono
 # (qualunque sia il motivo), fermarsi invece di continuare a perdere tempo -
-# qui il danno di un giro sprecato e' comunque limitato al budget di 4 minuti,
+# qui il danno di un giro sprecato e' comunque limitato al budget del run (50 minuti),
 # non a ore, ma il segnale resta lo stesso.
 MAX_CONSECUTIVE_ERRORS = 15
 
@@ -306,7 +310,7 @@ def main():
 
     # La compressione dello storico (price_snapshots/binder_value_snapshots)
     # e' un'operazione da una volta al giorno, non da ripetere ad ogni batch
-    # (96 run/giorno a cadenza 15 minuti): controllato con una chiave in meta
+    # (8 run/giorno): controllato con una chiave in meta
     # invece che con una finestra fissa sull'orario di avvio (es. "solo se
     # start.hour==3 e start.minute<15") - i cron di GitHub Actions possono
     # ritardare anche di parecchi minuti nelle ore di punta, e una finestra
