@@ -44,6 +44,23 @@ Poi controlla Vercel: il deploy dal repo privato deve continuare a funzionare
 3. Annota l'IP pubblico. Connessione:
    `ssh -i chiave.key ubuntu@IP_PUBBLICO`
 
+## Se Oracle dice "Out of capacity" (nessun posto per la VM Arm)
+Succede spesso: Oracle non ha macchine Arm gratuite libere in quel momento.
+Lo script `scripts/oracle/oracle_retry.sh` riprova da solo ogni ~2,5 minuti
+finche' trova posto, usando solo la shape gratuita (A1.Flex, 1 OCPU, prima 6
+GB poi 4 e 2). Crea anche rete e IP pubblico, e non duplica nulla se lo
+rilanci.
+1. Sul sito Oracle apri **Cloud Shell** (icona `>_` in alto a destra).
+2. Incolla il contenuto di `oracle_retry.sh` (o scaricalo in Cloud Shell con
+   il menu del terminale -> Upload) e lancialo: `bash oracle_retry.sh`.
+3. Lascia aperta la scheda del browser (Cloud Shell si chiude dopo un po' di
+   inattivita'; lo script scrive un puntino ogni 30 secondi). Se si chiude,
+   riaprilo e rilancia lo stesso comando: riparte senza creare doppioni.
+4. Quando finisce stampa l'IP pubblico e il comando per collegarti.
+5. La chiave privata e' in `~/.ssh/ct_runner` dentro Cloud Shell: per usarla
+   sul tuo PC scaricala dal menu di Cloud Shell (Download -> `.ssh/ct_runner`)
+   oppure continua a collegarti da Cloud Shell stesso.
+
 ## 3. Prepara la VM (incolla in ordine)
 ```bash
 sudo apt-get update && sudo apt-get -y upgrade
