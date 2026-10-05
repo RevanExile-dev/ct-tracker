@@ -4,23 +4,63 @@ e' disallineato dal file reale (vedi commento su CardTraderClient.get_blueprint
 in api_client.py): richiama l'endpoint singolo per-blueprint, che ha dati
 piu' freschi, e aggiorna il DB solo se l'URL e' davvero cambiato.
 
-Il sottoinsieme sospetto e' individuato dal suffisso "(2).jpg" nell'URL
-salvato - un marcatore di versione che CardTrader toglie quando rielabora/
-rinomina un'immagine senza aggiornare l'export bulk (verificato su un caso
-reale, blueprint 406700).
+Due sottoinsiemi di blueprint vengono ricontrollati, perche' CardTrader
+rielabora le immagini in piu' modi diversi, non solo uno:
+
+1. Suffisso "(2).jpg" nell'URL salvato - un marcatore di versione che
+   CardTrader toglie quando rinomina un file (verificato su un caso reale,
+   blueprint 406700: "...(2).jpg" dava 404, il nome senza "(2)" funzionava).
+   Controllo catalogo-wide, indipendente dall'espansione: e' un pattern
+   specifico che puo' in teoria comparire ovunque.
+2. TUTTI i blueprint delle espansioni uscite negli ultimi
+   IMAGE_RECHECK_GRACE_DAYS giorni, indipendentemente dal pattern del loro
+   URL - non solo quelli con "(2)" nel nome. Bug reale (30th Celebration,
+   uscita 2026-09-16): CardTrader ha cambiato FORMATO immagine (da .jpg a
+   .webp) per alcune carte senza toccare il suffisso "(2)" - es. blueprint
+   406815 "Gengar ex", URL salvato "...154-128-30th-celebration.jpg" (mai
+   stato candidato dal pattern 1, nessun "(2)" nel nome), ma il file reale
+   sul loro storage e' ".webp". Il pattern 1 da solo non lo avrebbe mai
+   trovato: la finestra temporale sull'espansione intera e' l'unico modo
+   per scovare ANCHE i cambi che non lasciano un marcatore riconoscibile
+   nel nome del file.
 
 Uso:
   python scripts/backfill_image_urls.py              # applica le correzioni
   python scripts/backfill_image_urls.py --dry-run     # mostra solo cosa cambierebbe
 """
 import sys
+from datetime import date, datetime, timedelta, timezone
 
 import psycopg2
 
 import db
 from api_client import CardTraderClient
+from sync_catalog import load_release_dates
 
 MAX_DB_RETRIES = 3
+
+# Finestra più ampia di RECENT_RELEASE_GRACE_DAYS in sync_catalog.py (14gg,
+# pensata per il check "carte mancanti" subito dopo il lancio): qui serve
+# scovare cambi di FORMATO immagine che CardTrader continua a fare settimane
+# dopo l'uscita - osservato ancora attivo 19 giorni dopo il lancio di 30th
+# Celebration (blueprint 406815). Costo contenuto: un'espansione ha
+# ~150-250 carte, quindi anche con piu' espansioni nella finestra
+# contemporaneamente il rate limit (4 req/s) regge entro il timeout del
+# workflow (60 minuti).
+IMAGE_RECHECK_GRACE_DAYS = 60
+
+
+def _recently_released_codes(today: date) -> list[str]:
+    release_dates = load_release_dates()
+    codes = []
+    for code, raw in release_dates.items():
+        try:
+            release_date = date.fromisoformat(raw)
+        except ValueError:
+            continue
+        if release_date <= today <= release_date + timedelta(days=IMAGE_RECHECK_GRACE_DAYS):
+            codes.append(code)
+    return codes
 
 
 def _update_image_url(conn, bp_id, new_url):
@@ -57,12 +97,16 @@ def main():
 
     conn = db.get_connection()
     cur = conn.cursor()
+    recent_codes = _recently_released_codes(datetime.now(timezone.utc).date())
     cur.execute(
-        "SELECT id, name, image_url FROM blueprints WHERE image_url LIKE %s ORDER BY id",
-        ("%(2).jpg",),
+        "SELECT id, name, image_url FROM blueprints "
+        "WHERE image_url LIKE %s OR expansion_code = ANY(%s) ORDER BY id",
+        ("%(2).jpg", recent_codes),
     )
     rows = cur.fetchall()
-    print(f"{len(rows)} blueprint con URL sospetto ('(2).jpg') da ricontrollare."
+    print(f"{len(rows)} blueprint da ricontrollare (URL sospetto '(2).jpg', o "
+          f"appartenenti a {len(recent_codes)} espansioni uscite negli ultimi "
+          f"{IMAGE_RECHECK_GRACE_DAYS} giorni: {', '.join(recent_codes) or 'nessuna'})."
           + (" [DRY RUN, nessuna scrittura]" if dry_run else ""))
 
     client = CardTraderClient()
