@@ -57,7 +57,7 @@ fi
 # 1) Chiave SSH (si crea una volta sola, resta nella home di Cloud Shell)
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 if [ ! -f "$KEY" ]; then
-  ssh-keygen -t ed25519 -N "" -C "ct-runner" -f "$KEY" >/dev/null || die "ssh-keygen fallito"
+  ssh-keygen -t rsa -b 4096 -N "" -C "ct-runner" -f "$KEY" >/dev/null || die "ssh-keygen fallito"
   log "Chiave SSH creata: $KEY (privata) e $KEY.pub"
 fi
 
