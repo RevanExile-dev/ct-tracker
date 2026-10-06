@@ -78,7 +78,9 @@ if [ -z "$VCN" ]; then
   VCN=$(oci network vcn create -c "$C" --display-name ct-vcn --cidr-block 10.0.0.0/24 \
         --wait-for-state AVAILABLE --query 'data.id' --raw-output) || die "creazione VCN fallita"
 fi
-IGW=$(find_id network internet-gateway list -c "$C" --vcn-id "$VCN" --display-name ct-igw --lifecycle-state AVAILABLE)
+# Riusa qualunque internet gateway gia' presente nella VCN (anche creato dalla
+# console con un altro nome): una VCN ne ammette uno solo.
+IGW=$(find_id network internet-gateway list -c "$C" --vcn-id "$VCN" --lifecycle-state AVAILABLE)
 if [ -z "$IGW" ]; then
   log "Creo internet gateway"
   IGW=$(oci network internet-gateway create -c "$C" --vcn-id "$VCN" --display-name ct-igw --is-enabled true \
@@ -92,7 +94,10 @@ if [ "${NRULES:-0}" = "0" ]; then
     --route-rules "[{\"destination\":\"0.0.0.0/0\",\"destinationType\":\"CIDR_BLOCK\",\"networkEntityId\":\"$IGW\"}]" >/dev/null \
     || die "aggiornamento route table fallito"
 fi
+# Subnet: ct-subnet se c'e', altrimenti la prima subnet disponibile della VCN
+# (es. quella creata dalla procedura guidata della console).
 SUBNET=$(find_id network subnet list -c "$C" --vcn-id "$VCN" --display-name ct-subnet --lifecycle-state AVAILABLE)
+[ -n "$SUBNET" ] || SUBNET=$(find_id network subnet list -c "$C" --vcn-id "$VCN" --lifecycle-state AVAILABLE)
 if [ -z "$SUBNET" ]; then
   log "Creo la subnet pubblica ct-subnet"
   SUBNET=$(oci network subnet create -c "$C" --vcn-id "$VCN" --display-name ct-subnet --cidr-block 10.0.0.0/24 \
