@@ -10,12 +10,12 @@ import {
   assessScan,
   catalogNameChecker,
   catalogNumberKeys,
-  entryCollectorNumber,
+  entryNumberLabel,
   hydrateScannerCard,
   loadScannerCatalog,
   rankScannerCandidates,
 } from "@/lib/scanner/catalog";
-import { extractAllCollectorNumbers } from "@/lib/scanner/collector-number";
+import { extractAllNumberKeys } from "@/lib/scanner/collector-number";
 import { catalogSignature, visualSignature, visualSimilarity } from "@/lib/scanner/visual";
 import { detectLanguage, ocrEngineNotice, recognizeText } from "@/lib/scanner/ocr";
 import type {
@@ -225,7 +225,7 @@ export default function ScannerStudio() {
             updateItem(item.id, { status: "reading", error: null });
             const ocr = await recognizeText(item.ocrCropUrl, {
               name: hasCatalogName,
-              number: (value) => extractAllCollectorNumbers(value).some((key) => numberKeys.has(key)),
+              number: (value) => extractAllNumberKeys(value).some((key) => numberKeys.has(key)),
             });
             const text = ocr.text;
             const ocrConfidence = ocr.confidence;
@@ -662,7 +662,7 @@ export default function ScannerStudio() {
                             <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mb-2">{selected ? "Alternative" : "Proposte"}</div>
                             <div className="flex flex-wrap gap-2">
                               {item.candidates.slice(0, selected ? 4 : 6).map((candidate) => {
-                                const number = entryCollectorNumber(candidate);
+                                const number = entryNumberLabel(candidate);
                                 return (
                                   <button key={candidate.id} type="button" onClick={() => void chooseCandidate(item.id, candidate)} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors ${selected?.id === candidate.id ? "border-accent/45 bg-accent/10 text-accent-bright" : "border-base-border bg-base-surface2 text-ink-muted hover:text-ink-primary"}`}>
                                     {!selected && candidate.image_url && (

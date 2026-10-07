@@ -69,9 +69,10 @@ const NUMBER_READS: FieldRead[] = [
   { crop: NUMBER_LEFT, psm: "6" },
   { crop: NUMBER_LEFT, psm: "11" },
 ];
-// Tiene i prefissi gallery (TG/GG/SV/RC) e le confusioni O/I/L tipiche: una
-// whitelist di sole cifre distruggerebbe identificativi come TG05/TG30.
-const NUMBER_WHITELIST = "0123456789/TtGgSsVvRrCcOoIiLl|- ";
+// Tiene i prefissi gallery (TG/GG/SV/RC), le sigle promo (MEP, SVP, SWSH, SM,
+// XY, BW, "EN") e le confusioni O/I/L tipiche: una whitelist di sole cifre
+// distruggerebbe identificativi come TG05/TG30 o "MEP EN 099".
+const NUMBER_WHITELIST = "0123456789/TtGgSsVvRrCcOoIiLl|- MmEePpNnWwHhXxYyBb";
 
 export type FieldCheck = {
   // true se la lettura contiene gia' un nome/numero che esiste nel catalogo:
