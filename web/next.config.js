@@ -14,7 +14,11 @@ const contentSecurityPolicy = [
   // eliminerebbe 'unsafe-inline' ma richiede rendering dinamico ovunque
   // (niente pagine statiche/ISR) - sproporzionato per l'hardening
   // richiesto qui.
-  "script-src 'self' 'unsafe-inline'",
+  // Scanner /scan: il motore OCR (tesseract.js) viene caricato da jsdelivr,
+  // insieme al worker, al core WASM e ai dati lingua. 'wasm-unsafe-eval'
+  // serve solo a compilare il WASM, non abilita eval() JavaScript.
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
+  "worker-src 'self' blob:",
   // 'unsafe-inline' per style-src: alcuni componenti usano style={{...}}
   // inline (valori dinamici, es. percentuali/colori calcolati) - CSP tratta
   // l'attributo style come style-src alla pari di un tag <style>. Rischio
@@ -25,7 +29,7 @@ const contentSecurityPolicy = [
   // gia' whitelisted in images.remotePatterns qui sotto.
   "img-src 'self' data: https://cardtrader.com https://*.cardtrader.com https://d2rq8wty021h6h.cloudfront.net https://*.googleusercontent.com",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://cdn.jsdelivr.net",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
