@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExpansionInfo, SortOption } from "@/lib/db";
+import { ArtistOption, ExpansionInfo, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
@@ -18,6 +18,9 @@ export default function Toolbar({
   rarities,
   selectedRarities,
   onToggleRarity,
+  artists,
+  selectedArtists,
+  onToggleArtist,
   languages,
   selectedLanguages,
   onToggleLanguage,
@@ -42,6 +45,10 @@ export default function Toolbar({
   rarities: string[];
   selectedRarities: string[];
   onToggleRarity: (rarity: string) => void;
+  /** Artisti selezionabili (lista curata, vedi web/config/top_artists.json) con quante carte hanno a catalogo. */
+  artists: ArtistOption[];
+  selectedArtists: string[];
+  onToggleArtist: (artist: string) => void;
   languages: string[];
   selectedLanguages: string[];
   onToggleLanguage: (lang: string) => void;
@@ -71,7 +78,7 @@ export default function Toolbar({
   onAnyFilterOpenChange?: (open: boolean) => void;
 }) {
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
-  const [activeFilter, setActiveFilter] = useState<"rarity" | "language" | "condition" | null>(null);
+  const [activeFilter, setActiveFilter] = useState<"rarity" | "artist" | "language" | "condition" | null>(null);
   const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
 
   useEffect(() => {
@@ -88,6 +95,7 @@ export default function Toolbar({
     chips.push({ key: "exp", label: selectedExpansion.name, onRemove: () => onExpansionChange("") });
   }
   for (const r of selectedRarities) chips.push({ key: `r-${r}`, label: r, onRemove: () => onToggleRarity(r) });
+  for (const a of selectedArtists) chips.push({ key: `a-${a}`, label: `🎨 ${a}`, onRemove: () => onToggleArtist(a) });
   for (const l of selectedLanguages) {
     chips.push({ key: `l-${l}`, label: `${languageFlag(l)} ${languageLabel(l)}`, onRemove: () => onToggleLanguage(l) });
   }
@@ -186,6 +194,24 @@ export default function Toolbar({
           open={activeFilter === "rarity"}
           onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
         />
+        {/* Pochi artisti scelti (non tutti gli illustratori): lista corta con
+            ricerca, il numero di carte accanto al nome. */}
+        <FilterDropdown
+          label="Artista"
+          options={artists.map((a) => a.name)}
+          selected={selectedArtists}
+          onToggle={onToggleArtist}
+          searchable
+          layout="list"
+          renderOption={(name) => (
+            <span className="flex w-full items-baseline justify-between gap-3">
+              <span>{name}</span>
+              <span className="text-ink-faint font-mono text-[11px]">{artists.find((a) => a.name === name)?.count}</span>
+            </span>
+          )}
+          open={activeFilter === "artist"}
+          onOpenChange={(open) => setActiveFilter(open ? "artist" : null)}
+        />
         <FilterDropdown
           label="Lingua"
           options={languages}
@@ -230,6 +256,7 @@ export default function Toolbar({
             search,
             expansionCode,
             rarities: selectedRarities,
+            artists: selectedArtists,
             languages: selectedLanguages,
             conditions: selectedConditions,
             onlyZero,

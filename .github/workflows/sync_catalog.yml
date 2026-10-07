@@ -48,3 +48,12 @@ jobs:
           else
             python scripts/sync_catalog.py --only-missing
           fi
+
+      # Le carte appena entrate nel catalogo non hanno ancora l'illustratore
+      # (filtro "Artista"): abbinale subito con lo snapshot versionato, senza
+      # chiamate di rete. Non deve mai far fallire il sync catalogo.
+      - name: Abbina gli artisti ai blueprint nuovi
+        continue-on-error: true
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/sync_artists.py

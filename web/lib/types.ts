@@ -61,6 +61,8 @@ export type CardsFilterOpts = {
   search?: string;
   expansionCode?: string;
   rarities?: string[];
+  // Nomi artista come in blueprints.artist (vedi web/config/top_artists.json).
+  artists?: string[];
   languages?: string[];
   conditions?: string[];
   onlyZero?: boolean;
@@ -99,7 +101,11 @@ export type MoversPageResult = {
 export type CardDetail = CardRow & {
   tcg_player_id: string | null;
   scryfall_id: string | null;
+  // Illustratore, NULL se non abbinato con certezza (scripts/sync_artists.py).
+  artist: string | null;
 };
+
+export type ArtistOption = { name: string; count: number };
 
 export type PricePoint = {
   captured_at: string;
