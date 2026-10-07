@@ -46,7 +46,7 @@ jobs:
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
             python scripts/sync_artists.py --dry-run
           else
             python scripts/sync_artists.py

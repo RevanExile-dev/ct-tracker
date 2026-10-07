@@ -83,6 +83,7 @@ SET_OVERRIDES: dict[str, list[tuple[str, str]]] = {
     "xybsp": [("en", "xyp")],
     "svpromo": [("en", "svp")],
     "c25": [("en", "cel25"), ("en", "cel25c")],
+    "pkmgo": [("en", "pgo")],
 }
 
 
