@@ -96,3 +96,10 @@ INSERT INTO meta (key, value) VALUES
   ('last_price_sync', now()::text),
   ('last_catalog_sync', now()::text)
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- Illustratori per il filtro "Artista" (tests/artist-filter.spec.mjs): i nomi
+-- devono essere quelli di web/config/top_artists.json, l'unica lista che il
+-- filtro mostra. 8 carte Egawa (n multipli di 5), 8 Arita (n % 5 = 1), le
+-- altre senza artista (come nel catalogo reale per le carte non abbinate).
+UPDATE blueprints SET artist = 'Akira Egawa' WHERE id BETWEEN 900101 AND 900140 AND (id - 900100) % 5 = 0;
+UPDATE blueprints SET artist = 'Mitsuhiro Arita' WHERE id BETWEEN 900101 AND 900140 AND (id - 900100) % 5 = 1;
