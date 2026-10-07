@@ -104,3 +104,16 @@ test('collector code cannot disambiguate two sets with identical name and code',
   const ranked = catalog.rankScannerCandidates('Pikachu TG05/TG30', [a, b]);
   assert.equal(ranked[0].score, ranked[1].score);
 });
+
+test('full-art 30° anniversario: slash letto come cifra e nomi corti non battono la carta giusta', () => {
+  const entries = [
+    { id: 1, name: 'N', version: null, expansion_code: 'fco', expansion_name: 'Fates Collide', image_url: null, rarity: null },
+    { id: 2, name: 'Alolan Meowth', version: 'Illustration Rare | 139/128', expansion_code: '30c', expansion_name: '30th Celebration', image_url: null, rarity: null },
+    { id: 3, name: 'Alolan Meowth', version: '089/128', expansion_code: '30c', expansion_name: '30th Celebration', image_url: null, rarity: null },
+  ];
+  // Caso reale: il nome e' letto male, il numero "139/128" arriva come "1397 128".
+  const withNumber = catalog.rankScannerCandidates('Meow N\n| 1397 128', entries);
+  assert.equal(withNumber[0].id, 2);
+  // Senza alcun indizio sul numero, "N" sperduta nell'OCR non deve identificare nulla.
+  assert.equal(catalog.rankScannerCandidates('N resistenza', [entries[0]]).length, 0);
+});

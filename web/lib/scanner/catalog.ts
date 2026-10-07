@@ -109,6 +109,27 @@ function collectorSimilarity(observed: string | null, expected: string | null) {
   return 0;
 }
 
+// Tesseract a volte legge la barra "/" come cifra ("139/128" -> "1397 128"):
+// l'espressione del numero non combacia, ma la sequenza di cifre si'. Cerca
+// numeratore+denominatore del catalogo nelle sole cifre dell'OCR, ammettendo
+// al massimo UN carattere spurio in mezzo. Richiede >= 5 cifre totali per non
+// produrre coincidenze su numeri brevi.
+function digitStreamMatches(ocrDigits: string, expected: string | null) {
+  const parts = collectorParts(expected);
+  if (!parts || parts.prefix) return false;
+  const { numerator, denominator } = parts;
+  if (numerator.length + denominator.length < 5) return false;
+  const pad3 = (v: string) => v.padStart(3, "0");
+  const variants = new Set([numerator, pad3(numerator)]);
+  for (const n of variants) {
+    for (const d of new Set([denominator, pad3(denominator)])) {
+      if (ocrDigits.includes(n + d)) return true;
+      for (let i = 0; i <= 9; i += 1) if (ocrDigits.includes(`${n}${i}${d}`)) return true;
+    }
+  }
+  return false;
+}
+
 function entryCollectorNumber(entry: ScannerCatalogEntry) {
   // Alcuni blueprint CardTrader hanno version=null e/o URL immagine non
   // canonico, ma riportano il numero nel nome del prodotto. Il nome e'
@@ -151,6 +172,7 @@ export function rankScannerCandidates(
   const normalizedText = normalize(text);
   const ocrWords = normalizedText.split(" ").filter((word) => word.length >= 2);
   const observedNumber = extractCollectorNumber(text);
+  const ocrDigits = text.replace(/\D+/g, "");
   const ranked: ScannerCandidate[] = [];
 
   for (const entry of catalog) {
@@ -179,11 +201,17 @@ export function rankScannerCandidates(
     }
 
     const expectedNumber = entryCollectorNumber(entry);
-    const numberScore = collectorSimilarity(observedNumber, expectedNumber);
+    let numberScore = collectorSimilarity(observedNumber, expectedNumber);
+    if (numberScore < 0.58 && digitStreamMatches(ocrDigits, expectedNumber)) numberScore = 0.58;
+
+    // Nomi di 1-2 lettere (es. "N"): bastano una lettera sperduta nell'OCR per
+    // un "match" a punteggio pieno. Senza almeno un indizio sul numero sono
+    // rumore, meglio "nessuna corrispondenza" che una carta sbagliata.
+    if (name.length <= 2 && numberScore < 0.58) continue;
 
     if (nameScore < 0.38 && numberScore < 0.55) continue;
 
-    const hasNumberEvidence = Boolean(observedNumber && expectedNumber);
+    const hasNumberEvidence = Boolean(expectedNumber && (observedNumber || numberScore > 0));
     let score: number;
 
     if (hasNumberEvidence) {
