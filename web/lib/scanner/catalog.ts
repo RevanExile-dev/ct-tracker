@@ -1,7 +1,7 @@
 import { fetchCards, type CardRow } from "@/lib/db";
 import type { ScannerCatalogRow } from "@/lib/types";
 import type { ScanEvidence, ScanVerdict, ScannerCandidate, ScannerCatalogEntry } from "./types";
-import { collectorParts, extractAllCollectorNumbers, extractCollectorNumber, stripCollectorNumbers } from "./collector-number";
+import { collectorParts, extractAllCollectorNumbers, extractCollectorNumber, extractPromoNumber, extractPromoNumbers, stripCollectorNumbers } from "./collector-number";
 export { extractCollectorNumber } from "./collector-number";
 
 let catalogPromise: Promise<ScannerCatalogEntry[]> | null = null;
@@ -113,11 +113,47 @@ export function entryCollectorNumber(entry: ScannerCatalogEntry) {
   // Alcuni blueprint CardTrader hanno version=null e/o URL immagine non
   // canonico, ma riportano il numero nel nome del prodotto. Il nome e'
   // quindi una sorgente di metadata valida prima del fallback all'URL.
-  return (
-    extractCollectorNumber(entry.version ?? "") ??
-    extractCollectorNumber(entry.name) ??
-    collectorNumberFromImageUrl(entry.image_url)
-  );
+  // "105a/124", "55a/111": varianti con lettera. L'OCR del numero non legge
+  // lettere minuscole, quindi la chiave e' quella senza lettera.
+  const version = (entry.version ?? "").replace(/(\d)[a-z](?=\s*\/)/g, "$1");
+  const declared = extractCollectorNumber(version) ?? extractCollectorNumber(entry.name);
+  if (declared) return declared;
+  // Shining Fates: CardTrader scrive "SV80", la carta stampa "SV080/SV122".
+  const shinyVault = entry.expansion_code === "shf" ? version.match(/(?:^|\|)\s*SV0*(\d{1,3})\s*$/) : null;
+  if (shinyVault) return `SV${shinyVault[1]}/SV122`;
+  // Una promo ("SVP 004") ha gia' il suo numero: il nome file dell'immagine a
+  // volte e' quello di un'altra carta ("mimikyu-ex-004-189-astral-radiance").
+  if (entryPromoNumber(entry)) return null;
+  return collectorNumberFromImageUrl(entry.image_url);
+}
+
+// Espansioni promo in cui CardTrader a volte scrive solo il numero
+// ("Prerelease 023", "101") mentre la carta stampa la sigla ("SWSH023").
+const PROMO_CODE_BY_EXPANSION: Record<string, string> = {
+  mep: "MEP",
+  mee: "MEE",
+  svpromo: "SVP",
+  swshbs: "SWSH",
+  smbs: "SM",
+  xybsp: "XY",
+  bwbsp: "BW",
+};
+
+/** Numero promo ("MEP 99", "81/S-P") per le carte senza numero/totale. */
+export function entryPromoNumber(entry: ScannerCatalogEntry) {
+  const explicit = extractPromoNumber(entry.version ?? "") ?? extractPromoNumber(entry.name);
+  if (explicit) return explicit;
+  const code = PROMO_CODE_BY_EXPANSION[entry.expansion_code ?? ""];
+  const version = entry.version ?? "";
+  // "TWM 040", "DRI 102": promo con la sigla di un'altra espansione, non la loro.
+  if (/\b[A-Z]{3}\s+\d{1,3}\s*$/.test(version)) return null;
+  const bare = version.match(/(?:^|[\s|])(\d{1,3})\s*$/);
+  return code && bare && Number(bare[1]) > 0 ? `${code} ${Number(bare[1])}` : null;
+}
+
+/** Numero da mostrare accanto alla proposta: quello normale o la sigla promo. */
+export function entryNumberLabel(entry: ScannerCatalogEntry) {
+  return entryCollectorNumber(entry) ?? entryPromoNumber(entry);
 }
 
 export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
@@ -149,6 +185,7 @@ type IndexedEntry = {
   nameWords: string[];
   number: string | null;
   parts: ReturnType<typeof collectorParts>;
+  promo: string | null;
 };
 
 // Normalizzare ~30mila nomi/numeri a ogni scansione e' lavoro ripetuto: si fa
@@ -161,7 +198,15 @@ function indexCatalog(catalog: ScannerCatalogEntry[]): IndexedEntry[] {
   const indexed = catalog.map((entry) => {
     const name = normalizeCatalogName(entry.name);
     const number = entryCollectorNumber(entry);
-    return { entry, name, nameWords: name.split(" ").filter(Boolean), number, parts: collectorParts(number) };
+    const parts = collectorParts(number);
+    return {
+      entry,
+      name,
+      nameWords: name.split(" ").filter(Boolean),
+      number,
+      parts,
+      promo: parts ? null : entryPromoNumber(entry),
+    };
   });
   indexCache.set(catalog, indexed);
   return indexed;
@@ -175,7 +220,9 @@ function collectorKey(parts: NonNullable<ReturnType<typeof collectorParts>>) {
  * appena legge un numero che esiste davvero, invece di fidarsi di qualunque
  * sequenza "cifre/cifre". */
 export function catalogNumberKeys(catalog: ScannerCatalogEntry[]): Set<string> {
-  return new Set(indexCatalog(catalog).flatMap((item) => (item.parts ? [collectorKey(item.parts)] : [])));
+  return new Set(
+    indexCatalog(catalog).flatMap((item) => (item.parts ? [collectorKey(item.parts)] : item.promo ? [item.promo] : [])),
+  );
 }
 
 /** true se il testo contiene, come parole intere, il nome di una carta del
@@ -198,9 +245,16 @@ type NumberEvidence = {
   exactParts: NonNullable<ReturnType<typeof collectorParts>>[];
   pairs: Set<string>;
   streams: string[];
+  promos: string[];
+  // Sigla promo e numero letti in passate diverse (es. "MEP E" in una, "099"
+  // nell'altra: il riquadro "MEP EN" spezza la riga).
+  promoCodes: Set<string>;
+  threeDigitNumbers: Set<string>;
 };
 
-function readNumberEvidence(text: string): NumberEvidence {
+function readNumberEvidence(raw: string): NumberEvidence {
+  // "TIG30": la T della sigla gallery con un tratto in piu' letto come I.
+  const text = raw.replace(/\bT[I1l|]G(?=\d)/gi, "TG");
   const exactParts = extractAllCollectorNumbers(text).flatMap((value) => {
     const parts = collectorParts(value);
     return parts ? [parts] : [];
@@ -222,13 +276,49 @@ function readNumberEvidence(text: string): NumberEvidence {
         if (num.length <= 3 && right[0].length <= 3) pairs.add(`${Number(num)}/${den}`);
       }
     }
+    // Simbolo di rarita' (cerchio, rombo, stella) attaccato al totale e letto
+    // come cifra: "043/0490", "38/1240", "214/1874" sul campione di 705 carte.
+    for (const match of line.matchAll(/(\d{1,3})\s*\/\s*(\d{3,5})/g)) {
+      const den = match[2].slice(0, -1);
+      if (den.length >= 2 && Number(den) > 0) pairs.add(`${Number(match[1])}/${Number(den)}`);
+    }
     const digits = line.replace(/\D+/g, "");
     if (digits.length >= 5) streams.push(digits);
   }
-  return { exact: new Set(exactParts.map(collectorKey)), exactParts, pairs, streams };
+  // Solo sigle lunghe e distintive: "SM", "XY", "BW" compaiono per caso nel testo.
+  const promoCodes = new Set([...text.matchAll(/(?<![a-z])(MEP|MEE|SVP|SWSH)(?![a-z])/gi)].map((m) => m[1].toUpperCase()));
+  const threeDigitNumbers = new Set([...text.matchAll(/(?<!\d)(\d{3})(?!\d)/g)].map((m) => String(Number(m[1]))));
+  return {
+    exact: new Set(exactParts.map(collectorKey)),
+    exactParts,
+    pairs,
+    streams,
+    promos: extractPromoNumbers(text),
+    promoCodes,
+    threeDigitNumbers,
+  };
 }
 
-function numberEvidenceScore(evidence: NumberEvidence, parts: IndexedEntry["parts"]) {
+// Stessa sigla e una cifra di differenza: come un numero normale letto quasi bene.
+function promoSimilarity(observed: string, expected: string) {
+  if (observed === expected) return 1;
+  const a = observed.match(/^(\D+) (\d+)$|^(\d+)\/(\D+)$/);
+  const b = expected.match(/^(\D+) (\d+)$|^(\d+)\/(\D+)$/);
+  if (!a || !b) return 0;
+  const [codeA, numA] = a[1] ? [a[1], a[2]] : [a[4], a[3]];
+  const [codeB, numB] = b[1] ? [b[1], b[2]] : [b[4], b[3]];
+  if (codeA !== codeB || Boolean(a[1]) !== Boolean(b[1])) return 0;
+  return editDistance(numA, numB) === 1 ? 0.68 : 0;
+}
+
+function numberEvidenceScore(evidence: NumberEvidence, item: IndexedEntry) {
+  if (item.promo) {
+    const best = Math.max(0, ...evidence.promos.map((observed) => promoSimilarity(observed, item.promo!)));
+    const split = item.promo.match(/^([A-Z]+) (\d+)$/);
+    if (best < 0.75 && split && evidence.promoCodes.has(split[1]) && evidence.threeDigitNumbers.has(split[2])) return 0.75;
+    return best;
+  }
+  const parts = item.parts;
   if (!parts) return 0;
   const key = collectorKey(parts);
   if (evidence.exact.has(key)) return 1;
@@ -295,7 +385,12 @@ export function rankScannerCandidates(
   limit = 5,
 ): ScannerCandidate[] {
   const evidence = typeof input === "string" ? { name: input, number: input } : input;
-  const normalizedName = normalize(evidence.name);
+  // Sotto il nome delle Stage 1/2 c'e' "Evolves from X": X e' un'altra carta
+  // (caso reale: Mismagius letto come "Evolves from Misdreavus"); sulle carte
+  // italiane "Si evolve da X".
+  const normalizedName = normalize(
+    evidence.name.replace(/\b(?:[a-z]*vo[l1i]ves?\s+fr[o0]m|si\s+evolve\s+da)\b[^\n]*/gi, " "),
+  );
   const ocrWords = normalizedName.split(" ").filter((word) => word.length >= 2);
   const numbers = readNumberEvidence(evidence.number);
   const ranked: ScannerCandidate[] = [];
@@ -303,7 +398,7 @@ export function rankScannerCandidates(
   for (const item of indexCatalog(catalog)) {
     if (!item.name) continue;
     const { score: nameScore, matchedWords } = nameEvidenceScore(normalizedName, ocrWords, item);
-    const numberScore = numberEvidenceScore(numbers, item.parts);
+    const numberScore = numberEvidenceScore(numbers, item);
 
     // Nomi di 1-2 lettere (es. "N"): basta una lettera sperduta nell'OCR per un
     // "match" a punteggio pieno. Senza un indizio sul numero sono rumore.

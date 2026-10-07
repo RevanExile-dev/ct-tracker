@@ -199,3 +199,90 @@ test('nome e numero letti in parte + immagine netta: tre indizi concordi bastano
   // Un numero letto con certezza che indica un'altra carta.
   assert.equal(catalog.assessScan([top, { ...other, numberScore: 1, visualScore: 0.1 }], all), 'probable');
 });
+
+test('promo senza totale: sigla e numero (MEP, SVP, SWSH, SM, XY, BW e promo JP)', () => {
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('J MEP EN 099 *')), JSON.stringify(['MEP 99']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('MEPEN O99')), JSON.stringify(['MEP 99']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('STAFF Promo | MEP 085')), JSON.stringify(['MEP 85']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('SVP 223')), JSON.stringify(['SVP 223']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('Cosmos Holo | SWSH220')), JSON.stringify(['SWSH 220']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('20th Stamp Holo Promo | XY143')), JSON.stringify(['XY 143']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('081/S-P')), JSON.stringify(['81/S-P']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('BW-P 234')), JSON.stringify(['234/BW-P']));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('Gym Promo | XY-P')), JSON.stringify([]));
+  assert.equal(JSON.stringify(parser.extractPromoNumbers('SVI EN 123/198')), JSON.stringify([]));
+  // Prima "339/S-P" diventava il numero normale "339/5" (S letta come cifra).
+  assert.equal(parser.extractCollectorNumber('339/S-P'), null);
+  assert.equal(parser.extractCollectorNumber('greninja-ex-017-066-pokemon.jpg'), '17/66');
+});
+
+test('promo MEP del 30esimo: sigla+numero e nome la identificano (caso reale Greninja ex 099)', () => {
+  const entries = [
+    card(397600, 'Greninja ex', 'MEP 099', 'mep'),
+    card(2, 'Greninja', '339/S-P', 's-p'),
+    card(3, 'Greninja', '41/146', 'xy-en'),
+    card(4, 'Greninja ex', 'Ultra Rare | 021/128', '30c'),
+    card(5, 'Mega Greninja ex', 'MEP 081', 'mep'),
+  ];
+  const ranked = catalog.rankScannerCandidates({ name: 'Greninja @X', number: 'J MEP EN 099 *' }, entries, 10);
+  assert.equal(ranked[0].id, 397600);
+  assert.equal(ranked[0].numberScore, 1);
+  assert.equal(catalog.assessScan(ranked), 'certain');
+  // Senza numero promo letto resta una proposta.
+  assert.notEqual(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Greninja', number: '' }, entries, 10)), 'certain');
+  assert.equal(catalog.entryNumberLabel(entries[0]), 'MEP 99');
+  assert.ok(catalog.catalogNumberKeys(entries).has('MEP 99'));
+});
+
+test('formati trovati sul campione di 705 carte: promo JP lette con 5, 30th-P, MEE, simbolo attaccato al totale', () => {
+  const promos = (text) => JSON.stringify(parser.extractPromoNumbers(text));
+  assert.equal(promos('231/5V-P'), JSON.stringify(['231/SV-P']));
+  assert.equal(promos('PROMO 0 118/5-P 2020'), JSON.stringify(['118/S-P']));
+  assert.equal(promos('049/5m-P 2017'), JSON.stringify(['49/SM-P']));
+  assert.equal(promos('025/30th-P'), JSON.stringify(['25/30TH-P']));
+  assert.equal(promos('MEE 007'), JSON.stringify(['MEE 7']));
+  assert.equal(parser.extractCollectorNumber('231/5V-P'), null);
+
+  const entries = [
+    card(1, 'Pikachu', '043/049', 'sm11b'),
+    card(2, 'Zekrom', 'Ultra Rare | 105a/124', 'fco'),
+    card(3, 'Zamazenta V', 'Prerelease 023', 'swshbs'),
+    card(4, 'Ogerpon ex', 'Premium Collection | TWM 040', 'svpromo'),
+    card(5, 'Pikachu', 'TG19/TG30', 'brs'),
+    card(6, 'Cinderace', 'SV9', 'shf'),
+  ];
+  const numberScore = (number, id) =>
+    catalog.rankScannerCandidates({ name: '', number }, entries, 10).find((c) => c.id === id)?.numberScore ?? 0;
+  // "043/0490": il simbolo di rarita' letto come una cifra in piu'.
+  assert.equal(numberScore('Inc i c 043/0490 N 02019', 1), 0.9);
+  assert.equal(catalog.entryNumberLabel(entries[1]), '105/124');
+  assert.equal(catalog.entryNumberLabel(entries[2]), 'SWSH 23');
+  assert.equal(numberScore('2020 0 SWSH023 2020', 3), 1);
+  assert.equal(catalog.entryPromoNumber(entries[3]), null);
+  assert.equal(numberScore('VMLX TG19/TIG30 4', 5), 1);
+  assert.equal(catalog.entryNumberLabel(entries[5]), 'SV9/SV122');
+});
+
+test('promo con sigla e numero letti in passate diverse (Greninja ex MEP 099 reale)', () => {
+  const entries = [
+    card(397600, 'Greninja ex', 'MEP 099', 'mep'),
+    card(2, 'Greninja', '339/S-P', 's-p'),
+    card(3, 'Greninja', 'Holo Promo | SWSH 305', 'swshbs'),
+    card(4, 'Pikachu', 'MEP 099', 'mep'),
+  ];
+  const ocr = { name: '== Greninja(Z,<  7 {', number: ' INTER 099 EH i -\ni i MEP E -    oY  wr is noce' };
+  const ranked = catalog.rankScannerCandidates(ocr, entries, 10);
+  assert.equal(ranked[0].id, 397600);
+  assert.equal(ranked[0].numberScore, 0.75);
+  // Senza la sigla, "099" da solo non basta.
+  const noCode = catalog.rankScannerCandidates({ ...ocr, number: 'INTER 099 EH' }, entries, 10);
+  assert.notEqual(noCode[0]?.numberScore, 0.75);
+});
+
+test('"Evolves from X" sotto il nome non conta come nome (caso reale Mismagius SM245)', () => {
+  const entries = [card(1, 'Mismagius', 'SM245', 'smbs'), card(2, 'Misdreavus', '067/193', 'm2a')];
+  const ranked = catalog.rankScannerCandidates({ name: 'smce1 | MSE\noS Evolves from Misdreavus ~', number: '' }, entries, 10);
+  assert.equal(ranked.find((c) => c.id === 2), undefined);
+  assert.equal(catalog.rankScannerCandidates({ name: 'Mismagius\nEvolves from Misdreavus', number: '' }, entries, 10)[0].id, 1);
+  assert.equal(catalog.rankScannerCandidates({ name: 'Si evolve da Misdreavus', number: '' }, entries, 10).length, 0);
+});
