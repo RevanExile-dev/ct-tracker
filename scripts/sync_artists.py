@@ -12,6 +12,13 @@ pubbliche e gratuite, entrambe con il campo illustratore per carta:
   - TCGdex (api.tcgdex.net, open source, senza chiave), lingua "ja": le carte
     giapponesi (SV4a, S12a, M2a, promo SV-P, ...), che pokemon-tcg-data non ha
     e che nel nostro catalogo sono oltre meta' dei set. Campo "illustrator".
+    Limite noto: TCGdex non ha ancora le carte di molti set giapponesi piu'
+    vecchi (Sword & Shield S1-S8a, XY, Black & White, Sun & Moon "+", promo JP)
+    -> quelle carte restano senza artista.
+  - TCGdex in lingua "en", solo per i set recenti dove pokemon-tcg-data ha le
+    carte ma non ancora il campo artista (verificato a mano: sv7-sv10, me1,
+    me3 ...); i due dataset coincidono al 99,6% sulle carte dove hanno
+    entrambi l'artista (campione di 2.500 carte, 2026-10-07).
 
 Due passi, volutamente separati (la parte lenta e' scaricare, non incrociare):
 
@@ -62,12 +69,20 @@ TOP_ARTISTS_PATH = REPO_ROOT / "web" / "config" / "top_artists.json"
 
 PTD_RAW = "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master"
 TCGDEX_JA = "https://api.tcgdex.net/v2/ja"
+TCGDEX_EN = "https://api.tcgdex.net/v2/en"
 
 # Set CardTrader il cui codice non coincide col codice PTCGO / id TCGdex (o
 # ambigui) -> (fonte, id set nella fonte). Verificati a mano guardando i
 # rapporti del --dry-run; il resto si risolve da solo (vedi _candidate_sets).
 SET_OVERRIDES: dict[str, list[tuple[str, str]]] = {
     "xy-en": [("en", "xy1")],
+    # promo: CardTrader le chiama in modo diverso dalle fonti
+    "bwbsp": [("en", "bwp")],
+    "swshbs": [("en", "swshp")],
+    "smbs": [("en", "smp")],
+    "xybsp": [("en", "xyp")],
+    "svpromo": [("en", "svp")],
+    "c25": [("en", "cel25"), ("en", "cel25c")],
 }
 
 
@@ -87,8 +102,7 @@ def _get_json(url: str, tries: int = 5):
     raise RuntimeError(f"{url}: {last}")
 
 
-def refresh_snapshot() -> dict:
-    """Scarica le due fonti e ritorna lo snapshot (non scrive su disco)."""
+def _fetch_en() -> tuple[dict, list]:
     sets = _get_json(f"{PTD_RAW}/sets/en.json")
     en_cards: list[list] = []
     en_sets: dict[str, dict] = {}
@@ -97,7 +111,47 @@ def refresh_snapshot() -> dict:
         for c in _get_json(f"{PTD_RAW}/cards/en/{s['id']}.json"):
             # [set, numero, nome, artista]
             en_cards.append([s["id"], c["number"], c["name"], c.get("artist")])
+    _fill_missing_from_tcgdex_en(en_sets, en_cards)
+    return en_sets, en_cards
 
+
+def _fill_missing_from_tcgdex_en(en_sets: dict, en_cards: list):
+    """pokemon-tcg-data aggiunge le carte di un set nuovo prima degli artisti:
+    per i set dove manca l'artista nella maggior parte delle carte, lo si
+    prende da TCGdex (lingua en), abbinando il set per nome e la carta per
+    numero. Solo per riempire buchi: dove pokemon-tcg-data ha l'artista, vince."""
+    by_set: dict[str, list[list]] = defaultdict(list)
+    for row in en_cards:
+        by_set[row[0]].append(row)
+    gap_sets = [sid for sid, rows in by_set.items()
+                if sum(1 for r in rows if not r[3]) / len(rows) > 0.3]
+    if not gap_sets:
+        return
+    tcgdex_sets = {name_key(s["name"]): s["id"] for s in _get_json(f"{TCGDEX_EN}/sets")}
+    for sid in gap_sets:
+        tid = tcgdex_sets.get(name_key(en_sets[sid]["name"]))
+        if not tid:
+            print(f"  [en] {sid} ({en_sets[sid]['name']}): nessun set TCGdex con lo stesso nome, resta senza artista", file=sys.stderr)
+            continue
+        cards = _get_json(f"{TCGDEX_EN}/sets/{urllib.parse.quote(tid, safe='')}").get("cards", [])
+
+        def one(c):
+            d = _get_json(f"{TCGDEX_EN}/cards/{urllib.parse.quote(c['id'], safe='')}")
+            return c["localId"], d.get("illustrator")
+
+        with ThreadPoolExecutor(16) as ex:
+            found = {number_keys(n, set())[0]: a for n, a in ex.map(one, cards) if a}
+        filled = 0
+        for row in by_set[sid]:
+            if not row[3]:
+                a = found.get(number_keys(row[1], set())[0])
+                if a:
+                    row[3] = a
+                    filled += 1
+        print(f"  [en] {sid} ({en_sets[sid]['name']}): {filled}/{len(by_set[sid])} artisti presi da TCGdex")
+
+
+def _fetch_ja() -> tuple[dict, list]:
     ja_sets_raw = _get_json(f"{TCGDEX_JA}/sets")
     ja_sets: dict[str, dict] = {}
     ja_ids: list[tuple[str, str]] = []
@@ -116,11 +170,26 @@ def refresh_snapshot() -> dict:
 
     with ThreadPoolExecutor(16) as ex:
         ja_cards = list(ex.map(one, ja_ids))
+    return ja_sets, ja_cards
 
+
+def refresh_snapshot(only: str | None = None) -> dict:
+    """Scarica le fonti e ritorna lo snapshot (non scrive su disco). Con
+    only='en' o 'ja' riscarica solo quella parte e tiene l'altra da quello
+    esistente (la parte giapponese richiede ~10 minuti di chiamate)."""
+    base = load_snapshot() if only else {}
+    if only != "ja":
+        en_sets, en_cards = _fetch_en()
+    else:
+        en_sets, en_cards = base["en_sets"], base["en_cards"]
+    if only != "en":
+        ja_sets, ja_cards = _fetch_ja()
+    else:
+        ja_sets, ja_cards = base["ja_sets"], base["ja_cards"]
     return {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "sources": {
-            "en": "pokemon-tcg-data (github.com/PokemonTCG/pokemon-tcg-data)",
+            "en": "pokemon-tcg-data (github.com/PokemonTCG/pokemon-tcg-data) + buchi dei set recenti da TCGdex en",
             "ja": "TCGdex (api.tcgdex.net/v2/ja)",
         },
         "en_sets": en_sets, "en_cards": en_cards,
@@ -152,7 +221,7 @@ def name_key(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", _fold(s).lower())
 
 
-def number_keys(raw: str | None, set_prefixes: set[str]) -> list[str]:
+def number_keys(raw: str | None, set_prefixes: set[str], digit_fallback: bool = False) -> list[str]:
     """Chiavi con cui cercare un numero di collezione, dalla piu' specifica.
     'TG01' -> ['TG1'], '001' -> ['1'] (+ eventuale prefisso proprio del set,
     es. SVP/SWSH per i promo dove CardTrader omette il prefisso)."""
@@ -163,6 +232,13 @@ def number_keys(raw: str | None, set_prefixes: set[str]) -> list[str]:
     keys = [token]
     if token.isdigit():
         keys += [p + token for p in sorted(set_prefixes)]
+    else:
+        m = re.fullmatch(r"[A-Z]{2,5}([0-9]+)", token)
+        if digit_fallback and m and not set_prefixes:
+            # promo: CardTrader scrive "SVP 002", la fonte ha solo "002" (set
+            # senza prefissi propri). Tentativo di ripiego: per le carte
+            # inglesi il controllo del nome impedisce abbinamenti sbagliati.
+            keys.append(m.group(1))
     return keys
 
 
@@ -257,7 +333,11 @@ def _ja_index(snap: dict):
 
 
 def candidate_sets(code: str, exp_name: str, snap: dict) -> dict[str, list[str]]:
-    """Per un set CardTrader: {'en': [id set pokemon-tcg-data...], 'ja': [id TCGdex...]}."""
+    """Per un set CardTrader: {'en': [id set pokemon-tcg-data...], 'ja': [id TCGdex...]}.
+    Inglese: codice PTCGO uguale al codice CardTrader, altrimenti stesso nome
+    del set; si aggiungono i set "fratelli" (Trainer Gallery, Galarian
+    Gallery, Shiny Vault: id = id del set + tg/gg/sv/c).
+    Giapponese: id TCGdex uguale al codice CardTrader (maiuscole ignorate)."""
     cands: dict[str, list[str]] = {"en": [], "ja": []}
     if code in SET_OVERRIDES:
         for src, sid in SET_OVERRIDES[code]:
@@ -266,6 +346,15 @@ def candidate_sets(code: str, exp_name: str, snap: dict) -> dict[str, list[str]]
     for sid, s in snap["en_sets"].items():
         if (s.get("ptcgo") or "").lower() == code.lower():
             cands["en"].append(sid)
+    if not cands["en"]:
+        key = name_key(exp_name)
+        for sid, s in snap["en_sets"].items():
+            if key and name_key(s["name"]) == key:
+                cands["en"].append(sid)
+    for sid in list(cands["en"]):
+        for other in snap["en_sets"]:
+            if other != sid and other not in cands["en"] and re.fullmatch(re.escape(sid) + r"(tg|gg|sv|c)", other):
+                cands["en"].append(other)
     for sid in snap["ja_sets"]:
         if sid.lower() == code.lower():
             cands["ja"].append(sid)
@@ -315,7 +404,7 @@ def match_all(blueprints: list[dict], snap: dict):
             for bp in bps:
                 num, _den = parse_version(bp.get("version"))
                 found = None
-                for k in number_keys(num, prefixes):
+                for k in number_keys(num, prefixes, digit_fallback=(lang == "en")):
                     if k in merged:
                         found = merged[k]
                         break
@@ -419,10 +508,11 @@ def apply_to_db(dry_run: bool):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--refresh", action="store_true", help="riscarica le fonti e riscrive lo snapshot (non tocca il DB)")
+    ap.add_argument("--only", choices=["en", "ja"], help="con --refresh: riscarica solo la parte inglese o giapponese")
     ap.add_argument("--dry-run", action="store_true", help="solo rapporto, nessuna scrittura sul DB")
     args = ap.parse_args()
     if args.refresh:
-        snap = refresh_snapshot()
+        snap = refresh_snapshot(args.only)
         save_snapshot(snap)
         print(f"Snapshot scritto: {len(snap['en_cards'])} carte EN, {len(snap['ja_cards'])} carte JA -> {SNAPSHOT_PATH}")
         return
