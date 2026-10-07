@@ -499,6 +499,109 @@ function detectConnectedComponents(
   return kept;
 }
 
+/**
+ * Caso piu' comune di una foto vera: una o piu' carte appoggiate su un piano
+ * uniforme (tavolo, tappetino). Il colore dello sfondo si stima dalla cornice
+ * esterna della foto; tutto cio' che se ne discosta e' "carta", e ogni blob
+ * compatto con proporzioni da carta che non tocca la cornice diventa una
+ * regione. Non dipende dai bordi dritti: regge anche una carta un po' ruotata,
+ * dove detectBorderRectangles agganciava un riquadro ancorato all'angolo della
+ * foto (verificato su foto con carta ruotata di 3 gradi: regione 0.5%-81%
+ * invece di 17%-83%, nome e numero fuori dal ritaglio).
+ * Se la cornice non e' uniforme (sfondo con texture, carta che riempie la
+ * foto) non restituisce nulla e si passa al detector a bordi.
+ */
+export function detectOnUniformBackground(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+): ScanRegion[] {
+  if (width < 24 || height < 24) return [];
+  const ringX = Math.max(2, Math.round(width * 0.03));
+  const ringY = Math.max(2, Math.round(height * 0.03));
+  const inRing = (x: number, y: number) => x < ringX || x >= width - ringX || y < ringY || y >= height - ringY;
+
+  let n = 0;
+  const sum = [0, 0, 0];
+  const sumSq = [0, 0, 0];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!inRing(x, y)) continue;
+      const p = (y * width + x) * 4;
+      for (let c = 0; c < 3; c += 1) {
+        sum[c] += rgba[p + c];
+        sumSq[c] += rgba[p + c] * rgba[p + c];
+      }
+      n += 1;
+    }
+  }
+  const mean = sum.map((value) => value / n);
+  const std = sumSq.map((value, c) => Math.sqrt(Math.max(0, value / n - mean[c] * mean[c])));
+  const noise = (std[0] + std[1] + std[2]) / 3;
+  // Cornice non uniforme: sfondo con texture o carta che riempie la foto.
+  if (noise > 22) return [];
+
+  const threshold = Math.max(38, noise * 4);
+  const mask = new Uint8Array(width * height);
+  for (let i = 0, p = 0; p < mask.length; i += 4, p += 1) {
+    const dr = rgba[i] - mean[0];
+    const dg = rgba[i + 1] - mean[1];
+    const db = rgba[i + 2] - mean[2];
+    mask[p] = Math.sqrt(dr * dr + dg * dg + db * db) > threshold ? 1 : 0;
+  }
+
+  const visited = new Uint8Array(width * height);
+  const regions: ScanRegion[] = [];
+  const totalArea = width * height;
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || visited[start]) continue;
+    const stack = [start];
+    visited[start] = 1;
+    let count = 0;
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+    let touchesRing = false;
+    while (stack.length) {
+      const p = stack.pop()!;
+      count += 1;
+      const x = p % width;
+      const y = (p - x) / width;
+      if (inRing(x, y)) touchesRing = true;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (x > 0 && mask[p - 1] && !visited[p - 1]) { visited[p - 1] = 1; stack.push(p - 1); }
+      if (x < width - 1 && mask[p + 1] && !visited[p + 1]) { visited[p + 1] = 1; stack.push(p + 1); }
+      if (y > 0 && mask[p - width] && !visited[p - width]) { visited[p - width] = 1; stack.push(p - width); }
+      if (y < height - 1 && mask[p + width] && !visited[p + width]) { visited[p + width] = 1; stack.push(p + width); }
+    }
+    if (touchesRing) continue;
+    const boxW = maxX - minX + 1;
+    const boxH = maxY - minY + 1;
+    const areaRatio = (boxW * boxH) / totalArea;
+    if (areaRatio < 0.02) continue;
+    const aspect = Math.min(boxW, boxH) / Math.max(boxW, boxH);
+    // Una carta ruotata di qualche grado ha un rettangolo contenitore un po'
+    // meno allungato di 63:88 (0.716): tolleranza ampia verso l'alto.
+    if (aspect < 0.6 || aspect > 0.86) continue;
+    // Blob compatto: la carta riempie quasi tutto il suo rettangolo.
+    if (count / (boxW * boxH) < 0.55) continue;
+    regions.push({
+      id: `uniform-${regions.length + 1}`,
+      x: minX / width,
+      y: minY / height,
+      width: boxW / width,
+      height: boxH / height,
+      score: 0.9,
+    });
+    if (regions.length >= MAX_REGIONS) break;
+  }
+  return regions;
+}
+
 export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
   const image = await loadImage(src);
   const { ctx, width, height } = workCanvas(image);
@@ -518,6 +621,8 @@ export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
       return [{ id: "region-frame", x: 0, y: 0, width: 1, height: 1, score: Math.max(best.score, 0.5) }];
     }
   }
+  const uniformRegions = detectOnUniformBackground(rgba, width, height);
+  if (uniformRegions.length) return uniformRegions.sort((a, b) => a.y - b.y || a.x - b.x);
   if (borderRegions.length) return consolidateRegions(borderRegions).sort((a, b) => a.y - b.y || a.x - b.x);
 
   const componentRegions = detectConnectedComponents(rgba, width, height);

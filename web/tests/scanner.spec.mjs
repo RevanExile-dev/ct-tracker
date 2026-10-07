@@ -43,18 +43,19 @@ test.describe("scanner CartaViva", () => {
     // Tesseract. Il numero contiene apposta I al posto di 1, errore tipico OCR.
     await page.addInitScript(() => {
       window.Tesseract = {
-        createWorker: async () => {
+        // Due worker reali: solo inglese per nome/numero, multilingua (array)
+        // per la fascia testo che serve alla lingua.
+        createWorker: async (langs) => {
           let params = {};
+          const bodyWorker = Array.isArray(langs);
           return {
             setParameters: async (next) => { params = next; },
             recognize: async () => {
+              if (bodyWorker) return { data: { text: "debolezza resistenza ritirata", confidence: 94 } };
               if (String(params.tessedit_char_whitelist ?? "").includes("0123456789")) {
                 return { data: { text: "I95/I82", confidence: 96 } };
               }
-              if (String(params.tessedit_pageseg_mode ?? "") === "7") {
-                return { data: { text: "Blitzle", confidence: 97 } };
-              }
-              return { data: { text: "debolezza resistenza ritirata", confidence: 94 } };
+              return { data: { text: "Blitzle", confidence: 97 } };
             },
             terminate: async () => {},
           };
@@ -72,6 +73,39 @@ test.describe("scanner CartaViva", () => {
     const cardImage = page.locator('img[alt*="Blitzle" i]').first();
     await expect(cardImage).toBeVisible();
     await expect(cardImage).toHaveAttribute("src", /195-182/i);
+  });
+
+  test("lettura incerta: nessuna carta scelta in automatico, niente Binder", async ({ page }) => {
+    // Caso reale (Alolan Meowth full-art): l'OCR restituisce solo rumore. Prima
+    // il sito sceglieva comunque una carta a caso e la segnava "Identificata".
+    await page.addInitScript(() => {
+      window.Tesseract = {
+        createWorker: async (langs) => {
+          let params = {};
+          const bodyWorker = Array.isArray(langs);
+          return {
+            setParameters: async (next) => { params = next; },
+            recognize: async () => {
+              if (bodyWorker) return { data: { text: "weakness resistance retreat", confidence: 60 } };
+              if (String(params.tessedit_char_whitelist ?? "").includes("0123456789")) {
+                return { data: { text: "T77iris 4", confidence: 20 } };
+              }
+              return { data: { text: "Bi I I -", confidence: 30 } };
+            },
+            terminate: async () => {},
+          };
+        },
+      };
+    });
+
+    await page.goto(`${BASE_URL}/scan`, { waitUntil: "domcontentloaded" });
+    const input = page.locator('input[type="file"]').first();
+    await input.setInputFiles({ name: "rumore.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG });
+
+    await expect(page.getByRole("heading", { name: /non riconosciuta con certezza/i })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Identificata", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Binder/i })).toHaveCount(0);
+    await expect(page.getByPlaceholder(/Correggi:/i)).toBeVisible();
   });
 
   test("la home espone un ingresso Scanner navigabile", async ({ page }) => {

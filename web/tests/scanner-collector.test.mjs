@@ -117,3 +117,85 @@ test('full-art 30° anniversario: slash letto come cifra e nomi corti non batton
   // Senza alcun indizio sul numero, "N" sperduta nell'OCR non deve identificare nulla.
   assert.equal(catalog.rankScannerCandidates('N resistenza', [entries[0]]).length, 0);
 });
+
+const card = (id, name, version, expansion_code = 'x') => ({ id, name, version, expansion_code, expansion_name: expansion_code, image_url: null, rarity: null });
+
+test('il nome si cerca solo nella fascia del nome: parole del testo attacchi non creano match', () => {
+  // Caso reale (Alolan Exeggutor 002/128): "Energy" negli attacchi faceva vincere
+  // "Energy Retrieval" sul numero letto esatto.
+  const entries = [card(1, 'Alolan Exeggutor', '002/128', '30c'), card(2, 'Energy Retrieval', '003/XY-P', 'xyp'), card(3, 'Darkness Energy', null, 'hif')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Alolan Exeggutor', number: '002/128' }, entries);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(catalog.assessScan(ranked), 'certain');
+  // Lo stesso testo degli attacchi passato come numero non porta alcun nome.
+  const noName = catalog.rankScannerCandidates({ name: '', number: 'If this Pokémon has 6 or more Energy attached\n002/128' }, entries);
+  assert.equal(noName[0].id, 1);
+  assert.equal(catalog.assessScan(noName), 'probable');
+});
+
+test('"identificata" richiede nome e numero concordi; un solo indizio resta da confermare', () => {
+  const entries = [card(1, 'Alolan Meowth', 'Illustration Rare | 139/128', '30c'), card(2, 'Alolan Meowth', '089/128', '30c'), card(3, 'Altaria', '036/XY-P', 'xyp')];
+  assert.equal(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Alolan Meowith', number: '| 139 128' }, entries)), 'certain');
+  assert.equal(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Alolan Meowth', number: '' }, entries)), 'probable');
+  assert.equal(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Bi I I -', number: 'T77iris 4' }, entries)), 'none');
+  // Nome letto a meta' ("Alt" + rumore) non basta a proporre Altaria come certa.
+  assert.notEqual(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Altar ia', number: 'rr 2 |' }, entries)), 'certain');
+});
+
+test('numero esatto + nome parziale basta, ma non se un vicino ha il nome migliore', () => {
+  const entries = [card(1, 'Hisuian Zoroark', '123/128', '30c'), card(2, 'Hisuian Zorua', '122/128', '30c'), card(3, 'Zoroark', '096/128', '30c')];
+  // Caso reale: "Hisuian" non letto, "Zoroark" si', numero esatto.
+  assert.equal(catalog.assessScan(catalog.rankScannerCandidates({ name: 'FER hn Zoroark', number: '123/128' }, entries)), 'certain');
+  // Numero letto male di una cifra (122 invece di 123): Zorua ha il numero ma
+  // Zoroark ha il nome nettamente migliore -> da confermare, non certa.
+  assert.equal(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Hisuian Zoroark', number: '122/128' }, entries)), 'probable');
+});
+
+test('due varianti con stesso nome e numero (es. timbro 30°) restano da confermare', () => {
+  const entries = [card(1, 'Shining Celebi', '106/105', 'n4'), card(2, 'Shining Celebi', '30th Celebration Stamp | 106/105', '30c')];
+  assert.equal(catalog.assessScan(catalog.rankScannerCandidates({ name: 'Shining Celebi', number: '106/105' }, entries)), 'probable');
+});
+
+test("l'immagine decide tra varianti con lo stesso nome solo se nettamente piu' simile", () => {
+  const base = { score: 0.45, nameScore: 1, numberScore: 0 };
+  const a = { ...card(1, 'Alolan Meowth', '139/128'), ...base, visualScore: 0.82 };
+  const b = { ...card(2, 'Alolan Meowth', '089/128'), ...base, visualScore: 0.31 };
+  const all = { complete: true };
+  assert.equal(catalog.assessScan([a, b], all), 'certain');
+  assert.equal(catalog.assessScan([a, { ...b, visualScore: 0.78 }], all), 'probable');
+  assert.equal(catalog.assessScan([{ ...a, visualScore: 0.5 }, b], all), 'probable');
+  // Un numero letto con sicurezza che indica un'altra carta esclude la scelta visiva.
+  assert.equal(catalog.assessScan([a, { ...b, numberScore: 1 }], all), 'probable');
+  // Caso reale (Alolan Exeggutor): stessa illustrazione in versione JP ed EN.
+  // Se non tutte le carte con quel nome sono state confrontate, niente certezza.
+  assert.equal(catalog.assessScan([a, b]), 'probable');
+  assert.equal(catalog.assessScan([a, b, { ...card(3, 'Alolan Meowth', '115/103'), ...base, visualScore: null }], all), 'probable');
+});
+
+test('a parita di lettura vince il nome piu specifico', () => {
+  const entries = [card(1, 'Exeggutor', '5/63'), card(2, 'Alolan Exeggutor', '002/128', '30c')];
+  assert.equal(catalog.rankScannerCandidates({ name: 'Aiolan Exeggutor', number: '' }, entries)[0].id, 2);
+});
+
+test('numero esatto + immagine bastano quando il nome non si legge (font ex/V)', () => {
+  const top = { ...card(1, 'Espeon ex', 'Ultra Rare | 070/128', '30c'), score: 0.7, nameScore: 0.33, numberScore: 1, visualScore: 0.97 };
+  const near = { ...card(2, 'Espeon', '069/128', '30c'), score: 0.49, nameScore: 0.67, numberScore: 0.34, visualScore: 0.45 };
+  assert.equal(catalog.assessScan([top, near], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, near]), 'probable');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.3 }, near], { complete: true }), 'probable');
+});
+
+test('nome e numero letti in parte + immagine netta: tre indizi concordi bastano', () => {
+  // Caso reale (Alolan Meowth 139/128): nome "Meowith", numero con una cifra sporca.
+  const top = { ...card(1, 'Alolan Meowth', 'Illustration Rare | 139/128', '30c'), score: 0.8, nameScore: 0.76, numberScore: 0.75, visualScore: 0.93 };
+  const other = { ...card(2, 'Meowth', '74/124'), score: 0.39, nameScore: 0.86, numberScore: 0, visualScore: 0.22 };
+  const all = { complete: true };
+  assert.equal(catalog.assessScan([top, other], all), 'certain');
+  assert.equal(catalog.assessScan([top, other]), 'probable');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.4 }, other], all), 'probable');
+  // Un'altra carta compatibile con entrambe le letture non confrontata con la foto.
+  const unseen = { ...card(3, 'Alolan Meowth', '139/198'), score: 0.7, nameScore: 0.76, numberScore: 0.75, visualScore: null };
+  assert.equal(catalog.assessScan([top, other, unseen], all), 'probable');
+  // Un numero letto con certezza che indica un'altra carta.
+  assert.equal(catalog.assessScan([top, { ...other, numberScore: 1, visualScore: 0.1 }], all), 'probable');
+});

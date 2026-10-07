@@ -33,6 +33,17 @@ export function extractCollectorNumber(text: string): string | null {
   return null;
 }
 
+// Tutte le letture valide (non solo l'ultima): con piu' passate OCR sullo stesso
+// campo, una lettura giusta non deve essere oscurata da una sbagliata successiva.
+export function extractAllCollectorNumbers(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(COLLECTOR_PATTERN)) {
+    const parsed = extractCollectorNumber(match[0]);
+    if (parsed) found.add(parsed);
+  }
+  return [...found];
+}
+
 export function stripCollectorNumbers(text: string): string {
   return text.replace(COLLECTOR_PATTERN, (match) => extractCollectorNumber(match) ? " " : match);
 }

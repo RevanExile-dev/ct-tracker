@@ -7,17 +7,23 @@ import { formatCents, languageFlag } from "@/lib/format";
 import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
 import { assessQuality, cropRegion, detectCardRegions, expandRegionForOcr } from "@/lib/scanner/image";
 import {
-  extractCollectorNumber,
+  assessScan,
+  catalogNameChecker,
+  catalogNumberKeys,
+  entryCollectorNumber,
   hydrateScannerCard,
   loadScannerCatalog,
   rankScannerCandidates,
 } from "@/lib/scanner/catalog";
+import { extractAllCollectorNumbers } from "@/lib/scanner/collector-number";
+import { catalogSignature, visualSignature, visualSimilarity } from "@/lib/scanner/visual";
 import { detectLanguage, ocrEngineNotice, recognizeText } from "@/lib/scanner/ocr";
 import type {
   DetectedLanguage,
   ScanQuality,
   ScanRegion,
   ScanStatus,
+  ScanVerdict,
   ScannerCandidate,
   ScannerCatalogEntry,
 } from "@/lib/scanner/types";
@@ -38,8 +44,40 @@ type ScanItem = {
   card: CardRow | null;
   exactLanguagePrice: boolean;
   matchConfidence: number;
+  verdict: ScanVerdict | null;
   error: string | null;
 };
+
+// Quante proposte confrontare con la foto: abbastanza da coprire le varianti
+// con lo stesso nome (es. tutte le Alolan Meowth), poche da scaricare.
+const VISUAL_CANDIDATES = 8;
+
+async function withVisualScores(cropUrl: string, candidates: ScannerCandidate[]): Promise<ScannerCandidate[]> {
+  if (!candidates.length) return candidates;
+  try {
+    const photo = await visualSignature(cropUrl);
+    const head = await Promise.all(candidates.slice(0, VISUAL_CANDIDATES).map(async (candidate) => {
+      const signature = await catalogSignature(candidate.id);
+      return { ...candidate, visualScore: signature ? visualSimilarity(photo, signature) : null };
+    }));
+    // L'immagine riordina le proposte a parita' di testo; non puo' scavalcare
+    // una carta su cui nome e numero letti concordano (bonus di +0.1 nel match).
+    const boost = (candidate: ScannerCandidate) => candidate.score + 0.25 * Math.max(0, candidate.visualScore ?? 0);
+    return [...head.sort((a, b) => boost(b) - boost(a)), ...candidates.slice(VISUAL_CANDIDATES)];
+  } catch {
+    return candidates;
+  }
+}
+
+function itemStatusLabel(item: ScanItem) {
+  if (item.status !== "done") return statusLabel(item.status);
+  switch (item.verdict) {
+    case "certain": return "Identificata";
+    case "confirmed": return "Confermata";
+    case "probable": return "Da confermare";
+    default: return "Non riconosciuta";
+  }
+}
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -173,6 +211,8 @@ export default function ScannerStudio() {
     try {
       const catalog = await loadScannerCatalog();
       catalogRef.current = catalog;
+      const numberKeys = catalogNumberKeys(catalog);
+      const hasCatalogName = catalogNameChecker(catalog);
       let cursor = 0;
       const workerCount = Math.min(2, prepared.length);
 
@@ -183,21 +223,41 @@ export default function ScannerStudio() {
           const item = prepared[index];
           try {
             updateItem(item.id, { status: "reading", error: null });
-            const ocr = await recognizeText(item.ocrCropUrl);
+            const ocr = await recognizeText(item.ocrCropUrl, {
+              name: hasCatalogName,
+              number: (value) => extractAllCollectorNumbers(value).some((key) => numberKeys.has(key)),
+            });
             const text = ocr.text;
             const ocrConfidence = ocr.confidence;
 
             updateItem(item.id, { status: "matching", ocrText: text, ocrConfidence });
             const language = detectLanguage(text);
-            const candidates = rankScannerCandidates(text, catalog, 5);
+            const evidence = ocr.fields ? { name: ocr.fields.name, number: ocr.fields.number } : text;
+            // Lista completa (non troncata): assessScan deve sapere se TUTTE le
+            // carte compatibili sono state confrontate con la foto. All'utente
+            // se ne mostrano 6.
+            const ranked = rankScannerCandidates(evidence, catalog, Number.POSITIVE_INFINITY);
+            const candidates = await withVisualScores(item.cropUrl, ranked);
+            let verdict = assessScan(candidates, { complete: true });
             const top = candidates[0];
-            if (!top) {
+
+            const hydrated = verdict === "certain" && top ? await hydrateScannerCard(top.id, language.code) : null;
+            if (verdict === "certain" && !hydrated?.card) verdict = "probable";
+
+            if (verdict !== "certain" || !top || !hydrated?.card) {
+              // Niente carta "scelta" se non e' certa: niente prezzo, niente
+              // aggiunta al Binder (neanche con "Aggiungi tutte") finche' l'utente
+              // non tocca la proposta giusta.
               updateItem(item.id, {
-                status: "error",
+                status: "done",
                 language,
-                candidates: [],
-                matchConfidence: 0,
-                error: "Match non abbastanza forte. Usa la ricerca manuale qui sotto.",
+                candidates: candidates.slice(0, 6),
+                card: null,
+                matchConfidence: top ? top.score : 0,
+                verdict,
+                error: verdict === "probable"
+                  ? "Non ne sono sicuro: tocca la carta giusta tra le proposte, oppure cercala qui sotto."
+                  : "Non riesco a leggere nome e numero con sicurezza. Riprova con la carta piu' dritta, vicina e senza riflessi, oppure cercala qui sotto.",
               });
               continue;
             }
@@ -205,19 +265,16 @@ export default function ScannerStudio() {
             const second = candidates[1]?.score ?? 0;
             const margin = Math.max(0, top.score - second);
             const rawConfidence = Math.min(0.99, top.score * 0.72 + Math.min(1, ocrConfidence / 100) * 0.2 + Math.min(1, margin * 3) * 0.08);
-            // Senza un numero di collezione leggibile il match si basa solo sul
-            // nome OCR, che puo' combaciare per caso con una carta scorrelata:
-            // mai presentarlo come sicuro, l'utente deve confermare.
-            const combined = extractCollectorNumber(text) ? rawConfidence : Math.min(rawConfidence, 0.6);
-            const hydrated = await hydrateScannerCard(top.id, language.code);
             updateItem(item.id, {
               status: "done",
               language,
-              candidates,
+              candidates: candidates.slice(0, 6),
               card: hydrated.card,
               exactLanguagePrice: hydrated.exactLanguagePrice,
-              matchConfidence: combined,
-              error: combined < 0.64 ? "Confidenza bassa: controlla le alternative prima di aggiungere al Binder." : null,
+              // Due indizi indipendenti concordano: la fiducia e' alta per costruzione.
+              matchConfidence: Math.max(0.86, rawConfidence),
+              verdict,
+              error: null,
             });
           } catch (error) {
             updateItem(item.id, {
@@ -261,6 +318,7 @@ export default function ScannerStudio() {
           card: null,
           exactLanguagePrice: false,
           matchConfidence: 0,
+          verdict: null,
           error: null,
         } satisfies ScanItem;
       }));
@@ -321,6 +379,8 @@ export default function ScannerStudio() {
         exactLanguagePrice: hydrated.exactLanguagePrice,
         candidates: [candidate, ...existing],
         matchConfidence: Math.max(item.matchConfidence, candidate.score),
+        verdict: "confirmed",
+        error: null,
       });
     } catch (error) {
       updateItem(itemId, { status: "error", error: String(error instanceof Error ? error.message : error) });
@@ -337,7 +397,9 @@ export default function ScannerStudio() {
       updateItem(itemId, {
         candidates,
         status: candidates.length ? "done" : "error",
-        error: candidates.length ? "Scegli la variante corretta dalle alternative." : "Nessun risultato. Prova con solo il nome della carta.",
+        card: null,
+        verdict: candidates.length ? "probable" : null,
+        error: candidates.length ? "Tocca la carta giusta tra le proposte." : "Nessun risultato. Prova con solo il nome della carta.",
       });
     } catch (error) {
       updateItem(itemId, { error: String(error instanceof Error ? error.message : error) });
@@ -558,8 +620,8 @@ export default function ScannerStudio() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-[10px] font-mono uppercase tracking-wider rounded-full border border-base-border px-2.5 py-1 text-ink-faint">#{index + 1}</span>
-                          <span className={`text-[10px] font-mono uppercase tracking-wider rounded-full border px-2.5 py-1 ${item.status === "done" ? "border-accent/30 bg-accent/10 text-accent-bright" : "border-base-border text-ink-muted"}`}>{statusLabel(item.status)}</span>
-                          {item.status === "done" && (
+                          <span className={`text-[10px] font-mono uppercase tracking-wider rounded-full border px-2.5 py-1 ${selected ? "border-accent/30 bg-accent/10 text-accent-bright" : "border-base-border text-ink-muted"}`}>{itemStatusLabel(item)}</span>
+                          {selected && item.status === "done" && (
                             <span className={`text-[10px] font-mono rounded-full border px-2.5 py-1 ${confidenceTone(item.matchConfidence)}`}>{confidenceLabel(item.matchConfidence)} · {Math.round(item.matchConfidence * 100)}%</span>
                           )}
                           {item.status === "error" && !item.candidates.length && (
@@ -581,30 +643,43 @@ export default function ScannerStudio() {
                               <div className="text-[11px] text-ink-faint pb-1">{item.exactLanguagePrice && item.language.code ? `offerta ${item.language.code.toUpperCase()} disponibile` : "miglior riferimento disponibile"}</div>
                             </div>
                           </>
+                        ) : item.status === "done" || item.status === "error" ? (
+                          <div className="mt-5">
+                            <h3 className="font-display text-xl font-semibold">{item.verdict === "probable" ? "Quale di queste è la tua carta?" : "Carta non riconosciuta con certezza"}</h3>
+                          </div>
                         ) : (
                           <div className="mt-5">
                             <h3 className="font-display text-xl font-semibold">Sto cercando la carta…</h3>
-                            <p className="text-sm text-ink-muted mt-2">Nome, numero, lingua e segnali visivi vengono combinati prima del match.</p>
+                            <p className="text-sm text-ink-muted mt-2">Nome e numero vengono letti separatamente e confrontati con il catalogo e con l&apos;immagine.</p>
                           </div>
                         )}
 
                         {(item.status === "reading" || item.status === "matching") && <div className={`${styles.progressRail} h-1 rounded-full mt-5`} />}
                         {item.error && <div className="mt-4 text-xs text-accent-bright leading-relaxed">{item.error}</div>}
 
-                        {item.candidates.length > 1 && (
+                        {(selected ? item.candidates.length > 1 : item.candidates.length > 0) && (
                           <div className="mt-5">
-                            <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mb-2">Alternative</div>
+                            <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mb-2">{selected ? "Alternative" : "Proposte"}</div>
                             <div className="flex flex-wrap gap-2">
-                              {item.candidates.slice(0, 4).map((candidate) => (
-                                <button key={candidate.id} type="button" onClick={() => void chooseCandidate(item.id, candidate)} className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${selected?.id === candidate.id ? "border-accent/45 bg-accent/10 text-accent-bright" : "border-base-border bg-base-surface2 text-ink-muted hover:text-ink-primary"}`}>
-                                  <span className="font-medium">{candidate.name}</span><span className="ml-1 text-ink-faint">· {candidate.expansion_code}</span>
-                                </button>
-                              ))}
+                              {item.candidates.slice(0, selected ? 4 : 6).map((candidate) => {
+                                const number = entryCollectorNumber(candidate);
+                                return (
+                                  <button key={candidate.id} type="button" onClick={() => void chooseCandidate(item.id, candidate)} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors ${selected?.id === candidate.id ? "border-accent/45 bg-accent/10 text-accent-bright" : "border-base-border bg-base-surface2 text-ink-muted hover:text-ink-primary"}`}>
+                                    {!selected && candidate.image_url && (
+                                      <Image src={candidate.image_url} alt="" width={36} height={50} unoptimized className="w-9 aspect-[5/7] rounded object-cover bg-base-surface" />
+                                    )}
+                                    <span>
+                                      <span className="font-medium">{candidate.name}</span>
+                                      <span className="ml-1 text-ink-faint">· {number ? `${number} · ` : ""}{candidate.expansion_code}</span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
 
-                        {(item.status === "error" || item.matchConfidence < 0.64) && (
+                        {(item.status === "error" || (item.status === "done" && item.verdict !== "certain" && item.verdict !== "confirmed")) && (
                           <div className="mt-5 flex flex-col sm:flex-row gap-2 max-w-xl">
                             <input
                               value={manualQueries[item.id] ?? ""}

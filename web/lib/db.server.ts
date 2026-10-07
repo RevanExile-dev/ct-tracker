@@ -637,3 +637,12 @@ export async function fetchScannerCatalog(): Promise<ScannerCatalogRow[]> {
   );
   return rows;
 }
+
+export async function fetchBlueprintImageUrl(id: number): Promise<string | null> {
+  const pool = getPgPool();
+  const { rows } = await pool.query<{ image_url: string | null }>(
+    `SELECT image_url FROM blueprints WHERE id = $1`,
+    [id]
+  );
+  return rows[0]?.image_url ?? null;
+}
