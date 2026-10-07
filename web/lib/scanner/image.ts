@@ -505,6 +505,19 @@ export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
   const rgba = ctx.getImageData(0, 0, width, height).data;
 
   const borderRegions = detectBorderRectangles(rgba, width, height);
+  // Foto gia' ritagliata sulla carta (proporzioni carta, la carta riempie il
+  // fotogramma): detectBorderRectangles scarta per costruzione i riquadri che
+  // toccano il bordo dell'immagine (areaRatio > 0.88, bottom >= height-2) e
+  // aggancia un rettangolo INTERNO (es. la fascia weakness/retreat), lasciando
+  // fuori il fondo carta col numero di collezione. Se il miglior riquadro e'
+  // quasi tutta la larghezza e la foto ha proporzioni di carta, la carta e' l'intera foto.
+  const frameAspect = width / height;
+  if (borderRegions.length && Math.abs(frameAspect - CARD_ASPECT) < 0.08) {
+    const best = [...borderRegions].sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    if (best.width >= 0.9 && best.height >= 0.75) {
+      return [{ id: "region-frame", x: 0, y: 0, width: 1, height: 1, score: Math.max(best.score, 0.5) }];
+    }
+  }
   if (borderRegions.length) return consolidateRegions(borderRegions).sort((a, b) => a.y - b.y || a.x - b.x);
 
   const componentRegions = detectConnectedComponents(rgba, width, height);

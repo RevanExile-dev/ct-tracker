@@ -474,14 +474,19 @@ export default function ScannerStudio() {
             <div className="grid xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,.92fr)] gap-5 items-start">
               <div>
                 <div className={`${styles.previewWrap} min-h-[280px] flex items-center justify-center`}>
-                  <Image src={sourceUrl} alt="Foto da analizzare" width={1400} height={1000} unoptimized className="w-full h-auto max-h-[620px] object-contain" />
-                  {regions.map((region) => (
-                    <span
-                      key={region.id}
-                      className={styles.region}
-                      style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.width * 100}%`, height: `${region.height * 100}%` }}
-                    />
-                  ))}
+                  {/* Il riquadro e' in percentuali dell'IMMAGINE: il contenitore deve
+                      coincidere con l'immagine (non con la cornice piu' larga), altrimenti
+                      con foto verticali il reticolo si sposta dalla carta. */}
+                  <div className="relative inline-block max-w-full leading-[0]">
+                    <Image src={sourceUrl} alt="Foto da analizzare" width={1400} height={1000} unoptimized className="block w-auto h-auto max-w-full max-h-[620px]" />
+                    {regions.map((region) => (
+                      <span
+                        key={region.id}
+                        className={styles.region}
+                        style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.width * 100}%`, height: `${region.height * 100}%` }}
+                      />
+                    ))}
+                  </div>
                   {busy && <div className="absolute inset-x-0 bottom-0 h-1.5 bg-black/30"><div className="h-full bg-accent transition-[width] duration-500" style={{ width: `${Math.max(8, progress)}%` }} /></div>}
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
