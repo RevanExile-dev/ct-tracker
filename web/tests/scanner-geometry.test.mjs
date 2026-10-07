@@ -293,3 +293,58 @@ test('same weak-border-vs-strong-internal case, with the internal box covering a
     `top region should track the true (larger, weak-edged) card, not the smaller high-contrast internal box`,
   );
 });
+
+// Sfondo uniforme scuro con carte chiare: il caso piu' comune di foto vera.
+function canvasWithCards(width, height, cards, bg = [55, 48, 44]) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      let color = bg;
+      for (const card of cards) {
+        // Rotazione attorno al centro della carta.
+        const cx = card.x + card.w / 2;
+        const cy = card.y + card.h / 2;
+        const a = -(card.angle ?? 0) * Math.PI / 180;
+        const rx = (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a);
+        const ry = (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a);
+        if (Math.abs(rx) <= card.w / 2 && Math.abs(ry) <= card.h / 2) color = card.color ?? [235, 205, 60];
+      }
+      rgba[i] = color[0]; rgba[i + 1] = color[1]; rgba[i + 2] = color[2]; rgba[i + 3] = 255;
+    }
+  }
+  return rgba;
+}
+
+test('sfondo uniforme: la regione segue la carta anche se ruotata, non l\'angolo della foto', () => {
+  // Caso reale: carta ruotata di 3 gradi su un tavolo scuro; il detector a bordi
+  // restituiva un riquadro ancorato all'angolo della foto (0.5%-81%).
+  const W = 400, H = 470;
+  const card = { x: 70, y: 55, w: 260, h: 363, angle: 3 };
+  const regions = image.detectOnUniformBackground(canvasWithCards(W, H, [card]), W, H);
+  assert.equal(regions.length, 1);
+  const r = regions[0];
+  assert.ok(r.x > 0.12 && r.x < 0.2, `x=${r.x}`);
+  assert.ok(r.y > 0.08 && r.y < 0.14, `y=${r.y}`);
+  assert.ok(r.x + r.width > 0.8 && r.x + r.width < 0.88, `right=${r.x + r.width}`);
+  assert.ok(r.y + r.height > 0.86 && r.y + r.height < 0.93, `bottom=${r.y + r.height}`);
+});
+
+test('sfondo uniforme: due carte separate restano due regioni', () => {
+  const W = 480, H = 320;
+  const cards = [{ x: 30, y: 40, w: 170, h: 237 }, { x: 270, y: 40, w: 170, h: 237 }];
+  assert.equal(image.detectOnUniformBackground(canvasWithCards(W, H, cards), W, H).length, 2);
+});
+
+test('sfondo non uniforme o carta che riempie la foto: nessuna regione, decide il detector a bordi', () => {
+  const W = 200, H = 280;
+  // La carta tocca la cornice: niente sfondo da stimare.
+  assert.equal(image.detectOnUniformBackground(canvasWithCards(W, H, [{ x: -5, y: -5, w: 210, h: 290 }]), W, H).length, 0);
+  // Sfondo a righe ad alto contrasto.
+  const striped = canvasWithCards(W, H, [{ x: 50, y: 60, w: 100, h: 140 }]);
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+    if (x > 45 && x < 155 && y > 55 && y < 205) continue;
+    const i = (y * W + x) * 4; const v = (x % 8 < 4) ? 20 : 220; striped[i] = striped[i + 1] = striped[i + 2] = v;
+  }
+  assert.equal(image.detectOnUniformBackground(striped, W, H).length, 0);
+});

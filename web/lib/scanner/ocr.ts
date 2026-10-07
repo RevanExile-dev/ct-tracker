@@ -1,4 +1,3 @@
-import { extractCollectorNumber } from "./collector-number";
 import type { DetectedLanguage, OcrResult } from "./types";
 
 type TesseractWorker = {
@@ -17,48 +16,77 @@ type CropSpec = {
   width: number;
   height: number;
   targetWidth: number;
+  // Fattore massimo di contrasto adattivo; 1 = solo scala di grigi.
   contrast: number;
   // Bordo bianco (px a scala finale): Tesseract legge meglio una riga isolata
-  // se attorno c'e' margine, utile sulle full-art dove il testo poggia sull'illustrazione.
-  pad?: number;
+  // se attorno c'e' margine, soprattutto sulle full-art dove il testo poggia
+  // sull'illustrazione.
+  pad: number;
 };
 
-const OCR_CROPS: Record<"name" | "number" | "body", CropSpec> = {
-  // I nomi Pokémon sono quasi sempre nella fascia alta; isolandola evitiamo
-  // che foil, illustrazione e testo degli attacchi competano con una singola
-  // riga che e' il segnale piu' utile per l'identita'.
-  name: { x: 0.035, y: 0.018, width: 0.76, height: 0.145, targetWidth: 1100, contrast: 1.55 },
-  // Numero collezione: in basso a SINISTRA sui layout moderni (SWSH/SV in
-  // poi), ma in basso a DESTRA su tutti i layout piu' vecchi (Base Set fino
-  // a EX/Diamond & Pearl/HGSS) - la larghezza precedente (0.018-0.598, solo
-  // meta' sinistra) tagliava fuori il numero su ogni carta vintage. Il
-  // fallback OCR sull'intera carta non lo salva: scatta solo se ANCHE il
-  // nome non viene letto (vedi sotto), il che quasi sempre non e' il caso.
-  // Copre quindi l'intera larghezza inferiore (rilievo review Gemini su PR
-  // #25, verificato: la logica del layout carte e' corretta).
-  number: { x: 0.018, y: 0.80, width: 0.964, height: 0.185, targetWidth: 1400, contrast: 1.9 },
-  // Fascia testo/weakness/retreat: serve soprattutto alla lingua; non deve
-  // dominare il match del nome.
-  body: { x: 0.025, y: 0.48, width: 0.95, height: 0.47, targetWidth: 1250, contrast: 1.35 },
-};
+// worker "body": stessa passata col modello multilingua. Misurato: su alcune
+// carte (es. Alolan Exeggutor 002/128) e' l'unica che legge il numero.
+type FieldRead = { crop: CropSpec; psm: "6" | "7" | "11"; worker?: "body" };
 
-// Ripiego quando il crop "number" non produce un numero leggibile: su alcune
-// full-art (es. Alolan Meowth 139/128, 30° anniversario) la fascia larga
-// contiene testo di attacchi/flavor e Tesseract restituisce solo rumore. Qui
-// si legge solo la riga piu' bassa, a sinistra e a destra separatamente
-// (layout moderno / vintage), con margine bianco.
-const NUMBER_STRIPS: CropSpec[] = [
-  { x: 0.04, y: 0.935, width: 0.46, height: 0.055, targetWidth: 1300, contrast: 1, pad: 24 },
-  { x: 0.5, y: 0.935, width: 0.46, height: 0.055, targetWidth: 1300, contrast: 1, pad: 24 },
+// Misurato con tesseract.js 7 su carte reali (pulite e "fotografate"), il
+// 2026-10-07: il crop largo in scala di grigi con margine bianco legge il nome
+// in 6 casi su 7 e il numero in 6 su 7; il contrasto spinto e i modelli
+// giapponese/coreano attivi sulle stesse fasce peggioravano le letture (testo
+// inventato in caratteri CJK dentro il nome). Le passate successive servono
+// solo come ripiego e si fermano appena il risultato e' utile.
+const NAME_WIDE: CropSpec = { x: 0.035, y: 0.018, width: 0.76, height: 0.145, targetWidth: 1300, contrast: 1, pad: 24 };
+// Riga piu' stretta, senza badge di stadio a sinistra e HP/tipo a destra.
+const NAME_TIGHT: CropSpec = { x: 0.15, y: 0.015, width: 0.5, height: 0.09, targetWidth: 1300, contrast: 1, pad: 24 };
+// Stesso crop largo col contrasto adattivo di prima: su alcune carte (testo
+// chiaro su fondo chiaro) e' l'unica passata che legge.
+const NAME_WIDE_CONTRAST: CropSpec = { ...NAME_WIDE, contrast: 1.55 };
+// Numero collezione: in basso a SINISTRA sui layout moderni, a DESTRA su quelli
+// vintage (Base Set - HGSS), quindi l'intera larghezza inferiore.
+const NUMBER_WIDE: CropSpec = { x: 0.018, y: 0.8, width: 0.964, height: 0.185, targetWidth: 1400, contrast: 1, pad: 24 };
+const NUMBER_WIDE_CONTRAST: CropSpec = { ...NUMBER_WIDE, contrast: 1.9 };
+const NUMBER_WIDE_LEGACY: CropSpec = { ...NUMBER_WIDE, contrast: 1.9, pad: 0 };
+// Meta' sinistra e destra separate: su alcune full-art la fascia intera contiene
+// testo di attacchi/flavor che copre il numero. Alte apposta: il ritaglio OCR ha
+// un margine extra sotto la carta (expandRegionForOcr), quindi l'ultima riga
+// non e' sempre nello stesso punto.
+const NUMBER_LEFT: CropSpec = { x: 0.0, y: 0.82, width: 0.52, height: 0.17, targetWidth: 1400, contrast: 1, pad: 24 };
+const NUMBER_RIGHT: CropSpec = { x: 0.48, y: 0.82, width: 0.52, height: 0.17, targetWidth: 1400, contrast: 1, pad: 24 };
+// Fascia testo/weakness/retreat: serve solo a riconoscere la lingua.
+const BODY: CropSpec = { x: 0.025, y: 0.48, width: 0.95, height: 0.47, targetWidth: 1250, contrast: 1.35, pad: 0 };
+
+const NAME_READS: FieldRead[] = [
+  { crop: NAME_WIDE, psm: "6" },
+  { crop: NAME_TIGHT, psm: "6" },
+  { crop: NAME_WIDE, psm: "11" },
+  { crop: NAME_WIDE_CONTRAST, psm: "6" },
 ];
-// Ripiego per il nome quando il crop largo non legge nulla: riga piu' stretta,
-// senza il badge di stadio a sinistra e senza HP/tipo a destra.
-const NAME_TIGHT: CropSpec = { x: 0.15, y: 0.022, width: 0.5, height: 0.06, targetWidth: 1300, contrast: 1, pad: 24 };
+const NUMBER_READS: FieldRead[] = [
+  { crop: NUMBER_WIDE, psm: "6" },
+  { crop: NUMBER_WIDE_CONTRAST, psm: "6" },
+  { crop: NUMBER_WIDE_LEGACY, psm: "6", worker: "body" },
+  { crop: NUMBER_WIDE, psm: "11" },
+  { crop: NUMBER_RIGHT, psm: "6" },
+  { crop: NUMBER_LEFT, psm: "6" },
+  { crop: NUMBER_LEFT, psm: "11" },
+];
+// Tiene i prefissi gallery (TG/GG/SV/RC) e le confusioni O/I/L tipiche: una
+// whitelist di sole cifre distruggerebbe identificativi come TG05/TG30.
+const NUMBER_WHITELIST = "0123456789/TtGgSsVvRrCcOoIiLl|- ";
+
+export type FieldCheck = {
+  // true se la lettura contiene gia' un nome/numero che esiste nel catalogo:
+  // le passate di ripiego su quel campo vengono saltate.
+  name?: (text: string) => boolean;
+  number?: (text: string) => boolean;
+};
 
 // Pin esplicito: niente "latest" non deterministico.
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js";
 let loaderPromise: Promise<TesseractApi> | null = null;
-let workerPromise: Promise<TesseractWorker> | null = null;
+// Due worker: solo inglese per nome e numero (caratteri latini e cifre), e
+// multilingua per la fascia del testo, che serve a riconoscere la lingua.
+let latinWorkerPromise: Promise<TesseractWorker> | null = null;
+let bodyWorkerPromise: Promise<TesseractWorker> | null = null;
 let recognitionTail: Promise<void> = Promise.resolve();
 
 function loadTesseract(): Promise<TesseractApi> {
@@ -91,23 +119,33 @@ function loadTesseract(): Promise<TesseractApi> {
   return loaderPromise;
 }
 
-async function getWorker(): Promise<TesseractWorker> {
-  if (!workerPromise) {
-    workerPromise = (async () => {
+function getLatinWorker(): Promise<TesseractWorker> {
+  if (!latinWorkerPromise) {
+    latinWorkerPromise = loadTesseract()
+      .then((api) => api.createWorker("eng"))
+      .catch((error) => {
+        latinWorkerPromise = null;
+        throw error;
+      });
+  }
+  return latinWorkerPromise;
+}
+
+function getBodyWorker(): Promise<TesseractWorker> {
+  if (!bodyWorkerPromise) {
+    bodyWorkerPromise = (async () => {
       const api = await loadTesseract();
       try {
-        // Un solo worker riutilizzato: i tre crop sono piccoli e serializzati,
-        // quindi la precisione aumenta senza moltiplicare la RAM su mobile.
         return await api.createWorker(["eng", "ita", "jpn", "kor"]);
       } catch {
         return api.createWorker("eng");
       }
     })().catch((error) => {
-      workerPromise = null;
+      bodyWorkerPromise = null;
       throw error;
     });
   }
-  return workerPromise;
+  return bodyWorkerPromise;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -131,131 +169,118 @@ function makeCrop(image: HTMLImageElement, spec: CropSpec) {
   const sh = Math.max(1, Math.min(image.naturalHeight - sy, Math.round(spec.height * image.naturalHeight)));
   const targetW = Math.max(sw, Math.min(spec.targetWidth, Math.round(sw * 2.4)));
   const targetH = Math.max(1, Math.round(targetW * (sh / sw)));
-  const pad = spec.pad ?? 0;
+  const pad = spec.pad;
   const canvas = document.createElement("canvas");
   canvas.width = targetW + pad * 2;
   canvas.height = targetH + pad * 2;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas OCR non disponibile.");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  if (pad) {
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
   ctx.drawImage(image, sx, sy, sw, sh, pad, pad, targetW, targetH);
 
-  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // Statistiche e contrasto solo sull'area della carta, non sul margine bianco.
+  const pixels = ctx.getImageData(pad, pad, targetW, targetH);
   const data = pixels.data;
-  let sum = 0;
-  let sumSq = 0;
-  let samples = 0;
-  for (let i = 0; i < data.length; i += 16) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    sum += gray;
-    sumSq += gray * gray;
-    samples += 1;
+  let adaptive = 1;
+  let mean = 128;
+  if (spec.contrast > 1) {
+    let sum = 0;
+    let sumSq = 0;
+    let samples = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      sum += gray;
+      sumSq += gray * gray;
+      samples += 1;
+    }
+    mean = samples ? sum / samples : 128;
+    const std = Math.sqrt(samples ? Math.max(0, sumSq / samples - mean * mean) : 0);
+    // Fascia gia' contrastata: non esasperare il foil; testo piatto: aumentare.
+    adaptive = Math.max(1, Math.min(spec.contrast, std > 62 ? 1.15 : 62 / Math.max(28, std)));
   }
-  const mean = samples ? sum / samples : 128;
-  const variance = samples ? Math.max(0, sumSq / samples - mean * mean) : 0;
-  const std = Math.sqrt(variance);
-  // Se la fascia e' gia' molto contrastata evitiamo di esasperare il foil;
-  // su testo piatto/sbiadito aumentiamo invece il contrasto locale.
-  const adaptive = Math.max(1, Math.min(spec.contrast, std > 62 ? 1.15 : 62 / Math.max(28, std)));
-
   for (let i = 0; i < data.length; i += 4) {
     const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    const value = clampByte(128 + (gray - mean) * adaptive);
+    const value = adaptive === 1 ? clampByte(gray) : clampByte(128 + (gray - mean) * adaptive);
     data[i] = value;
     data[i + 1] = value;
     data[i + 2] = value;
   }
-  ctx.putImageData(pixels, 0, 0);
+  ctx.putImageData(pixels, pad, pad);
   return canvas.toDataURL("image/png");
 }
 
-async function prepareOcrCrops(image: string) {
-  const source = await loadImage(image);
-  return {
-    name: makeCrop(source, OCR_CROPS.name),
-    number: makeCrop(source, OCR_CROPS.number),
-    body: makeCrop(source, OCR_CROPS.body),
-    // Calcolati solo se servono (vedi recognizeText): canvas + getImageData non sono gratis.
-    numberStrips: () => NUMBER_STRIPS.map((spec) => makeCrop(source, spec)),
-    nameTight: () => makeCrop(source, NAME_TIGHT),
-  };
+async function runField(worker: TesseractWorker, image: string, psm: string, numeric: boolean) {
+  try {
+    if (worker.setParameters) {
+      await worker.setParameters({
+        tessedit_pageseg_mode: psm,
+        // Stringa vuota = nessuna whitelist (azzera quella della passata prima).
+        tessedit_char_whitelist: numeric ? NUMBER_WHITELIST : "",
+        preserve_interword_spaces: "1",
+      });
+    }
+    const result = await worker.recognize(image);
+    return {
+      text: result.data.text.trim(),
+      confidence: Number.isFinite(result.data.confidence) ? result.data.confidence : 0,
+    };
+  } catch {
+    return { text: "", confidence: 0 };
+  }
 }
 
-async function runField(
-  worker: TesseractWorker,
-  image: string,
-  pageSegMode: "6" | "7",
-  numeric = false,
-): Promise<OcrResult> {
-  if (worker.setParameters) {
-    await worker.setParameters({
-      tessedit_pageseg_mode: pageSegMode,
-      // Empty string resets a previous whitelist. For the tiny collector crop
-      // Keep gallery prefixes (TG/GG/SV/RC), plus O/I/L digit confusions.
-      // A digits-only whitelist destroys identifiers such as TG05/TG30.
-      tessedit_char_whitelist: numeric ? "0123456789/TtGgSsVvRrCcOoIiLl|- " : "",
-      preserve_interword_spaces: "1",
-    });
+async function readField(
+  source: HTMLImageElement,
+  reads: FieldRead[],
+  numeric: boolean,
+  isUseful?: (text: string) => boolean,
+) {
+  const texts: string[] = [];
+  let confidence = 0;
+  for (const read of reads) {
+    let worker: TesseractWorker;
+    try {
+      worker = read.worker === "body" ? await getBodyWorker() : await getLatinWorker();
+    } catch {
+      continue;
+    }
+    const result = await runField(worker, makeCrop(source, read.crop), read.psm, numeric);
+    if (result.text) {
+      texts.push(result.text);
+      confidence = Math.max(confidence, result.confidence);
+    }
+    if (result.text && isUseful?.(result.text)) break;
   }
-  const result = await worker.recognize(image);
-  return {
-    text: result.data.text.trim(),
-    confidence: Number.isFinite(result.data.confidence) ? result.data.confidence : 0,
-  };
+  return { text: texts.join("\n"), confidence };
 }
 
 /**
- * API invariata per ScannerStudio, ma internamente non facciamo piu' OCR
- * sull'intera carta in un colpo solo. Nome, collector number e fascia lingua
- * vengono letti separatamente con layout Tesseract appropriato e poi uniti.
- * Questo e' molto piu' robusto su full-art/foil e riflessi diagonali.
+ * Legge separatamente nome, numero di collezione e fascia testo. Nome e numero
+ * restano in `fields` distinti: il match li usa ciascuno solo per il proprio
+ * scopo, e "certo" significa che concordano tra loro.
  */
-export function recognizeText(image: string): Promise<OcrResult> {
+export function recognizeText(image: string, check: FieldCheck = {}): Promise<OcrResult> {
   const job = recognitionTail.then(async () => {
-    const worker = await getWorker();
-    const crops = await prepareOcrCrops(image);
-
-    let name = await runField(worker, crops.name, "7").catch(() => ({ text: "", confidence: 0 }));
-    if (!name.text) {
-      name = await runField(worker, crops.nameTight(), "7").catch(() => ({ text: "", confidence: 0 }));
-    }
-    // PSM "7" (riga singola forzata) e' sbagliato per questo crop: con il
-    // margine di sicurezza aggiunto in expandRegionForOcr() puo' contenere
-    // piu' di una riga fisica (fascia weakness/resistance/retreat sopra,
-    // credito illustratore/numero sotto). Verificato su una foto reale: PSM
-    // "7" produceva testo illeggibile anche su un ritaglio già ben
-    // posizionato, mentre PSM "6" (blocco) leggeva correttamente l'inizio
-    // del numero di collezione nello stesso identico ritaglio.
-    let number = await runField(worker, crops.number, "6", true).catch(() => ({ text: "", confidence: 0 }));
-    if (!extractCollectorNumber(number.text)) {
-      for (const strip of crops.numberStrips()) {
-        const read = await runField(worker, strip, "7", true).catch(() => ({ text: "", confidence: 0 }));
-        if (!read.text) continue;
-        number = { text: [number.text, read.text].filter(Boolean).join("\n"), confidence: Math.max(number.confidence, read.confidence) };
-        if (extractCollectorNumber(read.text)) break;
-      }
-    }
-    const body = await runField(worker, crops.body, "6").catch(() => ({ text: "", confidence: 0 }));
-
-    let text = [name.text, number.text, body.text].filter(Boolean).join("\n");
-    let confidence = name.confidence * 0.5 + number.confidence * 0.32 + body.confidence * 0.18;
-
-    // Layout molto vecchi/atipici o crop geometrico ancora imperfetto: un
-    // ultimo OCR full-card e' piu' lento ma meglio di rinunciare al match.
-    if (!name.text && !number.text) {
-      const full = await runField(worker, image, "6").catch(() => ({ text: "", confidence: 0 }));
-      if (full.text) {
-        text = [text, full.text].filter(Boolean).join("\n");
-        confidence = Math.max(confidence, full.confidence * 0.75);
-      }
+    const source = await loadImage(image);
+    // Fallisce subito (e con il messaggio giusto) se il motore non si carica.
+    await getLatinWorker();
+    const name = await readField(source, NAME_READS, false, check.name);
+    const number = await readField(source, NUMBER_READS, true, check.number);
+    let body = { text: "", confidence: 0 };
+    try {
+      body = await runField(await getBodyWorker(), makeCrop(source, BODY), "6", false);
+    } catch {
+      // La lingua e' un di piu': senza, il match di nome e numero resta valido.
     }
 
-    return { text, confidence };
+    return {
+      text: [name.text, number.text, body.text].filter(Boolean).join("\n"),
+      confidence: name.confidence * 0.5 + number.confidence * 0.32 + body.confidence * 0.18,
+      fields: { name: name.text, number: number.text, body: body.text },
+    };
   });
   recognitionTail = job.then(() => undefined, () => undefined);
   return job;
@@ -263,15 +288,17 @@ export function recognizeText(image: string): Promise<OcrResult> {
 
 export async function terminateOcr(): Promise<void> {
   await recognitionTail.catch(() => undefined);
-  const pending = workerPromise;
-  workerPromise = null;
-  if (!pending) return;
-  try {
-    const worker = await pending;
-    await worker.terminate();
-  } catch {
-    // Cleanup best-effort: non deve trasformare una navigazione in errore UI.
-  }
+  const pending = [latinWorkerPromise, bodyWorkerPromise];
+  latinWorkerPromise = null;
+  bodyWorkerPromise = null;
+  await Promise.all(pending.map(async (promise) => {
+    if (!promise) return;
+    try {
+      await (await promise).terminate();
+    } catch {
+      // Cleanup best-effort: non deve trasformare una navigazione in errore UI.
+    }
+  }));
 }
 
 const LANGUAGE_RULES: Array<{ code: string; label: string; words: string[] }> = [
@@ -291,11 +318,19 @@ function normalize(value: string) {
 }
 
 export function detectLanguage(text: string): DetectedLanguage {
-  if (/[\u3040-\u30ff\u3400-\u9fff]/u.test(text)) {
-    return { code: "jp", label: "日本語", confidence: 0.98 };
+  // Il modello giapponese/coreano "vede" qualche carattere CJK anche nel
+  // rumore di una carta inglese (es. "い", "上" tra le righe di una full-art):
+  // un solo carattere bastava a segnare la carta come giapponese, con prezzo
+  // della lingua sbagliata. Serve una quantita' reale di testo CJK, prevalente
+  // sulle lettere latine.
+  const latinLetters = (text.match(/[A-Za-z]/g) ?? []).length;
+  const japanese = (text.match(/[\u3040-\u30fb\u3400-\u9fff]/gu) ?? []).length;
+  const korean = (text.match(/[\uac00-\ud7af]/gu) ?? []).length;
+  if (japanese >= 8 && japanese >= latinLetters * 0.5) {
+    return { code: "jp", label: "日本語", confidence: 0.95 };
   }
-  if (/[\uac00-\ud7af]/u.test(text)) {
-    return { code: "ko", label: "한국어", confidence: 0.98 };
+  if (korean >= 8 && korean >= latinLetters * 0.5) {
+    return { code: "ko", label: "한국어", confidence: 0.95 };
   }
 
   const normalized = normalize(text);
