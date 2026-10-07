@@ -2,9 +2,10 @@ import "server-only";
 import { getPgPool } from "./pgPool";
 import { expandRarityFilters, normalizeRarity } from "./rarity";
 import { compareExpansions } from "./expansions";
+import topArtists from "@/config/top_artists.json";
 import {
   MOVERS_PAGE_SIZE,
-  type CardRow, type CardsFilterOpts, type CardsSummary, type CardDetail, type ExpansionInfo,
+  type ArtistOption, type CardRow, type CardsFilterOpts, type CardsSummary, type CardDetail, type ExpansionInfo,
   type Listing, type MoversPageOpts, type MoversPageResult, type PricePoint, type ScannerCatalogRow,
   type SortOption,
 } from "./types";
@@ -92,6 +93,9 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
   if (opts.rarities && opts.rarities.length > 0) {
     const rarityFilters = expandRarityFilters(opts.rarities);
     where.push(`b.rarity = ANY(${p.add(rarityFilters)})`);
+  }
+  if (opts.artists && opts.artists.length > 0) {
+    where.push(`b.artist = ANY(${p.add(opts.artists)})`);
   }
   if (opts.onlyPremium) {
     where.push("b.is_premium = 1");
@@ -347,7 +351,7 @@ export async function fetchCardDetail(id: number): Promise<CardDetail | null> {
   const pool = getPgPool();
   const { rows } = await pool.query(
     `
-    SELECT ${cardRowSelect()}, b.tcg_player_id, b.scryfall_id
+    SELECT ${cardRowSelect()}, b.tcg_player_id, b.scryfall_id, b.artist
     FROM blueprints b
     LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
     WHERE b.id = $1
@@ -536,6 +540,23 @@ export async function fetchRarities(): Promise<string[]> {
   const set = new Set<string>();
   for (const r of rows) set.add(normalizeRarity(r.rarity as string));
   return Array.from(set).sort((a, b) => a.localeCompare(b, "en"));
+}
+
+/** Artisti del filtro "Artista": solo la lista curata di
+ * web/config/top_artists.json (non le centinaia di illustratori esistenti),
+ * ciascuno con quante carte del nostro catalogo ha - un artista senza
+ * nessuna carta qui non compare. Ordine alfabetico: prevedibile in un menu
+ * con ricerca. */
+export async function fetchArtists(): Promise<ArtistOption[]> {
+  const pool = getPgPool();
+  const names = topArtists.artists.map((a) => a.name);
+  const { rows } = await pool.query(
+    "SELECT artist, COUNT(*) AS c FROM blueprints WHERE artist = ANY($1) GROUP BY artist",
+    [names],
+  );
+  return rows
+    .map((r) => ({ name: r.artist as string, count: Number(r.c) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
 }
 
 /** Tutte le lingue disponibili su almeno una carta (non solo quella della

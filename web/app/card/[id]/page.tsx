@@ -251,6 +251,17 @@ function CardDetailContent() {
           {card.version && (
             <div className="text-ink-muted text-sm mt-1">Versione: {card.version}</div>
           )}
+          {card.artist && (
+            <div className="text-ink-muted text-sm mt-1">
+              Illustrazione:{" "}
+              <Link
+                href={`/?artist=${encodeURIComponent(card.artist)}`}
+                className="text-ink-primary underline decoration-base-border underline-offset-2 hover:text-accent-bright"
+              >
+                {card.artist}
+              </Link>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2 mt-3 items-center">
             {card.is_premium === 1 && (

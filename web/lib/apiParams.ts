@@ -8,6 +8,7 @@ export function parseCardsFilterOpts(sp: URLSearchParams): CardsFilterOpts {
     search: sp.get("search") ?? undefined,
     expansionCode: sp.get("expansionCode") ?? undefined,
     rarities: sp.getAll("rarities"),
+    artists: sp.getAll("artists"),
     languages: sp.getAll("languages"),
     conditions: sp.getAll("conditions"),
     onlyZero: sp.get("onlyZero") === "1",

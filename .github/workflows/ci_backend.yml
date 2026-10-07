@@ -5,12 +5,14 @@ on:
     paths:
       - "scripts/**"
       - "config/**"
+      - "web/config/top_artists.json"
       - ".github/workflows/sync_catalog.yml"
       - ".github/workflows/ci_backend.yml"
   pull_request:
     paths:
       - "scripts/**"
       - "config/**"
+      - "web/config/top_artists.json"
       - ".github/workflows/sync_catalog.yml"
       - ".github/workflows/ci_backend.yml"
 
@@ -34,3 +36,7 @@ jobs:
         run: |
           python -m json.tool config/tracked_sets.json >/dev/null
           python -m json.tool config/watchlist.json >/dev/null
+          python -m json.tool web/config/top_artists.json >/dev/null
+
+      - name: Test incrocio artisti (sync_artists)
+        run: python scripts/test_sync_artists.py

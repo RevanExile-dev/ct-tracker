@@ -1,0 +1,53 @@
+name: Sync artisti (illustratori delle carte)
+
+# Incrocia lo snapshot data/card_artists.json.gz con i blueprint nel Postgres
+# e scrive blueprints.artist (filtro "Artista" del sito). Solo scritture
+# additive su UNA colonna, idempotente. Vedi scripts/sync_artists.py.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo rapporto, nessuna scrittura"
+        type: boolean
+        default: false
+  # Quando cambia la logica di incrocio o lo snapshot, rilancia l'abbinamento
+  # (anche dalla PR che lo modifica, cosi' l'anteprima ha gia' i dati).
+  pull_request:
+    paths:
+      - "scripts/sync_artists.py"
+      - "data/card_artists.json.gz"
+      - "web/config/top_artists.json"
+      - ".github/workflows/sync_artists.yml"
+
+permissions:
+  contents: read
+
+# Stesso gruppo dei sync: scrivono tutti sullo stesso database.
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
+jobs:
+  sync-artists:
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
+    # Le PR da fork non ricevono i secret: niente da fare li'.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Abbina artisti ai blueprint
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
+            python scripts/sync_artists.py --dry-run
+          else
+            python scripts/sync_artists.py
+          fi

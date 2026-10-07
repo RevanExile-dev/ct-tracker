@@ -144,6 +144,14 @@ CREATE TABLE IF NOT EXISTS blueprints (
 CREATE INDEX IF NOT EXISTS idx_blueprint_expansion ON blueprints (expansion_id);
 CREATE INDEX IF NOT EXISTS idx_blueprint_rarity ON blueprints (rarity);
 
+-- Illustratore della carta (filtro "Artista"). CardTrader non lo espone: lo
+-- scrive scripts/sync_artists.py incrociando set+numero con pokemon-tcg-data
+-- (carte inglesi) e TCGdex (giapponesi). NULL = nessuna corrispondenza certa,
+-- mai un artista "tirato a indovinare". Colonna additiva: sync_catalog non la
+-- tocca (il suo ON CONFLICT aggiorna solo le colonne che elenca).
+ALTER TABLE blueprints ADD COLUMN IF NOT EXISTS artist TEXT;
+CREATE INDEX IF NOT EXISTS idx_blueprint_artist ON blueprints (artist);
+
 -- Solo l'ultimo prezzo noto e quello precedente (per la freccina su/giu'),
 -- una riga per carta: "vista materializzata" di price_snapshots, cosi' la
 -- griglia principale non deve mai leggere lo storico completo.

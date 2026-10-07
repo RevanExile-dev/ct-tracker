@@ -4,9 +4,9 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  CardRow, CardsSummary, ExpansionInfo, SortOption,
+  ArtistOption, CardRow, CardsSummary, ExpansionInfo, SortOption,
   fetchCards, fetchCardsCount, fetchCardsSummary, fetchCatalogStats, fetchConditions, fetchExpansions,
-  fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
+  fetchArtists, fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
 } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { splitCsv } from "@/lib/queryParams";
@@ -43,6 +43,7 @@ function HomeContent() {
   const [resultCount, setResultCount] = useState<number | undefined>();
   const [expansions, setExpansions] = useState<ExpansionInfo[]>([]);
   const [rarities, setRarities] = useState<string[]>([]);
+  const [artists, setArtists] = useState<ArtistOption[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
   const [conditions, setConditions] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<string | undefined>();
@@ -74,6 +75,9 @@ function HomeContent() {
   const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
     splitCsv(searchParams.get("rarity")).map(normalizeRarity)
   );
+  const [selectedArtists, setSelectedArtists] = useState<string[]>(() =>
+    splitCsv(searchParams.get("artist"))
+  );
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() =>
     splitCsv(searchParams.get("lang"))
   );
@@ -91,7 +95,7 @@ function HomeContent() {
     const shown = Number(searchParams.get("shown"));
     return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
   });
-  const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
+  const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedArtists.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
   const previousFilterKey = useRef(filterKey);
 
   // Barra filtri sticky: si nasconde scrollando verso il basso (piu' spazio
@@ -146,6 +150,7 @@ function HomeContent() {
     if (search) params.set("q", search);
     if (expansionCode) params.set("exp", expansionCode);
     if (selectedRarities.length) params.set("rarity", selectedRarities.join(","));
+    if (selectedArtists.length) params.set("artist", selectedArtists.join(","));
     if (selectedLanguages.length) params.set("lang", selectedLanguages.join(","));
     if (selectedConditions.length) params.set("cond", selectedConditions.join(","));
     if (onlyZero) params.set("zero", "1");
@@ -167,11 +172,12 @@ function HomeContent() {
     if (qs !== searchParams.toString()) {
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     }
-  }, [search, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router, searchParams]);
+  }, [search, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router, searchParams]);
 
   useEffect(() => {
     fetchExpansions().then(setExpansions).catch(() => {});
     fetchRarities().then(setRarities).catch(() => {});
+    fetchArtists().then(setArtists).catch(() => {});
     fetchLanguages().then(setLanguages).catch(() => {});
     fetchConditions().then(setConditions).catch(() => {});
     fetchMeta()
@@ -194,15 +200,15 @@ function HomeContent() {
   useEffect(() => {
     let cancelled = false;
     fetchCards({
-      search: debouncedSearch, expansionCode, rarities: selectedRarities, languages: selectedLanguages,
-      conditions: selectedConditions, onlyZero, sortBy, limit: visibleCount,
+      search: debouncedSearch, expansionCode, rarities: selectedRarities, artists: selectedArtists,
+      languages: selectedLanguages, conditions: selectedConditions, onlyZero, sortBy, limit: visibleCount,
     })
       .then((nextCards) => {
         if (!cancelled) { setError(null); setCards(nextCards); }
       })
       .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); });
     return () => { cancelled = true; };
-  }, [debouncedSearch, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, reloadTick]);
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, reloadTick]);
 
   useEffect(() => {
     if (previousFilterKey.current !== filterKey) {
@@ -221,7 +227,7 @@ function HomeContent() {
     let cancelled = false;
     let frame: number | null = null;
     const filters = {
-      search: debouncedSearch, expansionCode, rarities: selectedRarities,
+      search: debouncedSearch, expansionCode, rarities: selectedRarities, artists: selectedArtists,
       languages: selectedLanguages, conditions: selectedConditions, onlyZero,
     };
     fetchCardsCount(filters).then((c) => { if (!cancelled) setResultCount(c); }).catch(() => {});
@@ -235,7 +241,7 @@ function HomeContent() {
       frame = requestAnimationFrame(() => { if (!cancelled) setExpansionSummaryData(null); });
     }
     return () => { cancelled = true; if (frame !== null) cancelAnimationFrame(frame); };
-  }, [debouncedSearch, expansionCode, selectedRarities, selectedLanguages, selectedConditions, onlyZero]);
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero]);
 
   // Gia' limitato lato SQL a visibleCount (vedi fetchCards sopra): nessuno
   // slice() lato client necessario.
@@ -252,6 +258,12 @@ function HomeContent() {
   function handleToggleRarity(r: string) {
     setSelectedRarities((prev) =>
       prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
+  }
+
+  function handleToggleArtist(a: string) {
+    setSelectedArtists((prev) =>
+      prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]
     );
   }
 
@@ -280,7 +292,7 @@ function HomeContent() {
   }, [promptWishlistToggle, setWishlistIds]);
 
   const hasActiveFilters = Boolean(
-    search || expansionCode || selectedRarities.length || selectedLanguages.length ||
+    search || expansionCode || selectedRarities.length || selectedArtists.length || selectedLanguages.length ||
       selectedConditions.length || onlyZero || sortBy !== "expansion"
   );
 
@@ -288,6 +300,7 @@ function HomeContent() {
     setSearch("");
     setExpansionCode("");
     setSelectedRarities([]);
+    setSelectedArtists([]);
     setSelectedLanguages([]);
     setSelectedConditions([]);
     setOnlyZero(false);
@@ -298,6 +311,7 @@ function HomeContent() {
     setSearch(preset.search ?? "");
     setExpansionCode(preset.expansionCode ?? "");
     setSelectedRarities(preset.rarities.map(normalizeRarity));
+    setSelectedArtists(preset.artists ?? []);
     setSelectedLanguages(preset.languages);
     setSelectedConditions(preset.conditions);
     setOnlyZero(preset.onlyZero);
@@ -356,6 +370,9 @@ function HomeContent() {
                 rarities={rarities}
                 selectedRarities={selectedRarities}
                 onToggleRarity={handleToggleRarity}
+                artists={artists}
+                selectedArtists={selectedArtists}
+                onToggleArtist={handleToggleArtist}
                 languages={languages}
                 selectedLanguages={selectedLanguages}
                 onToggleLanguage={handleToggleLanguage}

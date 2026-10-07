@@ -13,14 +13,14 @@
 export type {
   CardRow, SortOption, CardsFilterOpts, CardsSummary, MoversDirection,
   MoversSort, MoversPageOpts, MoversPageResult, CardDetail, PricePoint,
-  Listing, ExpansionInfo,
+  Listing, ExpansionInfo, ArtistOption,
 } from "./types";
 export { MOVERS_PAGE_SIZE } from "./types";
 export { normalizeRarity } from "./rarity";
 
 import type {
   CardRow, CardsFilterOpts, CardsSummary, MoversPageOpts, MoversPageResult,
-  CardDetail, PricePoint, Listing, ExpansionInfo, SortOption,
+  CardDetail, PricePoint, Listing, ExpansionInfo, ArtistOption, SortOption,
 } from "./types";
 
 async function apiFetch<T>(path: string, params?: Record<string, unknown>): Promise<T> {
@@ -50,6 +50,7 @@ function cardsFilterParams(opts: CardsFilterOpts): Record<string, unknown> {
     search: opts.search,
     expansionCode: opts.expansionCode,
     rarities: opts.rarities,
+    artists: opts.artists,
     languages: opts.languages,
     conditions: opts.conditions,
     onlyZero: opts.onlyZero,
@@ -145,6 +146,11 @@ export async function fetchConditions(): Promise<string[]> {
 
 export async function fetchRarities(): Promise<string[]> {
   return apiFetch<string[]>("/api/rarities");
+}
+
+/** Artisti del filtro "Artista" con il numero di carte che hanno nel catalogo. */
+export async function fetchArtists(): Promise<ArtistOption[]> {
+  return apiFetch<ArtistOption[]>("/api/artists");
 }
 
 export async function fetchLanguages(): Promise<string[]> {

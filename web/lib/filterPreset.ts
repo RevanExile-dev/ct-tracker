@@ -4,6 +4,8 @@ export type FilterPreset = {
   search?: string;
   expansionCode?: string;
   rarities: string[];
+  // Opzionale: preset salvati prima del filtro Artista non hanno il campo.
+  artists?: string[];
   languages: string[];
   conditions: string[];
   onlyZero: boolean;
@@ -21,6 +23,7 @@ export function readFilterPreset(scope: string): FilterPreset | null {
       search: typeof value.search === "string" ? value.search : undefined,
       expansionCode: typeof value.expansionCode === "string" ? value.expansionCode : undefined,
       rarities: Array.isArray(value.rarities) ? value.rarities.filter((v): v is string => typeof v === "string") : [],
+      artists: Array.isArray(value.artists) ? value.artists.filter((v): v is string => typeof v === "string") : [],
       languages: Array.isArray(value.languages) ? value.languages.filter((v): v is string => typeof v === "string") : [],
       conditions: Array.isArray(value.conditions) ? value.conditions.filter((v): v is string => typeof v === "string") : [],
       onlyZero: value.onlyZero === true,
