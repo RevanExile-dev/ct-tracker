@@ -40,6 +40,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!response?.ok) return new NextResponse("immagine non disponibile", { status: 502 });
   const type = response.headers.get("content-type") ?? "";
   if (!type.startsWith("image/")) return new NextResponse("formato non valido", { status: 502 });
+  // Rifiuta subito un file dichiarato troppo grande, senza scaricarlo.
+  if (Number(response.headers.get("content-length") ?? 0) > MAX_BYTES) {
+    return new NextResponse("immagine troppo grande", { status: 502 });
+  }
   const body = await response.arrayBuffer();
   if (body.byteLength > MAX_BYTES) return new NextResponse("immagine troppo grande", { status: 502 });
 
