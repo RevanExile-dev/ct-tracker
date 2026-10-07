@@ -1,3 +1,4 @@
+import { extractCollectorNumber } from "./collector-number";
 import type { DetectedLanguage, OcrResult } from "./types";
 
 type TesseractWorker = {
@@ -17,6 +18,9 @@ type CropSpec = {
   height: number;
   targetWidth: number;
   contrast: number;
+  // Bordo bianco (px a scala finale): Tesseract legge meglio una riga isolata
+  // se attorno c'e' margine, utile sulle full-art dove il testo poggia sull'illustrazione.
+  pad?: number;
 };
 
 const OCR_CROPS: Record<"name" | "number" | "body", CropSpec> = {
@@ -37,6 +41,19 @@ const OCR_CROPS: Record<"name" | "number" | "body", CropSpec> = {
   // dominare il match del nome.
   body: { x: 0.025, y: 0.48, width: 0.95, height: 0.47, targetWidth: 1250, contrast: 1.35 },
 };
+
+// Ripiego quando il crop "number" non produce un numero leggibile: su alcune
+// full-art (es. Alolan Meowth 139/128, 30° anniversario) la fascia larga
+// contiene testo di attacchi/flavor e Tesseract restituisce solo rumore. Qui
+// si legge solo la riga piu' bassa, a sinistra e a destra separatamente
+// (layout moderno / vintage), con margine bianco.
+const NUMBER_STRIPS: CropSpec[] = [
+  { x: 0.04, y: 0.935, width: 0.46, height: 0.055, targetWidth: 1300, contrast: 1, pad: 24 },
+  { x: 0.5, y: 0.935, width: 0.46, height: 0.055, targetWidth: 1300, contrast: 1, pad: 24 },
+];
+// Ripiego per il nome quando il crop largo non legge nulla: riga piu' stretta,
+// senza il badge di stadio a sinistra e senza HP/tipo a destra.
+const NAME_TIGHT: CropSpec = { x: 0.15, y: 0.022, width: 0.5, height: 0.06, targetWidth: 1300, contrast: 1, pad: 24 };
 
 // Pin esplicito: niente "latest" non deterministico.
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js";
@@ -114,16 +131,21 @@ function makeCrop(image: HTMLImageElement, spec: CropSpec) {
   const sh = Math.max(1, Math.min(image.naturalHeight - sy, Math.round(spec.height * image.naturalHeight)));
   const targetW = Math.max(sw, Math.min(spec.targetWidth, Math.round(sw * 2.4)));
   const targetH = Math.max(1, Math.round(targetW * (sh / sw)));
+  const pad = spec.pad ?? 0;
   const canvas = document.createElement("canvas");
-  canvas.width = targetW;
-  canvas.height = targetH;
+  canvas.width = targetW + pad * 2;
+  canvas.height = targetH + pad * 2;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas OCR non disponibile.");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, targetW, targetH);
+  if (pad) {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  ctx.drawImage(image, sx, sy, sw, sh, pad, pad, targetW, targetH);
 
-  const pixels = ctx.getImageData(0, 0, targetW, targetH);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = pixels.data;
   let sum = 0;
   let sumSq = 0;
@@ -158,6 +180,9 @@ async function prepareOcrCrops(image: string) {
     name: makeCrop(source, OCR_CROPS.name),
     number: makeCrop(source, OCR_CROPS.number),
     body: makeCrop(source, OCR_CROPS.body),
+    // Calcolati solo se servono (vedi recognizeText): canvas + getImageData non sono gratis.
+    numberStrips: () => NUMBER_STRIPS.map((spec) => makeCrop(source, spec)),
+    nameTight: () => makeCrop(source, NAME_TIGHT),
   };
 }
 
@@ -195,7 +220,10 @@ export function recognizeText(image: string): Promise<OcrResult> {
     const worker = await getWorker();
     const crops = await prepareOcrCrops(image);
 
-    const name = await runField(worker, crops.name, "7").catch(() => ({ text: "", confidence: 0 }));
+    let name = await runField(worker, crops.name, "7").catch(() => ({ text: "", confidence: 0 }));
+    if (!name.text) {
+      name = await runField(worker, crops.nameTight(), "7").catch(() => ({ text: "", confidence: 0 }));
+    }
     // PSM "7" (riga singola forzata) e' sbagliato per questo crop: con il
     // margine di sicurezza aggiunto in expandRegionForOcr() puo' contenere
     // piu' di una riga fisica (fascia weakness/resistance/retreat sopra,
@@ -203,7 +231,15 @@ export function recognizeText(image: string): Promise<OcrResult> {
     // "7" produceva testo illeggibile anche su un ritaglio già ben
     // posizionato, mentre PSM "6" (blocco) leggeva correttamente l'inizio
     // del numero di collezione nello stesso identico ritaglio.
-    const number = await runField(worker, crops.number, "6", true).catch(() => ({ text: "", confidence: 0 }));
+    let number = await runField(worker, crops.number, "6", true).catch(() => ({ text: "", confidence: 0 }));
+    if (!extractCollectorNumber(number.text)) {
+      for (const strip of crops.numberStrips()) {
+        const read = await runField(worker, strip, "7", true).catch(() => ({ text: "", confidence: 0 }));
+        if (!read.text) continue;
+        number = { text: [number.text, read.text].filter(Boolean).join("\n"), confidence: Math.max(number.confidence, read.confidence) };
+        if (extractCollectorNumber(read.text)) break;
+      }
+    }
     const body = await runField(worker, crops.body, "6").catch(() => ({ text: "", confidence: 0 }));
 
     let text = [name.text, number.text, body.text].filter(Boolean).join("\n");
