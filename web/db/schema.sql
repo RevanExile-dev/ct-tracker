@@ -528,3 +528,12 @@ CREATE INDEX IF NOT EXISTS idx_telegram_outbox_pending ON telegram_outbox (creat
 -- esistente (stesso motivo di sync_checkpoint.alert_count qui sotto) -
 -- necessario per i database creati prima di questa colonna.
 ALTER TABLE telegram_outbox ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Contatori del rate limiting condiviso tra istanze (web/lib/rateLimitShared.ts,
+-- che la crea comunque al primo uso): una riga per chiave e finestra fissa.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT NOT NULL,
+  window_start BIGINT NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (key, window_start)
+);

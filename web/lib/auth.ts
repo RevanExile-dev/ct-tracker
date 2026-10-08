@@ -75,8 +75,14 @@ const { handlers, auth, signIn, signOut } = NextAuth(() => ({
     // (verificato in node_modules/@auth/core/lib/init.js, non a memoria):
     // senza questo override web/lib/account.server.ts non saprebbe a
     // quale account collegare binder/wishlist/filtri salvati.
+    //
+    // Si costruisce l'oggetto da zero (non `...session`): con la strategia
+    // "database" `session` contiene anche i campi della riga del DB, tra cui
+    // sessionToken (lo stesso valore del cookie HttpOnly), che finirebbe nella
+    // risposta pubblica di /api/auth/session leggibile da qualunque script
+    // della pagina (verificato con una richiesta reale: il token compariva).
     session({ session, user }) {
-      return { ...session, user: { ...session.user, id: user.id } };
+      return { expires: session.expires, user: { ...session.user, id: user.id } };
     },
   },
   pages: {
