@@ -72,11 +72,10 @@ const nextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
-      // Elenchi quasi statici (cambiano al massimo con il sync del catalogo).
-      {
-        source: "/api/:name(expansions|rarities|languages|conditions|artists|catalog-stats|meta|scanner-catalog)",
-        headers: publicApiCache(600, 3600),
-      },
+      // Gli elenchi (espansioni, rarita', lingue, condizioni, artisti,
+      // statistiche, meta) mandano gia' il proprio Cache-Control da
+      // lib/apiCache.ts: qui restano le rotte che non lo facevano.
+      { source: "/api/scanner-catalog", headers: publicApiCache(600, 3600) },
       // Prezzi: si aggiornano a ogni sync prioritario, 2 minuti bastano a
       // togliere i picchi senza rendere i prezzi visibilmente vecchi.
       {
