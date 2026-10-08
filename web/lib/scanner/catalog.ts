@@ -156,6 +156,63 @@ export function entryNumberLabel(entry: ScannerCatalogEntry) {
   return entryCollectorNumber(entry) ?? entryPromoNumber(entry);
 }
 
+// Espansioni giapponesi del catalogo CardTrader: sigle come "sv2a", "s12a",
+// "sm10b", "m2a", "xy8", "bw7", piu' promo e starter set con nomi propri. Una
+// sigla sconosciuta NON e' mai considerata giapponese: una nuova espansione
+// inglese non deve sparire dalle proposte di una carta inglese o italiana.
+const JAPANESE_EXPANSIONS = new Set([
+  "s-p", "sm-p", "pxy", "bwpr", "promosv", "30th-ch", "mbd", "mbg", "me", "mem", "mez", "xyc",
+  "svc", "sval", "svam", "svaw", "svel", "svem", "svhk", "svhm", "svl", "svln", "svls", "svod", "svom",
+]);
+
+export function expansionIsJapanese(code: string | null) {
+  if (!code) return false;
+  return JAPANESE_EXPANSIONS.has(code) || /^(?:s|sm|sv|xy|bw|m)\d/.test(code);
+}
+
+// Lingue con testo in caratteri latini, riconosciute dalla fascia del testo.
+const LATIN_LANGUAGES = new Set(["en", "it", "fr", "de", "es", "pt"]);
+
+/** true se la carta non puo' essere quella fotografata per la lingua letta:
+ * una carta con testo italiano o inglese non e' mai di un'espansione giapponese. */
+export function languageExcludes(entry: ScannerCatalogEntry, language: string | null | undefined) {
+  return Boolean(language && LATIN_LANGUAGES.has(language) && expansionIsJapanese(entry.expansion_code));
+}
+
+/** Le proposte compatibili con la lingua letta vanno prima, nello stesso ordine. */
+export function orderByLanguage<T extends ScannerCatalogEntry>(candidates: T[], language: string | null | undefined): T[] {
+  if (!language) return candidates;
+  return [...candidates.filter((c) => !languageExcludes(c, language)), ...candidates.filter((c) => languageExcludes(c, language))];
+}
+
+// Sigla dell'espansione stampata vicino al numero dalle carte Scarlatto e
+// Violetto in poi ("PAL EN 042/193", "PAR IT 123/182", "MEG IT 111/132") e dalle
+// giapponesi ("SV2a 025/165"). E' la stessa in tutte le lingue: cambia solo la
+// sigla della lingua accanto, che l'OCR spesso attacca ("PALEN", "OBFir").
+// Le righe del copyright ("©2023 Pokémon / Nintendo / Creatures / GAME FREAK")
+// si scartano: "GAME FREAK" letto male diventava "PREX", cioe' la sigla di
+// Prismatic Evolutions.
+function readSetCodeTokens(text: string): string[] {
+  const tokens: string[] = [];
+  for (const line of text.split(/\n+/)) {
+    if (/pok|nint|creat|game|frea|©|20[12]\d/i.test(line)) continue;
+    for (const token of line.toUpperCase().split(/[^A-Z0-9]+/)) {
+      if (token.length >= 3 && token.length <= 8) tokens.push(token);
+    }
+  }
+  return tokens;
+}
+
+function setCodeKey(code: string | null) {
+  const key = (code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return key.length >= 3 ? key : null;
+}
+
+function setCodeMatches(tokens: string[], key: string | null) {
+  // Al massimo due lettere attaccate dopo la sigla: la lingua ("EN", "IT").
+  return Boolean(key) && tokens.some((token) => token.startsWith(key!) && token.length <= key!.length + 2);
+}
+
 export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
   if (!catalogPromise) {
     catalogPromise = (async () => {
@@ -181,6 +238,7 @@ export async function loadScannerCatalog(): Promise<ScannerCatalogEntry[]> {
 
 type IndexedEntry = {
   entry: ScannerCatalogEntry;
+  setCode: string | null;
   name: string;
   nameWords: string[];
   number: string | null;
@@ -201,6 +259,7 @@ function indexCatalog(catalog: ScannerCatalogEntry[]): IndexedEntry[] {
     const parts = collectorParts(number);
     return {
       entry,
+      setCode: setCodeKey(entry.expansion_code),
       name,
       nameWords: name.split(" ").filter(Boolean),
       number,
@@ -327,13 +386,15 @@ function numberEvidenceScore(evidence: NumberEvidence, item: IndexedEntry) {
   for (const observed of evidence.exactParts) {
     best = Math.max(best, collectorSimilarity(collectorKey(observed), key));
   }
-  if (best < 0.75 && !parts.prefix && parts.numerator.length + parts.denominator.length >= 5) {
+  if (best < 0.75 && !parts.prefix && parts.numerator.length + parts.denominator.length >= 4) {
     // Sequenza di cifre con al massimo un carattere spurio al posto della barra.
+    // Con numero e totale corti (27/99) solo la forma con la barra letta come
+    // cifra ("27199"): quattro cifre attaccate sono troppo facili da trovare.
     const pad3 = (v: string) => v.padStart(3, "0");
     outer: for (const n of new Set([parts.numerator, pad3(parts.numerator)])) {
       for (const d of new Set([parts.denominator, pad3(parts.denominator)])) {
         for (const stream of evidence.streams) {
-          if (stream.includes(n + d) || new RegExp(`${n}\\d${d}`).test(stream)) {
+          if ((n.length + d.length >= 5 && stream.includes(n + d)) || new RegExp(`${n}\\d${d}`).test(stream)) {
             best = 0.75;
             break outer;
           }
@@ -348,6 +409,7 @@ function nameEvidenceScore(normalizedText: string, ocrWords: string[], item: Ind
   if (!item.name || !normalizedText) return { score: 0, matchedWords: 0 };
   if (containsWholeWord(normalizedText, item.name)) return { score: 1, matchedWords: item.nameWords.length };
   let total = 0;
+  let counted = 0;
   let matchedWords = 0;
   for (const word of item.nameWords) {
     let best = 0;
@@ -361,11 +423,20 @@ function nameEvidenceScore(normalizedText: string, ocrWords: string[], item: Ind
         best = Math.max(best, wordSimilarity(word, observed));
       }
     }
+    // "ex", "GX", "V", "VMAX"...: stampati con un logo stilizzato che l'OCR
+    // quasi mai legge. Se mancano non contano contro il nome: "Glimmora" letto
+    // vale per "Glimmora ex" quanto per "Glimmora", e a distinguerle sono numero
+    // e immagine (caso reale: Glimmora ex 123/197 data per incerta perche'
+    // "Glimmora" 1 cifra piu' in la' "aveva un nome migliore").
+    if (best < STRONG_NAME && NAME_SUFFIXES.has(word)) continue;
+    counted += 1;
     total += best;
     if (best >= STRONG_NAME) matchedWords += 1;
   }
-  return { score: total / Math.max(1, item.nameWords.length), matchedWords };
+  return { score: total / Math.max(1, counted), matchedWords };
 }
+
+const NAME_SUFFIXES = new Set(["ex", "gx", "v", "vmax", "vstar", "break", "prime"]);
 
 export const STRONG_NAME = 0.75;
 export const STRONG_NUMBER = 0.9;
@@ -388,30 +459,37 @@ export function rankScannerCandidates(
   // Sotto il nome delle Stage 1/2 c'e' "Evolves from X": X e' un'altra carta
   // (caso reale: Mismagius letto come "Evolves from Misdreavus"); sulle carte
   // italiane "Si evolve da X".
+  // La barra serve solo nei numeri: nel nome e' un tratto del bordo letto come
+  // carattere ("mecl/Sarvine") e non deve incollarsi alla parola.
   const normalizedName = normalize(
     evidence.name.replace(/\b(?:[a-z]*vo[l1i]ves?\s+fr[o0]m|si\s+evolve\s+da)\b[^\n]*/gi, " "),
-  );
+  ).replace(/\//g, " ").replace(/\s+/g, " ").trim();
   const ocrWords = normalizedName.split(" ").filter((word) => word.length >= 2);
   const numbers = readNumberEvidence(evidence.number);
+  const codeTokens = readSetCodeTokens(evidence.number);
   const ranked: ScannerCandidate[] = [];
 
   for (const item of indexCatalog(catalog)) {
     if (!item.name) continue;
     const { score: nameScore, matchedWords } = nameEvidenceScore(normalizedName, ocrWords, item);
     const numberScore = numberEvidenceScore(numbers, item);
+    // La sigla conta solo accanto a un numero compatibile: da sola sono tre
+    // lettere, che il rumore OCR puo' comporre per caso.
+    const setCodeMatch = numberScore >= 0.5 && setCodeMatches(codeTokens, item.setCode);
 
     // Nomi di 1-2 lettere (es. "N"): basta una lettera sperduta nell'OCR per un
     // "match" a punteggio pieno. Senza un indizio sul numero sono rumore.
     if (item.name.length <= 2 && numberScore < 0.68) continue;
-    if (nameScore < 0.5 && numberScore < 0.68) continue;
+    if (nameScore < 0.5 && numberScore < 0.68 && !setCodeMatch) continue;
 
     let score = nameScore * 0.45 + numberScore * 0.55;
     if (nameScore >= STRONG_NAME && numberScore >= STRONG_NUMBER) score += 0.1;
+    if (setCodeMatch) score += 0.08;
     // A parita' di lettura vince il nome piu' specifico: con "Alolan Exeggutor"
     // letto, "Exeggutor" (contenuto per intero) non deve passare davanti ad
     // "Alolan Exeggutor" (due parole riconosciute su due).
     score += 0.04 * Math.min(2, Math.max(0, matchedWords - 1));
-    ranked.push({ ...item.entry, score: Math.min(1, score), nameScore, numberScore });
+    ranked.push({ ...item.entry, score: Math.min(1, score), nameScore, numberScore, setCodeMatch });
   }
 
   return ranked
@@ -431,47 +509,95 @@ export function rankScannerCandidates(
  * troncata): senza, la scelta per immagine non e' ammessa, perche' la carta
  * giusta potrebbe essere rimasta fuori dal confronto.
  */
-export function assessScan(candidates: ScannerCandidate[], options: { complete?: boolean } = {}): ScanVerdict {
+export function assessScan(
+  ranked: ScannerCandidate[],
+  options: { complete?: boolean; language?: string | null } = {},
+): ScanVerdict {
+  // Una carta di un'espansione giapponese non puo' essere quella fotografata se
+  // il testo letto e' italiano o inglese: non toglie certezza a nessuno.
+  const compatible = ranked.filter((candidate) => !languageExcludes(candidate, options.language));
+  const candidates = compatible.length ? compatible : ranked;
   const top = candidates[0];
   if (!top) return "none";
   const others = candidates.slice(1);
   const visual = (candidate: ScannerCandidate) => candidate.visualScore ?? null;
+  // La sigla dell'espansione letta accanto al numero separa due carte con lo
+  // stesso nome e numero in espansioni diverse (es. 151 inglese e giapponese).
+  const outrankedBySetCode = (candidate: ScannerCandidate) => Boolean(top.setCodeMatch && !candidate.setCodeMatch);
+  // Un'illustrazione nettamente diversa smentisce una lettura: un numero o un
+  // nome "vicini" letti per caso (rumore OCR, "MEE 006" nel copyright) non
+  // tolgono certezza a una carta che somiglia alla foto molto piu' di loro.
+  // Misurato sulle foto di prova: la carta giusta resta sopra 0.4, le carte
+  // diverse con lo stesso nome o numero scendono di 0.3 e oltre.
+  const topVisual = visual(top);
+  // Non vale per una carta su cui nome e numero letti concordano: li' sono due
+  // indizi contro uno e la carta resta da confermare.
+  const refuted = (candidate: ScannerCandidate) => {
+    if (candidate.nameScore >= 0.5 && candidate.numberScore >= 0.68) return false;
+    const candidateVisual = visual(candidate);
+    return topVisual !== null && topVisual >= 0.4 && candidateVisual !== null && topVisual - candidateVisual >= 0.3;
+  };
+  const counts = (candidate: ScannerCandidate) => !outrankedBySetCode(candidate) && !refuted(candidate);
 
   // Un'altra carta con un nome che combacia nettamente meglio e un numero
   // "vicino" (una cifra di differenza) e' il segno di un numero letto male.
   const betterNamedNeighbour = others.some(
-    (candidate) => candidate.nameScore >= top.nameScore + 0.1 && candidate.numberScore >= 0.5,
+    (candidate) => candidate.nameScore >= top.nameScore + 0.1 && candidate.numberScore >= 0.5 && counts(candidate),
   );
 
   const exactNumberAndName = top.numberScore === 1 && top.nameScore >= 0.5;
   if (isStrong(top) || exactNumberAndName) {
     const agrees = (candidate: ScannerCandidate) =>
       isStrong(candidate) || (candidate.numberScore === 1 && candidate.nameScore >= 0.5);
-    const rival = others.some((candidate) => agrees(candidate) && candidate.score >= top.score - 0.12);
+    const rival = others.some(
+      (candidate) => agrees(candidate) && candidate.score >= top.score - 0.12 && counts(candidate),
+    );
     // L'immagine puo' solo togliere certezza quando nome e numero sono gia'
     // d'accordo: se un'altra proposta somiglia nettamente di piu' alla foto
     // qualcosa non torna.
-    const topVisual = visual(top);
     const bestOtherVisual = Math.max(-1, ...others.map((candidate) => visual(candidate) ?? -1));
     const visuallyContradicted = topVisual !== null && bestOtherVisual > topVisual + 0.2;
     return rival || visuallyContradicted || betterNamedNeighbour ? "probable" : "certain";
   }
 
-  const topVisual = visual(top);
+  // Immagine piu' simile di tutte le altre proposte: molto simile con un
+  // margine piccolo (scansioni, foto nitide) oppure abbastanza simile con un
+  // margine ampio (foto con luce e prospettiva, dove anche la carta giusta
+  // perde somiglianza ma le altre restano molto piu' in basso).
+  const visualMargin = (minimum: number) =>
+    others.every((candidate) => (visual(candidate) ?? -1) <= topVisual! - minimum);
   const clearlyMostSimilar =
     topVisual !== null &&
-    topVisual >= 0.6 &&
-    others.every((candidate) => (visual(candidate) ?? -1) <= topVisual - 0.12);
+    ((topVisual >= 0.6 && visualMargin(0.12)) || (topVisual >= 0.4 && visualMargin(0.25)));
 
   // Numero esatto + immagine: il nome non e' stato letto (font stilizzati delle
-  // ex/V), ma l'illustrazione della carta con quel numero combacia e nessun'altra
-  // carta con lo stesso numero e' rimasta fuori dal confronto.
-  const sameNumber = candidates.filter((candidate) => candidate.numberScore === 1);
+  // ex/V, nomi tradotti sulle carte italiane come "Fungofurioso"), ma
+  // l'illustrazione della carta con quel numero combacia e nessun'altra carta
+  // con lo stesso numero e' rimasta fuori dal confronto.
+  const sameNumber = candidates.filter((candidate) => candidate.numberScore === 1 && !outrankedBySetCode(candidate));
   if (
     options.complete &&
     top.numberScore === 1 &&
     clearlyMostSimilar &&
     sameNumber.every((candidate) => visual(candidate) !== null) &&
+    !betterNamedNeighbour
+  ) {
+    return "certain";
+  }
+
+  // Numero esatto + sigla dell'espansione: identificano una sola carta del
+  // catalogo. Resta il rischio di una cifra letta male che porta a un'altra
+  // carta della stessa espansione, con un'illustrazione diversa: l'immagine
+  // deve somigliare (soglia misurata sulle foto di prova) e nessun'altra
+  // proposta deve somigliare di piu'.
+  if (
+    options.complete &&
+    top.numberScore === 1 &&
+    top.setCodeMatch &&
+    !others.some((candidate) => candidate.numberScore === 1 && candidate.setCodeMatch) &&
+    topVisual !== null &&
+    topVisual >= SET_CODE_VISUAL_SUPPORT &&
+    others.every((candidate) => (visual(candidate) ?? -1) <= topVisual + 0.05) &&
     !betterNamedNeighbour
   ) {
     return "certain";
@@ -485,7 +611,7 @@ export function assessScan(candidates: ScannerCandidate[], options: { complete?:
     // tutte le carte con quel nome sono state confrontate con la foto
     sameName.every((candidate) => visual(candidate) !== null) &&
     // un numero letto con sicurezza che non e' il suo la esclude
-    !others.some((candidate) => candidate.numberScore >= STRONG_NUMBER)
+    !others.some((candidate) => candidate.numberScore >= STRONG_NUMBER && counts(candidate))
   ) {
     return "certain";
   }
@@ -501,7 +627,7 @@ export function assessScan(candidates: ScannerCandidate[], options: { complete?:
     clearlyMostSimilar &&
     candidates.filter(partlyAgrees).every((candidate) => visual(candidate) !== null) &&
     !betterNamedNeighbour &&
-    !others.some((candidate) => candidate.numberScore >= STRONG_NUMBER && candidate.numberScore > top.numberScore)
+    !others.some((candidate) => candidate.numberScore >= STRONG_NUMBER && candidate.numberScore > top.numberScore && counts(candidate))
   ) {
     return "certain";
   }
@@ -509,6 +635,10 @@ export function assessScan(candidates: ScannerCandidate[], options: { complete?:
   if (top.nameScore >= 0.5 || top.numberScore >= 0.68) return "probable";
   return "none";
 }
+
+// Somiglianza minima tra foto e immagine di catalogo per fidarsi di numero +
+// sigla senza il nome. Da calibrare sulle foto di prova.
+export const SET_CODE_VISUAL_SUPPORT = 0.45;
 
 export async function hydrateScannerCard(id: number, language?: string | null): Promise<{
   card: CardRow | null;

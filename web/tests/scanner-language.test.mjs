@@ -21,3 +21,15 @@ test('una carta giapponese vera resta giapponese', () => {
   const japanese = 'ワザ はばたく 30 相手のバトルポケモンに ダメージ 弱点 抵抗力 にげる HP 90';
   assert.equal(ocr.detectLanguage(japanese).code, 'jp');
 });
+
+test('la lingua stampata accanto alla sigla (carte Scarlatto e Violetto in poi) vince sulle parole', () => {
+  assert.equal(ocr.detectLanguage('Fungofurioso\nPAR IT 123/182\nthe your deck').code, 'it');
+  assert.equal(ocr.detectLanguage('MEGEN 111/132').code, 'en');
+  assert.equal(ocr.detectLanguage('30C IT 139/128').code, 'it');
+});
+
+test('parita tra due lingue: incerta, non italiano per default', () => {
+  assert.equal(ocr.detectLanguage('turno').code, null);
+  assert.equal(ocr.detectLanguage('nel the').code, null);
+  assert.equal(ocr.detectLanguage('Pokemon Nintendo').code, null);
+});

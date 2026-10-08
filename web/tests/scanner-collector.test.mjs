@@ -286,3 +286,65 @@ test('"Evolves from X" sotto il nome non conta come nome (caso reale Mismagius S
   assert.equal(catalog.rankScannerCandidates({ name: 'Mismagius\nEvolves from Misdreavus', number: '' }, entries, 10)[0].id, 1);
   assert.equal(catalog.rankScannerCandidates({ name: 'Si evolve da Misdreavus', number: '' }, entries, 10).length, 0);
 });
+
+test('sigla stampata accanto al numero: separa 151 inglese e giapponese con stesso nome e numero', () => {
+  const entries = [card(1, 'Mew ex', 'Ultra Rare | 151/165', 'mew'), card(2, 'Mew ex', '151/165', 'sv2a')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Mew ex', number: 'MEW EN 151/165' }, entries, Infinity);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(ranked[0].setCodeMatch, true);
+  assert.equal(catalog.assessScan(ranked, { complete: true }), 'certain');
+  // Senza sigla letta restano due carte uguali: da confermare, a meno che la
+  // lingua letta escluda quella giapponese.
+  const blind = catalog.rankScannerCandidates({ name: 'Mew ex', number: '151/165' }, entries, Infinity);
+  assert.equal(catalog.assessScan(blind, { complete: true }), 'probable');
+  assert.equal(catalog.assessScan(blind, { complete: true, language: 'it' }), 'certain');
+  // La riga del copyright non e' una sigla.
+  const copyright = catalog.rankScannerCandidates({ name: 'Mew ex', number: '151/165\n©2023 Pokemon MEW' }, entries, Infinity);
+  assert.notEqual(copyright[0].setCodeMatch, true);
+});
+
+test('numero + sigla + immagine bastano senza nome (nome tradotto sulle carte italiane)', () => {
+  const top = { ...card(1, 'Brute Bonnet', 'Rare | 123/182', 'par'), score: 0.63, nameScore: 0, numberScore: 1, setCodeMatch: true, visualScore: 0.5 };
+  const other = { ...card(2, 'Brute Bonnet', '123/182', 'sv4'), score: 0.55, nameScore: 0, numberScore: 1, visualScore: 0.49 };
+  assert.equal(catalog.assessScan([top, other], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.3 }, other], { complete: true }), 'probable');
+  assert.equal(catalog.assessScan([top, { ...other, visualScore: 0.7 }], { complete: true }), 'probable');
+});
+
+test("l'immagine smentisce un vicino letto per caso, ma non una carta su cui nome e numero concordano", () => {
+  // Caso reale (Servine BLK 2/86): numero esatto e illustrazione identica, nome
+  // non letto; un'altra carta con mezza parola del nome e un numero simile
+  // bloccava la certezza pur non somigliando affatto alla foto.
+  const top = { ...card(1, 'Servine', '002/086', 'blk'), score: 0.55, nameScore: 0, numberScore: 1, visualScore: 0.98 };
+  const neighbour = { ...card(2, 'Serperior', '003/086', 'blk'), score: 0.56, nameScore: 0.42, numberScore: 0.68, visualScore: 0.53 };
+  assert.equal(catalog.assessScan([top, neighbour], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, { ...neighbour, visualScore: 0.8 }], { complete: true }), 'probable');
+  // Con nome e numero entrambi compatibili il vicino resta un'alternativa vera.
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.6 }], { complete: true }), 'probable');
+});
+
+test('numero + immagine sulle foto: somiglianza media ma molto sopra tutte le altre', () => {
+  const top = { ...card(1, 'Healing Scarf', '084/108', 'ros'), score: 0.73, nameScore: 0.41, numberScore: 1, visualScore: 0.55 };
+  const other = { ...card(2, 'Hawlucha', '064/108', 'ros'), score: 0.58, nameScore: 0.45, numberScore: 0.68, visualScore: 0.19 };
+  assert.equal(catalog.assessScan([top, other], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, { ...other, visualScore: 0.35 }], { complete: true }), 'probable');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.38 }, { ...other, visualScore: 0 }], { complete: true }), 'probable');
+});
+
+test('numero corto con la barra letta come cifra, e barra nel nome', () => {
+  const entries = [card(1, 'Articuno', '27/99', 'nxd'), card(2, 'Articuno', '17/108', 'roaring')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Articuno', number: 'O 27199 x' }, entries, Infinity);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(ranked[0].numberScore, 0.75);
+  // Quattro cifre attaccate non bastano: troppo facili da trovare per caso.
+  assert.equal(catalog.rankScannerCandidates({ name: 'Articuno', number: '12799 3' }, entries, Infinity)[0].numberScore, 0);
+  const servine = catalog.rankScannerCandidates({ name: 'mecl/Sarvine', number: '' }, [card(3, 'Servine', '002/086', 'blk')], Infinity);
+  assert.ok(servine[0]?.nameScore >= 0.75);
+});
+
+test('suffissi ex/V non letti non contano contro il nome', () => {
+  const entries = [card(1, 'Glimmora ex', 'Double Rare | 123/197', 'obf'), card(2, 'Glimmora', '124/197', 'obf')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Glimmora', number: '123/197' }, entries, Infinity);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(ranked[0].nameScore, 1);
+});

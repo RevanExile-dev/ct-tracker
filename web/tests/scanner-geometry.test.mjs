@@ -12,7 +12,11 @@ function loadModule(path) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(code, { exports, require: (id) => { throw new Error(`Unexpected dependency: ${id}`); } });
+  const require = (id) => {
+    if (id === './quad') return loadModule('../lib/scanner/quad.ts');
+    throw new Error(`Unexpected dependency: ${id}`);
+  };
+  vm.runInNewContext(code, { exports, require, Math, Float64Array, Float32Array, Uint8ClampedArray, Uint8Array, Int32Array, Array, Number, Infinity });
   return exports;
 }
 const image = loadModule('../lib/scanner/image.ts');
@@ -347,4 +351,54 @@ test('sfondo non uniforme o carta che riempie la foto: nessuna regione, decide i
     const i = (y * W + x) * 4; const v = (x % 8 < 4) ? 20 : 220; striped[i] = striped[i + 1] = striped[i + 2] = v;
   }
   assert.equal(image.detectOnUniformBackground(striped, W, H).length, 0);
+});
+
+// Carta storta (prospettiva leggera) su un tavolo: poligono convesso pieno con
+// un riquadro interno (illustrazione) che non deve essere scambiato per la carta.
+function insideQuad(x, y, q) {
+  let sign = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const [ax, ay] = q[i];
+    const [bx, by] = q[(i + 1) % 4];
+    const cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+    if (cross !== 0) {
+      if (sign && Math.sign(cross) !== sign) return false;
+      sign = Math.sign(cross);
+    }
+  }
+  return true;
+}
+function paint(width, height, layers) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let color = [110, 80, 50];
+      for (const [quad, fill] of layers) if (insideQuad(x + 0.5, y + 0.5, quad)) color = fill;
+      const i = (y * width + x) * 4;
+      rgba[i] = color[0]; rgba[i + 1] = color[1]; rgba[i + 2] = color[2]; rgba[i + 3] = 255;
+    }
+  }
+  return rgba;
+}
+
+test('detectCardQuad trova i quattro angoli di una carta storta, non il riquadro interno', () => {
+  const card = [[92, 70], [318, 82], [306, 392], [80, 380]];
+  const art = [[112, 120], [298, 128], [292, 240], [108, 232]];
+  const rgba = paint(400, 533, [[card, [230, 200, 60]], [art, [40, 90, 160]]]);
+  const quad = image.detectCardRegionsFromPixels(rgba, 400, 533);
+  assert.equal(quad.length, 1);
+  assert.equal(quad[0].id, 'region-quad');
+  const corners = quad[0].quad.map(([x, y]) => [x * 400, y * 533]);
+  for (let i = 0; i < 4; i += 1) {
+    assert.ok(Math.hypot(corners[i][0] - card[i][0], corners[i][1] - card[i][1]) < 8, `angolo ${i}: ${corners[i]}`);
+  }
+});
+
+test("un'immagine con le proporzioni di una carta e' la carta intera (scansioni, screenshot ritagliati)", () => {
+  // Riquadro interno con proporzioni da carta: prima veniva preso al posto della carta.
+  const art = [[30, 60], [330, 60], [330, 480], [30, 480]];
+  const rgba = paint(358, 500, [[[[0, 0], [358, 0], [358, 500], [0, 500]], [230, 200, 60]], [art, [40, 90, 160]]]);
+  const regions = image.detectCardRegionsFromPixels(rgba, 358, 500);
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0].id, 'region-frame');
 });
