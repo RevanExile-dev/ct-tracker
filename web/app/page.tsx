@@ -334,6 +334,7 @@ function HomeContent() {
         totalCards={totalCards}
         onLogoClick={hasActiveFilters ? resetAllFilters : undefined}
       />
+      <h1 className="sr-only">CartaViva: catalogo e prezzi delle carte Pokémon</h1>
 
       {heroThreeMode === "on" && !hasActiveFilters && (
         <HomeHero3D onFallback={() => setHeroThreeMode("off")} />
