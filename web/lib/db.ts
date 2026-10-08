@@ -15,7 +15,7 @@ export type {
   MoversSort, MoversPageOpts, MoversPageResult, CardDetail, PricePoint,
   Listing, ExpansionInfo, ArtistOption,
 } from "./types";
-export { MOVERS_PAGE_SIZE } from "./types";
+export { MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE } from "./types";
 export { normalizeRarity } from "./rarity";
 
 import type {

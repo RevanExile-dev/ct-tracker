@@ -20,6 +20,7 @@ import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
 import HomeHighlights from "@/components/HomeHighlights";
+import { formatPercent } from "@/lib/format";
 
 // Spike Three.js isolato (PR #6, stesso flag di ThreeCardHero in
 // card/[id]): mai importato/scaricato nel percorso di default - ssr:false +
@@ -333,6 +334,7 @@ function HomeContent() {
         totalCards={totalCards}
         onLogoClick={hasActiveFilters ? resetAllFilters : undefined}
       />
+      <h1 className="sr-only">CartaViva: catalogo e prezzi delle carte Pokémon</h1>
 
       {heroThreeMode === "on" && !hasActiveFilters && (
         <HomeHero3D onFallback={() => setHeroThreeMode("off")} />
@@ -401,7 +403,7 @@ function HomeContent() {
           onClick={() => setToolbarVisible((v) => !v)}
           aria-expanded={toolbarVisible}
           aria-label={toolbarVisible ? "Nascondi filtri" : "Mostra filtri"}
-          className="w-full min-h-6 flex items-center justify-center text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
+          className="w-full min-h-10 flex items-center justify-center text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
         >
           <span
             aria-hidden
@@ -435,7 +437,7 @@ function HomeContent() {
               {expansionSummary.avgPct >= 0 ? "▲" : "▼"}{" "}
               <CountUp
                 value={Math.abs(expansionSummary.avgPct)}
-                format={(n) => `${n.toFixed(1)}%`}
+                format={(n) => formatPercent(n, 1)}
               />
               <span className="text-xs font-mono text-ink-faint ml-1.5">
                 (media su {expansionSummary.sampleSize}/{expansionSummary.totalCards} carte)

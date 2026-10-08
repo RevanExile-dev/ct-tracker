@@ -4,7 +4,14 @@ import { ipAddress } from "@vercel/functions";
 import Link from "next/link";
 import { auth, signIn } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rateLimit";
+import { isRateLimitedShared } from "@/lib/rateLimitShared";
 import SiteHeader from "@/components/SiteHeader";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Accedi",
+  robots: { index: false },
+};
 
 // Nota su "next-auth/lib/actions.js" (letto direttamente, non a memoria):
 // signIn() senza redirectTo esplicito usa l'header Referer come pagina di
@@ -48,7 +55,7 @@ export default async function LoginPage({
     // contro email bombing/esaurimento della quota Resend resterebbe
     // quello sulla route API diretta, mai toccata dal form vero.
     const ip = ipAddress(await headers()) ?? "unknown";
-    if (isRateLimited(`login-email:${ip}`, 5, 60_000)) {
+    if (isRateLimited(`login-email:${ip}`, 5, 60_000) || (await isRateLimitedShared(`login-email:${ip}`, 5, 60_000))) {
       redirect("/login?error=RateLimited");
     }
     // redirectTo per il provider email va dentro lo stesso FormData (vedi
@@ -70,7 +77,7 @@ export default async function LoginPage({
         ← Torna al catalogo
       </Link>
 
-      <h2 className="font-display text-2xl font-bold text-ink-primary">Accedi</h2>
+      <h1 className="font-display text-2xl font-bold text-ink-primary">Accedi</h1>
       <p className="text-ink-muted mt-1 mb-8">
         Il tuo binder, la lista desideri e i filtri salvati ti seguono su ogni dispositivo.
       </p>
@@ -129,7 +136,7 @@ function LoginNotConfigured() {
       >
         ← Torna al catalogo
       </Link>
-      <h2 className="font-display text-2xl font-bold text-ink-primary">Accedi</h2>
+      <h1 className="font-display text-2xl font-bold text-ink-primary">Accedi</h1>
       <div className="rounded-card border border-base-border bg-base-surface/55 text-ink-muted p-5 text-sm mt-6">
         L&apos;accesso non è ancora configurato su questo sito. Riprova più tardi.
       </div>

@@ -35,6 +35,12 @@ export default function SiteHeader({
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
+      <a
+        href="#contenuto"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-card focus:bg-base-surface focus:px-4 focus:py-2.5 focus:text-sm focus:text-accent-bright focus:ring-2 focus:ring-accent/70 focus:outline-none"
+      >
+        Vai al contenuto
+      </a>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -64,24 +70,29 @@ export default function SiteHeader({
                     {" "}carte
                   </span>
                 ) : (
-                  "carte"
+                  <>
+                    {/* Segnaposto invisibile con la larghezza del numero vero: senza,
+                        il testo si allunga quando arriva il totale e puo' andare a
+                        capo, spostando tutta la pagina sotto. */}
+                    <span aria-hidden className="invisible">00.000</span>{" "}carte
+                  </>
                 )}{" "}
                 Pokémon TCG tracciate — dati aggiornati automaticamente ogni giorno da CardTrader.
               </p>
-              {lastSync && (
-                <p className="text-xs font-mono text-ink-faint mt-3">
-                  Ultimo aggiornamento prezzi: {formatDateLong(lastSync)}
-                </p>
-              )}
+              {/* Riga sempre presente (min-h-4): la data arriva da una chiamata
+                  e, aggiunta dopo, spingerebbe in basso filtri e carte. */}
+              <p className="text-xs font-mono text-ink-faint mt-3 min-h-4">
+                {lastSync ? `Ultimo aggiornamento prezzi: ${formatDateLong(lastSync)}` : null}
+              </p>
             </>
           )}
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <nav aria-label="Sezioni del sito" className="flex gap-2 flex-wrap">
           {!onScanner && (
             <Link
               href="/scan"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 hover:bg-accent/15 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 hover:bg-accent/15 transition-colors active:scale-95"
             >
               ✦ Scanner
             </Link>
@@ -89,15 +100,16 @@ export default function SiteHeader({
           {!onMovers && (
             <Link
               href="/movers"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              aria-label="Carte in movimento"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
-              📈 Carte in movimento
+              📈{" "}<span className="sm:hidden">Movimenti</span><span className="hidden sm:inline">Carte in movimento</span>
             </Link>
           )}
           {!onBinder && (
             <Link
               href="/binder?view=collection"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               📚 Binder
             </Link>
@@ -105,7 +117,7 @@ export default function SiteHeader({
           {!onWishlist && (
             <Link
               href="/wishlist"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               ♡ Desideri
             </Link>
@@ -113,14 +125,15 @@ export default function SiteHeader({
           {!onLots && (
             <Link
               href="/lots"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               🧾 Lotti
             </Link>
           )}
           <UserMenu />
-        </div>
+        </nav>
       </div>
+      <span id="contenuto" tabIndex={-1} className="block outline-none" />
     </header>
   );
 }

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { getSiteUrl } from "@/lib/siteUrl";
 
 // Deterrente di cortesia, non una vera protezione: robots.txt è solo una
 // convenzione che i crawler "onesti" (Google, Bing...) rispettano - uno
@@ -20,5 +21,6 @@ export default function robots(): MetadataRoute.Robots {
       // non tramite questo file.
       crawlDelay: 1,
     },
+    sitemap: `${getSiteUrl()}/sitemap.xml`,
   };
 }

@@ -4,6 +4,7 @@ import "./globals.css";
 import BackToTop from "@/components/BackToTop";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
 import AccountSync from "@/components/AccountSync";
+import { getSiteUrl } from "@/lib/siteUrl";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -18,7 +19,8 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://ct-tracker.vercel.app"),
+  metadataBase: new URL(getSiteUrl()),
+  alternates: { canonical: "./" },
   title: { default: "Carta Viva — La tua collezione TCG", template: "%s · Carta Viva" },
   description: "Catalogo, prezzi, movimenti e Binder personale per le carte Pokémon TCG tracciate da CardTrader.",
   applicationName: "Carta Viva",

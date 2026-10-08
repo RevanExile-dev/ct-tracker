@@ -1,0 +1,11 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Allarmi prezzo",
+  description: "Gli allarmi di prezzo legati al tuo account.",
+  robots: { index: false },
+};
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return children;
+}

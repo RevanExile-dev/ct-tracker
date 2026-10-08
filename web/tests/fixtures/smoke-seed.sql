@@ -83,12 +83,15 @@ FROM generate_series(1, 26) AS n
 ON CONFLICT (id) DO NOTHING;
 
 -- n=1..13 in rialzo (prezzo attuale > precedente), n=14..26 in calo.
-INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents)
+-- it_nm_zero_listings_count = 6: la pagina Carte in movimento considera solo
+-- carte con almeno MIN_MOVER_LISTINGS (5) inserzioni IT NM Zero.
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents, it_nm_zero_listings_count)
 SELECT
   901000 + n, CURRENT_DATE, now(), 1000 + n, 'EUR', 1,
   CASE WHEN n <= 13 THEN 1000 + n ELSE 500 + n END,
   'EUR',
-  CASE WHEN n <= 13 THEN 500 + n ELSE 1000 + n END
+  CASE WHEN n <= 13 THEN 500 + n ELSE 1000 + n END,
+  6
 FROM generate_series(1, 26) AS n
 ON CONFLICT (blueprint_id) DO NOTHING;
 

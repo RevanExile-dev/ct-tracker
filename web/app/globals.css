@@ -726,3 +726,11 @@ body::after {
 ::-webkit-scrollbar-thumb:hover {
   background: #2dd8c9aa;
 }
+
+/* Rete di sicurezza per la navigazione da tastiera: i componenti con un
+   proprio stile di focus (ring Tailwind) lo mantengono, tutto il resto
+   (link nel testo, summary, controlli nativi) ottiene comunque un anello. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #2dd8c9;
+  outline-offset: 2px;
+}
