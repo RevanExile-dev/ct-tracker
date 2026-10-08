@@ -29,6 +29,8 @@ export default function Toolbar({
   onToggleCondition,
   onlyZero,
   onToggleOnlyZero,
+  exactName,
+  onToggleExactName,
   sortBy,
   onSortChange,
   hasActiveFilters,
@@ -57,6 +59,9 @@ export default function Toolbar({
   onToggleCondition: (condition: string) => void;
   onlyZero: boolean;
   onToggleOnlyZero: () => void;
+  /** Il nome deve contenere le parole cercate come parole intere ("mew" non trova "Mewtwo"). */
+  exactName: boolean;
+  onToggleExactName: () => void;
   sortBy: SortOption;
   onSortChange: (v: SortOption) => void;
   hasActiveFilters: boolean;
@@ -102,6 +107,7 @@ export default function Toolbar({
   for (const c of selectedConditions) {
     chips.push({ key: `c-${c}`, label: <ConditionBadge condition={c} />, onRemove: () => onToggleCondition(c) });
   }
+  if (exactName) chips.push({ key: "exact", label: "Nome esatto", onRemove: onToggleExactName });
   if (onlyZero) chips.push({ key: "zero", label: "⚡ Solo CardTrader Zero", onRemove: onToggleOnlyZero });
 
   return (
@@ -115,13 +121,31 @@ export default function Toolbar({
           e ordinamento condividono una riga senza essere compressi. Desktop lg:
           ricerca + controlli tornano nel layout orizzontale compatto. */}
       <div className="flex flex-col lg:flex-row lg:items-start gap-3">
-        <input
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Cerca per nome o numero (es. 12/98)…"
-          aria-label="Cerca una carta per nome o numero"
-          className="lg:flex-1 w-full min-h-11 bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
-        />
+        {/* Interruttore "Nome esatto" dentro il campo: non aggiunge una riga
+            alla barra filtri (sul telefono ha un'altezza massima verificata
+            da tests/mobile-toolbar.spec.mjs). */}
+        <div className="relative lg:flex-1 w-full">
+          <input
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Cerca per nome o numero (es. 12/98)…"
+            aria-label="Cerca una carta per nome o numero"
+            className="w-full min-h-11 bg-base-surface border border-base-border rounded-card pl-4 pr-28 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
+          />
+          <button
+            type="button"
+            onClick={onToggleExactName}
+            aria-pressed={exactName}
+            title="Cerca il nome come parola intera: «mew» non trova «Mewtwo»"
+            className={`absolute right-1.5 top-1/2 -translate-y-1/2 min-h-8 text-xs px-3 rounded-full border transition-colors active:scale-95 ${
+              exactName
+                ? "bg-accent/10 border-accent/60 text-accent-bright"
+                : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+            }`}
+          >
+            Nome esatto
+          </button>
+        </div>
 
         <div className="min-w-0 w-full grid grid-cols-1 md:grid-cols-2 gap-3 lg:w-auto lg:flex lg:flex-row">
           <div className="min-w-0 w-full lg:w-auto flex items-center gap-1">
@@ -265,6 +289,7 @@ export default function Toolbar({
             languages: selectedLanguages,
             conditions: selectedConditions,
             onlyZero,
+            exactName,
             sortBy,
           }}
           onApply={onApplyPreset}

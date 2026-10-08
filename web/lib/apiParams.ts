@@ -6,6 +6,7 @@ import type { CardsFilterOpts } from "./types";
 export function parseCardsFilterOpts(sp: URLSearchParams): CardsFilterOpts {
   return {
     search: sp.get("search") ?? undefined,
+    exactName: sp.get("exactName") === "1",
     expansionCode: sp.get("expansionCode") ?? undefined,
     rarities: sp.getAll("rarities"),
     artists: sp.getAll("artists"),

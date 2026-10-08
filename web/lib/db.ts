@@ -48,6 +48,7 @@ async function apiFetch<T>(path: string, params?: Record<string, unknown>): Prom
 function cardsFilterParams(opts: CardsFilterOpts): Record<string, unknown> {
   return {
     search: opts.search,
+    exactName: opts.exactName,
     expansionCode: opts.expansionCode,
     rarities: opts.rarities,
     artists: opts.artists,

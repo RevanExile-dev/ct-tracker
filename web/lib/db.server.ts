@@ -62,6 +62,39 @@ function mapCardRow(row: CardRow): CardRow {
   return row;
 }
 
+/** Parole cercate (separate da spazi), senza vuoti. */
+function searchTokens(search: string): string[] {
+  return search.trim().split(/\s+/).filter(Boolean);
+}
+
+/** "\\" e' l'ESCAPE di default di ILIKE: senza questo un "%" o "_" digitato
+ * dall'utente verrebbe trattato come jolly invece che come carattere. */
+function escapeLike(token: string): string {
+  return token.replace(/[\\%_]/g, "\\$&");
+}
+
+/** Parola intera nel nome: preceduta e seguita da inizio/fine o da un
+ * carattere non alfanumerico, cosi' "mew" trova "Mew", "Mew ex", "Mew-V"
+ * ma non "Mewtwo". Da usare con l'operatore ~* (senza distinzione
+ * maiuscole/minuscole). */
+function wholeWordRegex(token: string): string {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return `(^|[^[:alnum:]])${escaped}($|[^[:alnum:]])`;
+}
+
+/** Rilevanza della ricerca per nome, per mettere in cima i risultati
+ * migliori: 0 = tutte le parole compaiono come parola intera nel nome
+ * ("Mew", "Mew ex"), 1 = il nome inizia con la ricerca ("Mewtwo"), 2 = il
+ * resto (sottostringa nel nome o corrispondenza solo nel numero). */
+function buildSearchRank(search: string | undefined, p: Params): string | null {
+  if (!search) return null;
+  const tokens = searchTokens(search);
+  if (tokens.length === 0) return null;
+  const whole = tokens.map((t) => `b.name ~* ${p.add(wholeWordRegex(t))}`).join(" AND ");
+  const prefix = p.add(`${escapeLike(tokens.join(" "))}%`);
+  return `CASE WHEN ${whole} THEN 0 WHEN b.name ILIKE ${prefix} THEN 1 ELSE 2 END`;
+}
+
 /** WHERE condiviso tra fetchCards/fetchCardsCount/fetchCardsSummary, cosi'
  * "quante carte" e "che carte" restano sempre coerenti per costruzione
  * invece di dover mantenere due query separate allineate a mano. */
@@ -81,10 +114,13 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
     // insieme in una sola. Porta lo stesso fix della PR #31 (pre-migrazione
     // Postgres, dove viveva in buildCardsFilter lato client) qui, unico
     // punto che ora costruisce davvero la query.
-    const tokens = opts.search.trim().split(/\s+/).filter(Boolean);
+    const tokens = searchTokens(opts.search);
     for (const token of tokens) {
-      const placeholder = p.add(`%${token}%`);
-      where.push(`(b.name ILIKE ${placeholder} OR b.version ILIKE ${placeholder})`);
+      const like = p.add(`%${escapeLike(token)}%`);
+      const nameMatch = opts.exactName
+        ? `b.name ~* ${p.add(wholeWordRegex(token))}`
+        : `b.name ILIKE ${like}`;
+      where.push(`(${nameMatch} OR b.version ILIKE ${like})`);
     }
   }
   if (opts.expansionCode) {
@@ -203,9 +239,16 @@ export async function fetchCards(opts: CardsFilterOpts & {
   const lowListings = `COALESCE(lp.it_nm_zero_listings_count, 0) < ${MIN_MOVER_LISTINGS}`;
 
   let orderBy = "b.expansion_id DESC, b.name ASC";
+  if (opts.sortBy === "name") orderBy = "b.name ASC";
+  // Con una ricerca per nome, a parita' di ordinamento "neutro" (espansione
+  // o nome) i nomi che combaciano meglio vengono prima ("mew" -> Mew, poi
+  // Mewtwo); con un ordinamento per prezzo/variazione resta quello scelto.
+  if (!opts.sortBy || opts.sortBy === "expansion" || opts.sortBy === "name") {
+    const rank = buildSearchRank(opts.search, p);
+    if (rank) orderBy = `${rank}, ${orderBy}`;
+  }
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
   if (opts.sortBy === "price_desc") orderBy = `${priceExpr} IS NULL, ${priceExpr} DESC`;
-  if (opts.sortBy === "name") orderBy = "b.name ASC";
   if (opts.sortBy === "drop_first") {
     // Piu' grande calo percentuale prima; le carte senza prezzo precedente
     // (o senza variazione) restano in fondo. La condizione qui DEVE restare
