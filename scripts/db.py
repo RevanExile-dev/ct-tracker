@@ -833,7 +833,7 @@ def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
     non inviato piuttosto che intasare la coda all'infinito)."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, chat_id, payload, image_url
+            """SELECT id, chat_id, payload, image_url, alert_id
                FROM telegram_outbox
                WHERE sent_at IS NULL
                  AND retry_count < %s
@@ -844,6 +844,19 @@ def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
             (MAX_OUTBOX_RETRIES, limit),
         )
         return cur.fetchall()
+
+
+def alert_reply_markup(alert_id: int | None) -> dict | None:
+    """Bottoni inline sotto l'avviso di un allarme scattato: "Riattiva" e
+    "Cambia soglia". Le callback_data (`ar:<id>`, `at:<id>`) sono gestite dal
+    webhook TypeScript, web/app/api/telegram/webhook/route.ts (CALLBACK_RE):
+    i due lati vivono in runtime separati e vanno tenuti allineati a mano."""
+    if alert_id is None:
+        return None
+    return {"inline_keyboard": [[
+        {"text": "🔄 Riattiva", "callback_data": f"ar:{alert_id}"},
+        {"text": "✏️ Cambia soglia", "callback_data": f"at:{alert_id}"},
+    ]]}
 
 
 def mark_outbox_sent(conn, outbox_id: int):

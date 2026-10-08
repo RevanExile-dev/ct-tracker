@@ -7,6 +7,7 @@ import { CardRow, fetchCards, fetchConditions, fetchLanguages } from "@/lib/db";
 import { formatCents, formatDateLong } from "@/lib/format";
 import type { PriceAlert, PriceAlertFireMode, PriceAlertTargetType } from "@/lib/types";
 import SiteHeader from "@/components/SiteHeader";
+import QuickAlertModal from "@/components/QuickAlertModal";
 
 const ANY_OPTION = ""; // select vuoto = "qualunque" (profilo non vincolato su quel campo)
 
@@ -55,10 +56,11 @@ type AlertListItemProps = {
   card: CardRow | undefined;
   highlighted?: boolean;
   onToggle: (alert: PriceAlert) => void;
+  onEdit: (alert: PriceAlert) => void;
   onRemove: (id: number) => void;
 };
 
-function AlertListItem({ alert, card, highlighted, onToggle, onRemove }: AlertListItemProps) {
+function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }: AlertListItemProps) {
   return (
     <li
       className={`rounded-card border px-5 py-4 ${
@@ -93,6 +95,11 @@ function AlertListItem({ alert, card, highlighted, onToggle, onRemove }: AlertLi
           >
             {toggleActionLabel(alert)}
           </button>
+          <button type="button" onClick={() => onEdit(alert)}
+            aria-label={`Modifica allarme ${card?.name ?? `carta #${alert.blueprintId}`}`}
+            className="text-xs text-ink-muted hover:text-accent-bright min-h-8 px-2 border border-base-border rounded-lg">
+            Modifica
+          </button>
           <button type="button" onClick={() => onRemove(alert.id)}
             className="text-xs text-ink-muted hover:text-signal-down min-h-8 px-2 border border-base-border rounded-lg">
             Elimina
@@ -110,6 +117,7 @@ export default function PriceAlertsPage() {
   const [error, setError] = useState<string | null>(null);
   const [languageOptions, setLanguageOptions] = useState<string[]>([]);
   const [conditionOptions, setConditionOptions] = useState<string[]>([]);
+  const [editingAlert, setEditingAlert] = useState<PriceAlert | null>(null);
 
   // --- Ricerca carta per il form "nuovo allarme" (stesso pattern di /lots) ---
   const [search, setSearch] = useState("");
@@ -431,6 +439,7 @@ export default function PriceAlertsPage() {
                         card={cardsById.get(alert.blueprintId)}
                         highlighted
                         onToggle={toggleAlert}
+                        onEdit={setEditingAlert}
                         onRemove={removeAlert}
                       />
                     ))}
@@ -452,6 +461,7 @@ export default function PriceAlertsPage() {
                         alert={alert}
                         card={cardsById.get(alert.blueprintId)}
                         onToggle={toggleAlert}
+                        onEdit={setEditingAlert}
                         onRemove={removeAlert}
                       />
                     ))}
@@ -461,6 +471,14 @@ export default function PriceAlertsPage() {
             </div>
           );
         })()
+      )}
+      {editingAlert && (
+        <QuickAlertModal
+          alert={editingAlert}
+          card={cardsById.get(editingAlert.blueprintId)}
+          onClose={() => setEditingAlert(null)}
+          onSaved={(updated) => setAlerts((current) => current?.map((a) => (a.id === updated.id ? updated : a)) ?? current)}
+        />
       )}
     </main>
   );
