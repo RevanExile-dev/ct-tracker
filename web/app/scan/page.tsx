@@ -4,7 +4,7 @@ import ScannerStudio from "@/components/scanner/ScannerStudio";
 import ScannerOcrCleanup from "@/components/scanner/ScannerOcrCleanup";
 
 export const metadata: Metadata = {
-  title: "Scanner carte · CartaViva",
+  title: "Scanner carte",
   description: "Riconosci carte Pokémon TCG da fotocamera o immagine e collegale al catalogo CartaViva.",
 };
 
