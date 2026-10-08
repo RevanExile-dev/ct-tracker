@@ -129,6 +129,11 @@ const LEAF_SIZE = {
 // (scroll della pagina, vedi allowTouchScroll), un tap resta un tap (il link
 // si apre), e il click che il browser genererebbe alla fine di uno swipe
 // corto sulla stessa carta viene scartato.
+// Una pagina per facciata (4 tasche invece di 9) su telefono e tablet stretto
+// e anche su un telefono girato in orizzontale: li' l'altezza e' di poche
+// centinaia di pixel, e con due facciate da 9 tasche il libro (dimensionato
+// sull'altezza) restava largo meno di 200px e illeggibile.
+const SINGLE_PAGE_QUERY = "(max-width: 767px), (max-width: 1023px) and (orientation: portrait), (max-height: 500px) and (orientation: landscape)";
 const SWIPE_SLOP_PX = 12;
 const SWIPE_FLICK_MS = 250;
 const SWIPE_FLICK_MIN_PX = 30;
@@ -139,6 +144,17 @@ function useCardSwipeBridge(frameRef: React.RefObject<HTMLDivElement | null>, bo
     if (!frame) return;
     let gesture: { id: number; sx: number; sy: number; at: number; started: boolean } | null = null;
     let suppressClickUntil = 0;
+    // Dita appoggiate sul libro, nell'ordine di arrivo: con due dita (pinch o
+    // zoom) il primo dito aveva gia' avviato un gesto di sfoglio e muovendosi
+    // girava una pagina (riprodotto con un pinch touch vero: la pagina
+    // cambiava). Alla comparsa del secondo dito il gesto viene annullato.
+    const touches: number[] = [];
+    // True da quando compare il secondo dito fino a quando le dita si sono
+    // alzate tutte: in questo intervallo il motore non deve vedere nulla, o il
+    // secondo dito (che ricade spesso su una zona senza link) conta come un
+    // tocco sulla pagina e la gira.
+    let multiTouch = false;
+    let forwardingCancel = false;
 
     // Stesso sistema di coordinate che il motore usa per i propri gesti:
     // relativo a .stf__block, corretto per l'eventuale scala CSS.
@@ -152,11 +168,42 @@ function useCardSwipeBridge(frameRef: React.RefObject<HTMLDivElement | null>, bo
     };
 
     const onDown = (event: PointerEvent) => {
-      if (event.pointerType === "mouse" || gesture) return;
+      if (event.pointerType === "mouse") return;
+      if (!touches.includes(event.pointerId)) touches.push(event.pointerId);
+      if (touches.length > 1) {
+        if (!multiTouch) {
+          multiTouch = true;
+          if (gesture?.started) bookRef.current?.cancelTurn();
+          // Il gesto del motore (partito altrove, non su una tasca) si annulla
+          // con lo stesso evento che il browser gli manderebbe: pulisce lui
+          // piega, animazione e stato interno.
+          const block = frame.querySelector<HTMLElement>(".stf__block");
+          if (block) {
+            forwardingCancel = true;
+            block.dispatchEvent(new PointerEvent("pointercancel", { pointerId: touches[0], pointerType: event.pointerType, bubbles: true }));
+            forwardingCancel = false;
+          }
+        }
+        gesture = null;
+      }
+      if (multiTouch) {
+        event.stopPropagation();
+        return;
+      }
+      if (gesture) return;
       if (!(event.target instanceof Element) || !event.target.closest("a[href]")) return;
       gesture = { id: event.pointerId, sx: event.clientX, sy: event.clientY, at: Date.now(), started: false };
     };
+    const release = (event: PointerEvent) => {
+      const index = touches.indexOf(event.pointerId);
+      if (index >= 0) touches.splice(index, 1);
+      if (touches.length === 0) multiTouch = false;
+    };
     const onMove = (event: PointerEvent) => {
+      if (multiTouch) {
+        event.stopPropagation();
+        return;
+      }
       if (!gesture || event.pointerId !== gesture.id) return;
       const engine = bookRef.current?.pageFlip();
       if (!engine) return;
@@ -174,6 +221,12 @@ function useCardSwipeBridge(frameRef: React.RefObject<HTMLDivElement | null>, bo
       if (event.cancelable) event.preventDefault();
     };
     const onUp = (event: PointerEvent) => {
+      const wasMulti = multiTouch;
+      release(event);
+      if (wasMulti) {
+        event.stopPropagation();
+        return;
+      }
       if (!gesture || event.pointerId !== gesture.id) return;
       const current = gesture;
       gesture = null;
@@ -194,6 +247,13 @@ function useCardSwipeBridge(frameRef: React.RefObject<HTMLDivElement | null>, bo
       engine.userStop({ x: pos.x, y: pos.y }, flick);
     };
     const onCancel = (event: PointerEvent) => {
+      if (forwardingCancel) return;
+      const wasMulti = multiTouch;
+      release(event);
+      if (wasMulti) {
+        event.stopPropagation();
+        return;
+      }
       if (!gesture || event.pointerId !== gesture.id) return;
       const wasStarted = gesture.started;
       gesture = null;
@@ -230,7 +290,12 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   onPageChange?: (page: number) => void;
   returnTo: string;
 }) {
-  const [singlePage, setSinglePage] = useState(false);
+  // Letto subito al primo render (il componente monta solo dopo che la
+  // collezione e' stata caricata lato client, quindi window esiste): partire
+  // da false e correggere dopo il mount faceva interpretare `initialPage`
+  // con la densita' sbagliata e rimontava il libro a ogni apertura su telefono.
+  const [singlePage, setSinglePage] = useState(() => typeof window !== "undefined" && window.matchMedia(SINGLE_PAGE_QUERY).matches);
+  const singlePageRef = useRef(singlePage);
   const screens = useMemo(() => buildScreens(cards, singlePage ? 4 : 9), [cards, singlePage]);
   const [page, setPage] = useState(() => Math.max(0, Math.min(initialPage, screens.length - 1)));
   const [pageCount, setPageCount] = useState(screens.length);
@@ -250,9 +315,27 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   }, []);
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 767px), (max-width: 1023px) and (orientation: portrait)");
-    const update = () => setSinglePage(media.matches);
-    update();
+    const media = window.matchMedia(SINGLE_PAGE_QUERY);
+    const update = () => {
+      const next = media.matches;
+      const previous = singlePageRef.current;
+      if (next === previous) return;
+      singlePageRef.current = next;
+      // Girando il telefono (o ridimensionando la finestra oltre la soglia)
+      // cambia quante tasche ha ogni foglio, quindi lo stesso indice di
+      // pagina indicherebbe altre carte: si resta sul foglio che contiene la
+      // stessa prima carta. Il motore va ricreato (key sul libro) perche'
+      // cambia l'intero elenco di pagine; il primo render dopo la ricreazione
+      // e' istantaneo, senza animare uno sfoglio dalla copertina.
+      setPage((current) => {
+        if (current <= 0) return 0;
+        const firstCard = (current - 1) * (previous ? 4 : 9);
+        return 1 + Math.floor(firstCard / (next ? 4 : 9));
+      });
+      setHasOpened(false);
+      setSinglePage(next);
+      requestAnimationFrame(() => setHasOpened(true));
+    };
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
@@ -301,6 +384,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
             </div>
           )}
           <HTMLFlipBook
+            key={singlePage ? "single" : "spread"}
             ref={bookRef}
             className="binder-flipbook"
             width={size.width}
