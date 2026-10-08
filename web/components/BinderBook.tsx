@@ -116,6 +116,114 @@ const LEAF_SIZE = {
   spread: { width: 460, height: 644, minWidth: 240, maxWidth: 560, minHeight: 336, maxHeight: 784 },
 } as const;
 
+
+// Il motore di sfoglio rifiuta per scelta di far partire un giro quando il
+// dito tocca un link (respectInteractiveContent) - ma qui ogni tasca e' un
+// link e copre quasi tutta la pagina (su telefono non resta nemmeno un bordo
+// libero), quindi uno swipe che parte su una carta non girava mai la pagina
+// (riprodotto con eventi touch reali: pointerdown/move/up consegnati alla
+// carta, nessun cambio di pagina). Questo ponte riconosce lo swipe
+// orizzontale che parte su una tasca e lo gira al motore tramite la sua API
+// pubblica (startUserTouch/userMove/userStop), cosi' la piega segue il dito
+// come per i gesti partiti altrove. Un gesto verticale resta del browser
+// (scroll della pagina, vedi allowTouchScroll), un tap resta un tap (il link
+// si apre), e il click che il browser genererebbe alla fine di uno swipe
+// corto sulla stessa carta viene scartato.
+const SWIPE_SLOP_PX = 12;
+const SWIPE_FLICK_MS = 250;
+const SWIPE_FLICK_MIN_PX = 30;
+
+function useCardSwipeBridge(frameRef: React.RefObject<HTMLDivElement | null>, bookRef: React.RefObject<FlipBookHandle | null>) {
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    let gesture: { id: number; sx: number; sy: number; at: number; started: boolean } | null = null;
+    let suppressClickUntil = 0;
+
+    // Stesso sistema di coordinate che il motore usa per i propri gesti:
+    // relativo a .stf__block, corretto per l'eventuale scala CSS.
+    const toBookPos = (clientX: number, clientY: number) => {
+      const block = frame.querySelector<HTMLElement>(".stf__block");
+      if (!block) return null;
+      const rect = block.getBoundingClientRect();
+      const scaleX = block.offsetWidth > 0 && rect.width > 0 ? rect.width / block.offsetWidth : 1;
+      const scaleY = block.offsetHeight > 0 && rect.height > 0 ? rect.height / block.offsetHeight : 1;
+      return { x: (clientX - rect.left) / scaleX, y: (clientY - rect.top) / scaleY, height: block.offsetHeight };
+    };
+
+    const onDown = (event: PointerEvent) => {
+      if (event.pointerType === "mouse" || gesture) return;
+      if (!(event.target instanceof Element) || !event.target.closest("a[href]")) return;
+      gesture = { id: event.pointerId, sx: event.clientX, sy: event.clientY, at: Date.now(), started: false };
+    };
+    const onMove = (event: PointerEvent) => {
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const engine = bookRef.current?.pageFlip();
+      if (!engine) return;
+      if (!gesture.started) {
+        const dx = event.clientX - gesture.sx;
+        const dy = event.clientY - gesture.sy;
+        if (Math.abs(dx) < SWIPE_SLOP_PX || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+        const start = toBookPos(gesture.sx, gesture.sy);
+        if (!start) return;
+        gesture.started = true;
+        engine.startUserTouch({ x: start.x, y: start.y });
+      }
+      const pos = toBookPos(event.clientX, event.clientY);
+      if (pos) engine.userMove({ x: pos.x, y: pos.y }, true);
+      if (event.cancelable) event.preventDefault();
+    };
+    const onUp = (event: PointerEvent) => {
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const current = gesture;
+      gesture = null;
+      if (!current.started) return;
+      suppressClickUntil = Date.now() + 400;
+      const engine = bookRef.current?.pageFlip();
+      const pos = toBookPos(event.clientX, event.clientY);
+      const start = toBookPos(current.sx, current.sy);
+      if (!engine || !pos || !start) return;
+      const dx = event.clientX - current.sx;
+      const dy = Math.abs(event.clientY - current.sy);
+      const flick = Math.abs(dx) > SWIPE_FLICK_MIN_PX && dy < SWIPE_FLICK_MIN_PX * 2 && Date.now() - current.at < SWIPE_FLICK_MS;
+      if (flick) {
+        const corner = start.y >= start.height / 2 ? "bottom" : "top";
+        if (dx > 0) bookRef.current?.flipPrev(corner);
+        else bookRef.current?.flipNext(corner);
+      }
+      engine.userStop({ x: pos.x, y: pos.y }, flick);
+    };
+    const onCancel = (event: PointerEvent) => {
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const wasStarted = gesture.started;
+      gesture = null;
+      if (wasStarted) {
+        suppressClickUntil = Date.now() + 400;
+        bookRef.current?.cancelTurn();
+      }
+    };
+    const onClick = (event: MouseEvent) => {
+      if (Date.now() < suppressClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    frame.addEventListener("pointerdown", onDown, true);
+    frame.addEventListener("pointermove", onMove, true);
+    frame.addEventListener("pointerup", onUp, true);
+    frame.addEventListener("pointercancel", onCancel, true);
+    frame.addEventListener("click", onClick, true);
+    return () => {
+      frame.removeEventListener("pointerdown", onDown, true);
+      frame.removeEventListener("pointermove", onMove, true);
+      frame.removeEventListener("pointerup", onUp, true);
+      frame.removeEventListener("pointercancel", onCancel, true);
+      frame.removeEventListener("click", onClick, true);
+    };
+  }, [frameRef, bookRef]);
+}
+
 export default function BinderBook({ cards, initialPage = 0, onPageChange, returnTo }: {
   cards: CardRow[];
   initialPage?: number;
@@ -128,6 +236,8 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const [pageCount, setPageCount] = useState(screens.length);
   const [visiblePages, setVisiblePages] = useState<number[]>([0]);
   const bookRef = useRef<FlipBookHandle | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  useCardSwipeBridge(frameRef, bookRef);
   // Il primissimo render deve aprire il libro sulla pagina di partenza senza
   // animare uno sfoglio dall'inizio - dopo il mount ogni cambio di `page`
   // (bottoni, tastiera, drag) e' invece un vero sfoglio animato.
@@ -184,7 +294,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
         <div className="binder-zip binder-zip-right" aria-hidden />
         <div className="binder-zip binder-zip-bottom" aria-hidden />
         <div className="binder-zip-pull" aria-hidden />
-        <div className="binder-book-frame">
+        <div ref={frameRef} className="binder-book-frame">
           {visiblePages.length > 1 && (
             <div className="binder-center-spine" aria-hidden>
               <span className="binder-ring" /><span className="binder-ring" /><span className="binder-ring" />
@@ -224,7 +334,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
             // intero il drag - si perde la possibilita' di scorrere la
             // pagina iniziando esattamente sopra il libro, accettabile per
             // un binder pensato per essere sfogliato.
-            allowTouchScroll={false}
+            allowTouchScroll={true}
             flippingTime={620}
             lazyRadius={2}
             pageBackground="#171b21"
