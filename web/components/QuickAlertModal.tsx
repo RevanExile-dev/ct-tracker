@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useDialogA11y } from "@/lib/useDialogA11y";
+import AlertLanguagePicker from "@/components/AlertLanguagePicker";
 import type { CardRow, PriceAlert, PriceAlertFireMode, PriceAlertTargetType } from "@/lib/types";
 import { fetchConditions, fetchLanguages } from "@/lib/db";
 import { formatCents } from "@/lib/format";
@@ -50,7 +51,7 @@ export default function QuickAlertModal({
   const currentCurrency =
     (card ? (card.best_price_currency ?? card.latest_price_currency) : null) ?? alert?.baselineCurrency ?? "EUR";
 
-  const [language, setLanguage] = useState(alert?.language ?? ANY_OPTION);
+  const [languages, setLanguages] = useState<string[]>(alert?.languages ?? []);
   const [condition, setCondition] = useState(alert?.condition ?? ANY_OPTION);
   const [canSellViaHub, setCanSellViaHub] = useState<"any" | "only" | "never">(
     alert ? (alert.canSellViaHub === 1 ? "only" : alert.canSellViaHub === 0 ? "never" : "any") : "any"
@@ -116,7 +117,7 @@ export default function QuickAlertModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...(editing ? {} : { blueprintId: card?.id }),
-          language: language || null,
+          languages,
           condition: condition || null,
           canSellViaHub: canSellViaHub === "any" ? null : canSellViaHub === "only" ? 1 : 0,
           targetType,
@@ -180,17 +181,8 @@ export default function QuickAlertModal({
               <div>
                 <div className="text-xs font-mono uppercase tracking-wider text-ink-faint mb-2">Profilo</div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs text-ink-faint mb-1" htmlFor="quick-alert-language">Lingua</label>
-                    <select
-                      id="quick-alert-language"
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      className="w-full min-h-11 rounded-lg border border-base-border bg-base-surface2 px-3 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-                    >
-                      <option value={ANY_OPTION}>Qualunque lingua</option>
-                      {withCurrent(languageOptions, language).map((l) => <option key={l} value={l}>{l}</option>)}
-                    </select>
+                  <div className="sm:col-span-2">
+                    <AlertLanguagePicker idPrefix="quick-alert-language" options={languageOptions} selected={languages} onChange={setLanguages} />
                   </div>
                   <div>
                     <label className="block text-xs text-ink-faint mb-1" htmlFor="quick-alert-condition">Condizione</label>

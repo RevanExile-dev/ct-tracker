@@ -657,6 +657,7 @@ export function isValidPriceAlertCanSellViaHub(value: unknown): value is number 
 // stringa corti (lingua/condizione) - non un vincolo di prodotto, solo
 // evitare una riga arbitrariamente grande in una colonna TEXT.
 const MAX_SHORT_FIELD_LENGTH = 40;
+const MAX_ALERT_LANGUAGES = 10;
 
 function isNullableShortString(value: unknown): value is string | null {
   return value === null || (typeof value === "string" && value.length > 0 && value.length <= MAX_SHORT_FIELD_LENGTH);
@@ -668,8 +669,22 @@ export type PriceAlertFields = Omit<PriceAlertInput, "blueprintId">;
  * /api/account/alerts) e modifica (PATCH /api/account/alerts/[id]): stessi
  * campi, stesse regole, cosi' le due strade non possono divergere. */
 export function parsePriceAlertFields(v: Record<string, unknown>): { fields: PriceAlertFields } | { error: string } {
-  if (v.language !== undefined && !isNullableShortString(v.language)) {
-    return { error: `Lingua non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
+  // "languages" (lista) e' la forma attuale; "language" (singola, o null per
+  // "qualunque") resta accettata per i client scritti prima del multi-lingua.
+  let languages: string[] | undefined;
+  if (v.languages !== undefined) {
+    if (
+      !Array.isArray(v.languages) || v.languages.length > MAX_ALERT_LANGUAGES ||
+      !v.languages.every((l) => typeof l === "string" && isNullableShortString(l))
+    ) {
+      return { error: `Lingue non valide (al massimo ${MAX_ALERT_LANGUAGES} stringhe di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri; lista vuota per "qualunque")` };
+    }
+    languages = [...new Set(v.languages as string[])];
+  } else if (v.language !== undefined) {
+    if (!isNullableShortString(v.language)) {
+      return { error: `Lingua non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
+    }
+    languages = v.language === null ? [] : [v.language];
   }
   if (v.condition !== undefined && !isNullableShortString(v.condition)) {
     return { error: `Condizione non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
@@ -696,7 +711,7 @@ export function parsePriceAlertFields(v: Record<string, unknown>): { fields: Pri
   }
   return {
     fields: {
-      language: (v.language as string | null | undefined) ?? undefined,
+      languages,
       condition: (v.condition as string | null | undefined) ?? undefined,
       canSellViaHub: (v.canSellViaHub as number | null | undefined) ?? undefined,
       targetType: v.targetType,
@@ -707,8 +722,17 @@ export function parsePriceAlertFields(v: Record<string, unknown>): { fields: Pri
   };
 }
 
+/** Colonna `language` (singola) mantenuta per compatibilita' con il valutatore
+ * Python gia' in esecuzione durante un deploy: valorizzata solo quando la
+ * lista ha UNA lingua; `languages` e' la fonte di verita' (vedi
+ * web/db/schema.sql). */
+function legacyLanguage(languages: string[]): string | null {
+  return languages.length === 1 ? languages[0] : null;
+}
+
 function toPriceAlert(row: {
-  id: string | number; blueprint_id: number; language: string | null; condition: string | null;
+  id: string | number; blueprint_id: number; language: string | null; languages: string[] | null;
+  condition: string | null;
   can_sell_via_hub: number | null; target_type: PriceAlertTargetType; target_value: number;
   baseline_price_cents: number | null; baseline_currency: string | null;
   baseline_captured_at: Date | string | null; fire_mode: PriceAlertFireMode;
@@ -718,7 +742,7 @@ function toPriceAlert(row: {
   return {
     id: Number(row.id),
     blueprintId: row.blueprint_id,
-    language: row.language,
+    languages: row.languages ?? (row.language ? [row.language] : []),
     condition: row.condition,
     canSellViaHub: row.can_sell_via_hub,
     targetType: row.target_type,
@@ -744,16 +768,16 @@ function toPriceAlert(row: {
  * identico profilo. */
 async function findMatchingListingPrice(
   blueprintId: number,
-  language: string | null,
+  languages: string[],
   condition: string | null,
   canSellViaHub: number | null
 ): Promise<{ priceCents: number; currency: string | null } | null> {
   const pool = getPgPool();
   const conditions = ["blueprint_id = $1"];
   const params: unknown[] = [blueprintId];
-  if (language !== null) {
-    params.push(language);
-    conditions.push(`language = $${params.length}`);
+  if (languages.length > 0) {
+    params.push(languages);
+    conditions.push(`language = ANY($${params.length})`);
   }
   if (condition !== null) {
     params.push(condition);
@@ -790,13 +814,13 @@ export async function getPriceAlerts(userId: string): Promise<PriceAlert[]> {
  * calcolare un calo percentuale) - per "absolute_cents" e' invece
  * consentito, la soglia resta valida anche senza un baseline. */
 export async function createPriceAlert(userId: string, input: PriceAlertInput): Promise<PriceAlert> {
-  const language = input.language ?? null;
+  const languages = input.languages ?? [];
   const condition = input.condition ?? null;
   const canSellViaHub = input.canSellViaHub ?? null;
   const fireMode = input.fireMode ?? "once";
   const rearmCooldownHours = fireMode === "rearm" ? (input.rearmCooldownHours ?? null) : null;
 
-  const matching = await findMatchingListingPrice(input.blueprintId, language, condition, canSellViaHub);
+  const matching = await findMatchingListingPrice(input.blueprintId, languages, condition, canSellViaHub);
   if (input.targetType === "percent_drop" && !matching) {
     throw new PriceAlertValidationError(
       "Nessuna inserzione trovata per questo identico profilo (lingua/condizione/hub): impossibile calcolare un calo percentuale senza un prezzo di riferimento. Scegli un profilo con almeno un'inserzione attiva, oppure usa una soglia di prezzo assoluta."
@@ -807,13 +831,14 @@ export async function createPriceAlert(userId: string, input: PriceAlertInput): 
   try {
     const { rows } = await pool.query(
       `INSERT INTO price_alerts (
-         user_id, blueprint_id, language, condition, can_sell_via_hub,
+         user_id, blueprint_id, language, languages, condition, can_sell_via_hub,
          target_type, target_value, baseline_price_cents, baseline_currency,
          baseline_captured_at, fire_mode, rearm_cooldown_hours
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
-        userId, input.blueprintId, language, condition, canSellViaHub,
+        userId, input.blueprintId, legacyLanguage(languages), languages.length > 0 ? languages : null,
+        condition, canSellViaHub,
         input.targetType, input.targetValue,
         matching?.priceCents ?? null, matching?.currency ?? null,
         matching ? new Date() : null,
@@ -877,14 +902,16 @@ export async function updatePriceAlert(
   if (existingRows.length === 0) return null;
   const existing = toPriceAlert(existingRows[0]);
 
-  const language = input.language ?? null;
+  const languages = input.languages ?? [];
   const condition = input.condition ?? null;
   const canSellViaHub = input.canSellViaHub ?? null;
   const fireMode = input.fireMode ?? "once";
   const rearmCooldownHours = fireMode === "rearm" ? (input.rearmCooldownHours ?? null) : null;
 
+  const sameLanguages =
+    languages.length === existing.languages.length && languages.every((l) => existing.languages.includes(l));
   const profileChanged =
-    language !== existing.language || condition !== existing.condition ||
+    !sameLanguages || condition !== existing.condition ||
     canSellViaHub !== existing.canSellViaHub;
   const recaptureBaseline = profileChanged || input.targetType !== existing.targetType;
 
@@ -892,7 +919,7 @@ export async function updatePriceAlert(
   let baselineCurrency = existing.baselineCurrency;
   let baselineCapturedAt: Date | string | null = existing.baselineCapturedAt;
   if (recaptureBaseline) {
-    const matching = await findMatchingListingPrice(existing.blueprintId, language, condition, canSellViaHub);
+    const matching = await findMatchingListingPrice(existing.blueprintId, languages, condition, canSellViaHub);
     if (input.targetType === "percent_drop" && !matching) {
       throw new PriceAlertValidationError(
         "Nessuna inserzione trovata per questo identico profilo (lingua/condizione/hub): impossibile calcolare un calo percentuale senza un prezzo di riferimento. Scegli un profilo con almeno un'inserzione attiva, oppure usa una soglia di prezzo assoluta."
@@ -905,15 +932,16 @@ export async function updatePriceAlert(
 
   const { rows } = await pool.query(
     `UPDATE price_alerts SET
-       language = $3, condition = $4, can_sell_via_hub = $5,
-       target_type = $6, target_value = $7,
-       baseline_price_cents = $8, baseline_currency = $9, baseline_captured_at = $10,
-       fire_mode = $11, rearm_cooldown_hours = $12,
+       language = $3, languages = $4, condition = $5, can_sell_via_hub = $6,
+       target_type = $7, target_value = $8,
+       baseline_price_cents = $9, baseline_currency = $10, baseline_captured_at = $11,
+       fire_mode = $12, rearm_cooldown_hours = $13,
        state = CASE WHEN state = 'fired' THEN 'armed' ELSE state END
      WHERE user_id = $1 AND id = $2
      RETURNING *`,
     [
-      userId, id, language, condition, canSellViaHub, input.targetType, input.targetValue,
+      userId, id, legacyLanguage(languages), languages.length > 0 ? languages : null,
+      condition, canSellViaHub, input.targetType, input.targetValue,
       baselinePriceCents, baselineCurrency, baselineCapturedAt, fireMode, rearmCooldownHours,
     ]
   );
@@ -933,7 +961,7 @@ export async function updatePriceAlertTarget(
     );
   }
   return updatePriceAlert(userId, id, {
-    language: a.language, condition: a.condition, canSellViaHub: a.canSellViaHub,
+    languages: a.languages, condition: a.condition, canSellViaHub: a.canSellViaHub,
     targetType: a.targetType, targetValue, fireMode: a.fireMode,
     rearmCooldownHours: a.rearmCooldownHours,
   });

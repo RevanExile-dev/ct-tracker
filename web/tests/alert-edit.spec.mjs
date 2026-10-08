@@ -10,7 +10,7 @@ const PIKACHU = {
 
 function makeAlert(overrides = {}) {
   return {
-    id: 7, blueprintId: 200, language: 'it', condition: 'Near Mint', canSellViaHub: 1,
+    id: 7, blueprintId: 200, languages: ['it'], condition: 'Near Mint', canSellViaHub: 1,
     targetType: 'absolute_cents', targetValue: 1250, baselinePriceCents: 5000, baselineCurrency: 'EUR',
     baselineCapturedAt: '2026-10-01T00:00:00.000Z', fireMode: 'once', rearmCooldownHours: null,
     state: 'fired', firedAt: '2026-10-05T00:00:00.000Z', createdAt: '2026-10-01T00:00:00.000Z',
@@ -45,7 +45,7 @@ async function mockApi(page, alert) {
       patches.push(body);
       alert.current = {
         ...alert.current,
-        language: body.language, condition: body.condition, canSellViaHub: body.canSellViaHub,
+        languages: body.languages, condition: body.condition, canSellViaHub: body.canSellViaHub,
         targetType: body.targetType, targetValue: body.targetValue, fireMode: body.fireMode,
         rearmCooldownHours: body.rearmCooldownHours ?? null,
         state: alert.current.state === 'fired' ? 'armed' : alert.current.state,
@@ -72,7 +72,8 @@ test.describe('modifica allarme prezzo (touch)', () => {
     const dialog = page.getByRole('dialog', { name: 'Modifica allarme di prezzo' });
     await expect(dialog).toBeVisible();
     // Precompilato con i valori dell'allarme (anche prima che le opzioni arrivino).
-    await expect(dialog.getByLabel('Lingua')).toHaveValue('it');
+    await expect(dialog.getByRole('checkbox', { name: 'it' })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: 'en' })).not.toBeChecked();
     await expect(dialog.getByLabel('Condizione')).toHaveValue('Near Mint');
     await expect(dialog.getByLabel('CardTrader Zero')).toHaveValue('only');
     const soglia = dialog.getByPlaceholder('es. 10,00');
@@ -87,7 +88,7 @@ test.describe('modifica allarme prezzo (touch)', () => {
 
     await expect(dialog).toHaveCount(0);
     expect(patches).toHaveLength(1);
-    expect(patches[0]).toMatchObject({ language: 'it', condition: 'Near Mint', canSellViaHub: 1, targetType: 'absolute_cents', targetValue: 990, fireMode: 'once' });
+    expect(patches[0]).toMatchObject({ languages: ['it'], condition: 'Near Mint', canSellViaHub: 1, targetType: 'absolute_cents', targetValue: 990, fireMode: 'once' });
     // Un allarme scattato torna attivo dopo la modifica: esce dalla sezione "Scattati".
     await expect(page.getByText('Scattati (1)')).toHaveCount(0);
     await expect(page.getByText(/sotto 9,90/)).toBeVisible();
@@ -125,6 +126,38 @@ test.describe('modifica allarme prezzo (touch)', () => {
     await dialog.getByRole('button', { name: 'Annulla' }).tap();
     await expect(dialog).toHaveCount(0);
     expect(patches).toHaveLength(0);
+  });
+});
+
+test.describe('allarme con piu lingue', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('spuntando anche en l allarme accetta una o l altra e la lista lo dice', async ({ page }) => {
+    const alert = { current: makeAlert({ state: 'armed', firedAt: null }) };
+    const patches = await mockApi(page, alert);
+    await page.goto(`${BASE}/account/alerts`);
+    await page.getByRole('button', { name: /Modifica allarme Pikachu VMAX/ }).tap();
+    const dialog = page.getByRole('dialog', { name: 'Modifica allarme di prezzo' });
+    await dialog.getByRole('checkbox', { name: 'en' }).check();
+    await expect(dialog.getByText(/una qualsiasi di queste/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Salva' }).tap();
+    await expect(dialog).toHaveCount(0);
+    expect(patches[0].languages.sort()).toEqual(['en', 'it']);
+    await expect(page.getByText(/lingua it o en|lingua en o it/)).toBeVisible();
+  });
+
+  test('togliendo tutte le lingue diventa qualunque lingua', async ({ page }) => {
+    const alert = { current: makeAlert({ state: 'armed', firedAt: null }) };
+    const patches = await mockApi(page, alert);
+    await page.goto(`${BASE}/account/alerts`);
+    await page.getByRole('button', { name: /Modifica allarme Pikachu VMAX/ }).tap();
+    const dialog = page.getByRole('dialog', { name: 'Modifica allarme di prezzo' });
+    await dialog.getByRole('checkbox', { name: 'it' }).uncheck();
+    await expect(dialog.getByText('Nessuna spuntata: qualunque lingua.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Salva' }).tap();
+    await expect(dialog).toHaveCount(0);
+    expect(patches[0].languages).toEqual([]);
+    await expect(page.getByText(/^qualunque lingua, condizione/)).toBeVisible();
   });
 });
 
