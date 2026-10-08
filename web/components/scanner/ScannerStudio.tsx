@@ -54,15 +54,19 @@ type ScanItem = {
 const VISUAL_CANDIDATES = 8;
 // A pari punteggio di testo (stesso nome letto, numero illeggibile) l'immagine
 // e' l'unico modo per scegliere: si confrontano tutte le pari merito, fino a
-// questo limite, invece di tagliarle a caso alla ottava.
+// questo limite, invece di tagliarle a caso alla ottava. Si confrontano sempre
+// anche tutte le carte con il numero letto esatto (stesso numero in espansioni
+// diverse): senza, la regola "numero + immagine" non puo' dare certezza.
 const VISUAL_CANDIDATES_TIED = 32;
 
-function visualPool(candidates: ScannerCandidate[]) {
-  if (candidates.length <= VISUAL_CANDIDATES) return candidates.length;
-  const cutoff = candidates[VISUAL_CANDIDATES - 1].score;
-  let size = VISUAL_CANDIDATES;
-  while (size < Math.min(candidates.length, VISUAL_CANDIDATES_TIED) && candidates[size].score >= cutoff - 1e-9) size += 1;
-  return size;
+function visualPool(candidates: ScannerCandidate[]): Set<number> {
+  const pool = new Set<number>();
+  const cutoff = candidates[Math.min(candidates.length, VISUAL_CANDIDATES) - 1]?.score ?? 0;
+  for (let index = 0; index < candidates.length && pool.size < VISUAL_CANDIDATES_TIED; index += 1) {
+    const candidate = candidates[index];
+    if (index < VISUAL_CANDIDATES || candidate.score >= cutoff - 1e-9 || candidate.numberScore === 1) pool.add(index);
+  }
+  return pool;
 }
 
 async function withVisualScores(cropUrl: string, candidates: ScannerCandidate[]): Promise<ScannerCandidate[]> {
@@ -70,14 +74,14 @@ async function withVisualScores(cropUrl: string, candidates: ScannerCandidate[])
   try {
     const photo = await visualSignature(cropUrl);
     const pool = visualPool(candidates);
-    const head = await Promise.all(candidates.slice(0, pool).map(async (candidate) => {
+    const head = await Promise.all(candidates.filter((_, index) => pool.has(index)).map(async (candidate) => {
       const signature = await catalogSignature(candidate.id);
       return { ...candidate, visualScore: signature ? visualSimilarity(photo, signature) : null };
     }));
     // L'immagine riordina le proposte a parita' di testo; non puo' scavalcare
     // una carta su cui nome e numero letti concordano (bonus di +0.1 nel match).
     const boost = (candidate: ScannerCandidate) => candidate.score + 0.25 * Math.max(0, candidate.visualScore ?? 0);
-    return [...head.sort((a, b) => boost(b) - boost(a)), ...candidates.slice(pool)];
+    return [...head.sort((a, b) => boost(b) - boost(a)), ...candidates.filter((_, index) => !pool.has(index))];
   } catch {
     return candidates;
   }
