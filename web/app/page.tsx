@@ -401,7 +401,7 @@ function HomeContent() {
           onClick={() => setToolbarVisible((v) => !v)}
           aria-expanded={toolbarVisible}
           aria-label={toolbarVisible ? "Nascondi filtri" : "Mostra filtri"}
-          className="w-full min-h-6 flex items-center justify-center text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
+          className="w-full min-h-10 flex items-center justify-center text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
         >
           <span
             aria-hidden
