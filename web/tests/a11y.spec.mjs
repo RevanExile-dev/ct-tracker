@@ -51,3 +51,21 @@ test('modale allarme: ruolo dialog, focus intrappolato, Esc restituisce il focus
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
 });
+
+test('modale acquisto: ruolo dialog, focus intrappolato, Esc restituisce il focus', async ({ page }) => {
+  await mockSession(page);
+  await page.goto(`${BASE}/card/900202`);
+  const opener = page.getByRole('button', { name: /AGGIUNGI AL BINDER/i });
+  await opener.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Registra acquisto' });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[role=dialog]'))).toBe(true);
+  for (let i = 0; i < 25; i += 1) {
+    await page.keyboard.press(i % 2 ? 'Shift+Tab' : 'Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[role=dialog]'))).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /NEL BINDER/i })).toBeFocused();
+});
