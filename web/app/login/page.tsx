@@ -5,6 +5,12 @@ import Link from "next/link";
 import { auth, signIn } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rateLimit";
 import SiteHeader from "@/components/SiteHeader";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Accedi",
+  robots: { index: false },
+};
 
 // Nota su "next-auth/lib/actions.js" (letto direttamente, non a memoria):
 // signIn() senza redirectTo esplicito usa l'header Referer come pagina di

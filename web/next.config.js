@@ -42,8 +42,12 @@ const securityHeaders = [
   // ancora frame-ancestors dalla CSP.
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Nessuna di queste API e' usata dal sito: le si nega esplicitamente.
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), browsing-topics=()" },
+  // Lo scanner (/scan) usa la fotocamera dal vivo (getUserMedia): va
+  // consentita alla sola origine del sito (`self`), mai a iframe di terzi.
+  // Con `camera=()` il browser rifiutava la fotocamera anche dopo il
+  // permesso dell'utente (verificato con Chromium: NotAllowedError).
+  // Le altre API non sono usate dal sito: le si nega esplicitamente.
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), browsing-topics=()" },
   // 2 anni, sottodomini inclusi - il sito e' servito solo su Vercel via
   // HTTPS, non c'e' un caso d'uso HTTP da preservare.
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
