@@ -3,6 +3,27 @@ export function formatCents(cents: number | null | undefined, currency = "EUR"):
   return new Intl.NumberFormat("it-IT", { style: "currency", currency }).format(cents / 100);
 }
 
+const itNumberFormats = new Map<number, Intl.NumberFormat>();
+
+/** Numero in formato italiano (virgola decimale, punto sulle migliaia dove
+ * l'italiano le usa) con un numero fisso di decimali. Mai `toFixed`: stampa
+ * sempre il punto ("2231.8%") mentre i prezzi della stessa pagina usano la
+ * virgola ("19,82 €"). */
+export function formatNumber(value: number, decimals = 0): string {
+  let fmt = itNumberFormats.get(decimals);
+  if (!fmt) {
+    fmt = new Intl.NumberFormat("it-IT", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    itNumberFormats.set(decimals, fmt);
+  }
+  return fmt.format(value);
+}
+
+/** Percentuale in formato italiano, es. "2231,8%". Il segno (▲/▼/+) lo
+ * aggiunge il chiamante, qui si passa il valore assoluto o con segno. */
+export function formatPercent(value: number, decimals = 1): string {
+  return `${formatNumber(value, decimals)}%`;
+}
+
 export function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short" }).format(
     new Date(iso)

@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { cachedJson, LISTS_CACHE } from "@/lib/apiCache";
 import { fetchExpansions } from "@/lib/db.server";
 
 export async function GET() {
-  return NextResponse.json(await fetchExpansions());
+  return cachedJson(await fetchExpansions(), LISTS_CACHE);
 }

@@ -16,6 +16,12 @@ type Props = {
   layout?: "pills" | "list";
   footerNote?: React.ReactNode;
   closeOnSelect?: boolean;
+  /** Finche' le opzioni non sono arrivate (chiamata in corso) riserva lo
+   * spazio del bottone con un segnaposto invisibile della stessa larghezza,
+   * invece di non mostrare nulla: i filtri che comparivano uno alla volta
+   * facevano andare a capo la riga e saltare tutta la pagina sotto (tablet:
+   * spostamento del layout 0,3). */
+  reserveSpace?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
@@ -40,7 +46,7 @@ type Props = {
  */
 export default function FilterDropdown({
   label, options, selected, onToggle, renderOption, searchable = false,
-  getSearchText, layout = "pills", footerNote, closeOnSelect = false,
+  getSearchText, layout = "pills", footerNote, closeOnSelect = false, reserveSpace = false,
   open: controlledOpen, onOpenChange,
 }: Props) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -230,7 +236,17 @@ export default function FilterDropdown({
       )
     : options;
 
-  if (options.length === 0) return null;
+  if (options.length === 0) {
+    if (!reserveSpace) return null;
+    return (
+      <div aria-hidden className="invisible max-w-full">
+        <span className="min-h-11 flex items-center gap-2 text-xs font-mono uppercase tracking-wider px-2 -mx-2">
+          <span>▸</span>
+          <span>{label}</span>
+        </span>
+      </div>
+    );
+  }
 
   function selectOption(option: string) {
     onToggle(option);

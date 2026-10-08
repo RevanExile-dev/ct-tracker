@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CardRow } from "@/lib/db";
-import { formatCents, languageFlag, priceDeltaPct } from "@/lib/format";
+import { formatCents, formatPercent, languageFlag, priceDeltaPct } from "@/lib/format";
 
 type CardTrend = { avgCents: number; days: number };
 
@@ -150,7 +150,7 @@ export default function BinderTable({
                       className={delta >= 0 ? "text-signal-up" : "text-signal-down"}
                       title={`Media ${trend!.days}gg: ${formatCents(trend!.avgCents, priceCurrency ?? "EUR")}`}
                     >
-                      {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
+                      {delta >= 0 ? "▲" : "▼"} {formatPercent(Math.abs(delta), 1)}
                     </span>
                   ) : (
                     <span className="text-ink-faint">—</span>

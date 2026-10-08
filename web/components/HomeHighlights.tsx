@@ -10,7 +10,7 @@
 // per la scoperta, non un'altra vista permanente sopra il catalogo filtrato.
 
 import { useEffect, useState } from "react";
-import { CardRow, fetchCards } from "@/lib/db";
+import { CardRow, MIN_MOVER_LISTINGS, fetchCards } from "@/lib/db";
 import CardTile from "./CardTile";
 
 const ROW_LIMIT = 10;
@@ -86,7 +86,7 @@ export default function HomeHighlights({
   returnTo: string;
 }) {
   const [rows, setRows] = useState<Row[]>([
-    { key: "trending", title: "In tendenza", subtitle: "Maggior rialzo di prezzo giorno su giorno", cards: null },
+    { key: "trending", title: "In tendenza", subtitle: `Maggior rialzo di prezzo giorno su giorno, su carte con almeno ${MIN_MOVER_LISTINGS} inserzioni`, cards: null },
     { key: "it-premium", title: "Full art italiane", subtitle: "Illustration/secret/alternate art, prezzo piu' alto prima", cards: null },
     { key: "new-premium", title: "Ultime uscite, full art", subtitle: "Dalle espansioni piu' recenti tracciate", cards: null },
   ]);

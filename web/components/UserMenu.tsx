@@ -84,7 +84,7 @@ export default function UserMenu() {
     return (
       <Link
         href="/login"
-        className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+        className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
       >
         Accedi
       </Link>
