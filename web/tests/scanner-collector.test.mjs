@@ -319,8 +319,11 @@ test("l'immagine smentisce un vicino letto per caso, ma non una carta su cui nom
   const neighbour = { ...card(2, 'Serperior', '003/086', 'blk'), score: 0.56, nameScore: 0.42, numberScore: 0.68, visualScore: 0.53 };
   assert.equal(catalog.assessScan([top, neighbour], { complete: true }), 'certain');
   assert.equal(catalog.assessScan([top, { ...neighbour, visualScore: 0.8 }], { complete: true }), 'probable');
-  // Con nome e numero entrambi compatibili il vicino resta un'alternativa vera.
-  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.6 }], { complete: true }), 'probable');
+  // Con il nome letto pienamente e un numero compatibile il vicino resta
+  // un'alternativa vera, per quanto diversa sia l'immagine.
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.8 }], { complete: true }), 'probable');
+  // Mezzo nome e un numero simile, invece, si' (Vibrava FFI contro Cacnea 5/111).
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.5 }], { complete: true }), 'certain');
 });
 
 test('numero + immagine sulle foto: somiglianza media ma molto sopra tutte le altre', () => {
@@ -347,4 +350,31 @@ test('suffissi ex/V non letti non contano contro il nome', () => {
   const ranked = catalog.rankScannerCandidates({ name: 'Glimmora', number: '123/197' }, entries, Infinity);
   assert.equal(ranked[0].id, 1);
   assert.equal(ranked[0].nameScore, 1);
+});
+
+test('una cifra letta male non tiene seconda la carta che nome e immagine indicano', () => {
+  // Caso reale (Cloyster 24/122 in foto): "20/122" letto, Slowbro 20/122 primo
+  // per il testo; Cloyster ha il nome letto e l'illustrazione identica.
+  const slowbro = { ...card(1, 'Slowbro', '20/122', 'bkp'), score: 0.61, nameScore: 0.25, numberScore: 0.9, visualScore: 0.62 };
+  const cloyster = { ...card(2, 'Cloyster', '24/122', 'bkp'), score: 0.45, nameScore: 1, numberScore: 0, visualScore: 0.96 };
+  const other = { ...card(3, 'Cloyster', '020/083', 'gen'), score: 0.45, nameScore: 1, numberScore: 0, visualScore: 0.57 };
+  const resolved = catalog.resolveScan([slowbro, cloyster, other], { complete: true });
+  assert.equal(resolved.verdict, 'certain');
+  assert.equal(resolved.candidates[0].id, 2);
+  // Due varianti identiche restano da confermare anche scambiandole.
+  const twin = { ...cloyster, id: 4, visualScore: 0.95 };
+  assert.equal(catalog.resolveScan([slowbro, cloyster, twin], { complete: true }).verdict, 'probable');
+});
+
+test('numero letto quasi per intero + illustrazione quasi identica (allenatore italiano)', () => {
+  // Caso reale (Judge LOT 209/214 italiana, "Arbitro"): numero "209214".
+  const top = { ...card(1, 'Judge', 'Ultra Rare | 209/214', 'lot'), score: 0.48, nameScore: 0.14, numberScore: 0.75, visualScore: 0.94 };
+  const other = { ...card(2, 'Treecko', '020/214', 'lot'), score: 0.54, nameScore: 0.29, numberScore: 0.75, visualScore: 0.13 };
+  const all = { complete: true };
+  assert.equal(catalog.assessScan([top, other], all), 'certain');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.7 }, other], all), 'probable');
+  assert.equal(catalog.assessScan([top, { ...other, visualScore: 0.7 }], all), 'probable');
+  // Un'altra carta con un numero compatibile non confrontata: niente certezza.
+  assert.equal(catalog.assessScan([top, other, { ...other, id: 3, visualScore: null }], all), 'probable');
+  assert.equal(catalog.assessScan([top, other]), 'probable');
 });

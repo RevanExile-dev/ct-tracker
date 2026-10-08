@@ -7,7 +7,6 @@ import { formatCents, languageFlag } from "@/lib/format";
 import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
 import { assessQuality, cropRegion, detectCardRegions, expandRegionForOcr } from "@/lib/scanner/image";
 import {
-  assessScan,
   catalogNameChecker,
   catalogNumberKeys,
   entryNumberLabel,
@@ -15,6 +14,7 @@ import {
   loadScannerCatalog,
   orderByLanguage,
   rankScannerCandidates,
+  resolveScan,
 } from "@/lib/scanner/catalog";
 import { extractAllNumberKeys } from "@/lib/scanner/collector-number";
 import { catalogSignature, visualSignature, visualSimilarity } from "@/lib/scanner/visual";
@@ -55,7 +55,7 @@ const VISUAL_CANDIDATES = 8;
 // A pari punteggio di testo (stesso nome letto, numero illeggibile) l'immagine
 // e' l'unico modo per scegliere: si confrontano tutte le pari merito, fino a
 // questo limite, invece di tagliarle a caso alla ottava.
-const VISUAL_CANDIDATES_TIED = 24;
+const VISUAL_CANDIDATES_TIED = 32;
 
 function visualPool(candidates: ScannerCandidate[]) {
   if (candidates.length <= VISUAL_CANDIDATES) return candidates.length;
@@ -254,8 +254,9 @@ export default function ScannerStudio() {
             // o inglese (e viceversa non si esclude nulla): con stesso nome e
             // numero, la versione giapponese non deve togliere certezza.
             const ranked = orderByLanguage(rankScannerCandidates(evidence, catalog, Number.POSITIVE_INFINITY), language.code);
-            const candidates = await withVisualScores(item.cropUrl, ranked);
-            let verdict = assessScan(candidates, { complete: true, language: language.code });
+            const resolved = resolveScan(await withVisualScores(item.cropUrl, ranked), { complete: true, language: language.code });
+            const candidates = resolved.candidates;
+            let verdict = resolved.verdict;
             const top = candidates[0];
 
             const hydrated = verdict === "certain" && top ? await hydrateScannerCard(top.id, language.code) : null;

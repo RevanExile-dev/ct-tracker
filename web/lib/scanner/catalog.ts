@@ -530,10 +530,11 @@ export function assessScan(
   // Misurato sulle foto di prova: la carta giusta resta sopra 0.4, le carte
   // diverse con lo stesso nome o numero scendono di 0.3 e oltre.
   const topVisual = visual(top);
-  // Non vale per una carta su cui nome e numero letti concordano: li' sono due
-  // indizi contro uno e la carta resta da confermare.
+  // Non vale per una carta su cui nome e numero letti concordano (uno dei due
+  // pienamente): li' sono due indizi contro uno e la carta resta da confermare.
   const refuted = (candidate: ScannerCandidate) => {
-    if (candidate.nameScore >= 0.5 && candidate.numberScore >= 0.68) return false;
+    if (isStrong(candidate) || (candidate.numberScore === 1 && candidate.nameScore >= 0.5)) return false;
+    if (candidate.nameScore >= STRONG_NAME && candidate.numberScore >= 0.68) return false;
     const candidateVisual = visual(candidate);
     return topVisual !== null && topVisual >= 0.4 && candidateVisual !== null && topVisual - candidateVisual >= 0.3;
   };
@@ -581,6 +582,25 @@ export function assessScan(
     clearlyMostSimilar &&
     sameNumber.every((candidate) => visual(candidate) !== null) &&
     !betterNamedNeighbour
+  ) {
+    return "certain";
+  }
+
+  // Numero letto quasi per intero (una cifra sporca, la barra letta come
+  // cifra: "209214") + illustrazione quasi identica e lontanissima da tutte le
+  // altre proposte. Caso tipico: allenatori italiani, dove il nome tradotto
+  // ("Arbitro" per Judge) non si confronta con il catalogo inglese. Soglie
+  // piu' alte che con il numero esatto: ogni carta con un numero compatibile
+  // deve essere stata confrontata con la foto.
+  if (
+    options.complete &&
+    top.numberScore >= 0.75 &&
+    topVisual !== null &&
+    topVisual >= 0.75 &&
+    visualMargin(0.3) &&
+    candidates.filter((candidate) => candidate.numberScore >= 0.68).every((candidate) => visual(candidate) !== null) &&
+    !betterNamedNeighbour &&
+    !others.some((candidate) => candidate.numberScore > top.numberScore && counts(candidate))
   ) {
     return "certain";
   }
@@ -635,6 +655,29 @@ export function assessScan(
   if (top.nameScore >= 0.5 || top.numberScore >= 0.68) return "probable";
   return "none";
 }
+
+/**
+ * L'ordine delle proposte viene dal testo letto, con un piccolo aiuto
+ * dall'immagine. Quando una cifra e' letta male (24/122 come "20/122") la carta
+ * giusta resta seconda pur avendo nome e illustrazione dalla sua: se fra le
+ * prime proposte ce n'e' UNA SOLA che sarebbe certa messa in cima (le regole
+ * di assessScan chiedono che domini tutte le altre), e' quella.
+ */
+export function resolveScan(
+  candidates: ScannerCandidate[],
+  options: { complete?: boolean; language?: string | null } = {},
+): { candidates: ScannerCandidate[]; verdict: ScanVerdict } {
+  const verdict = assessScan(candidates, options);
+  if (verdict === "certain" || candidates.length < 2) return { candidates, verdict };
+  const promoted: ScannerCandidate[][] = [];
+  for (let index = 1; index < Math.min(candidates.length, RESOLVE_CANDIDATES); index += 1) {
+    const reordered = [candidates[index], ...candidates.slice(0, index), ...candidates.slice(index + 1)];
+    if (assessScan(reordered, options) === "certain") promoted.push(reordered);
+  }
+  return promoted.length === 1 ? { candidates: promoted[0], verdict: "certain" } : { candidates, verdict };
+}
+
+const RESOLVE_CANDIDATES = 6;
 
 // Somiglianza minima tra foto e immagine di catalogo per fidarsi di numero +
 // sigla senza il nome. Da calibrare sulle foto di prova.
