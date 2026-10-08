@@ -502,6 +502,7 @@ export default function ScannerStudio() {
             </button>
             <input
               ref={inputRef}
+              aria-label="Scegli una foto da analizzare"
               className="sr-only"
               type="file"
               accept="image/*"
@@ -564,7 +565,7 @@ export default function ScannerStudio() {
                 <p className="text-[11px] text-ink-faint leading-relaxed mt-2 max-w-xl">
                   Il riquadro verde è l&apos;area che viene ritagliata e analizzata: se non segue bene i bordi della carta, il risultato sotto sarà impreciso — riprova con la carta più dritta, più a fuoco e più vicina all&apos;obiettivo.
                 </p>
-                <input ref={inputRef} className="sr-only" type="file" accept="image/*" onChange={(event) => void acceptFile(event.target.files?.[0])} />
+                <input ref={inputRef} aria-label="Scegli una foto da analizzare" className="sr-only" type="file" accept="image/*" onChange={(event) => void acceptFile(event.target.files?.[0])} />
               </div>
 
               <aside className="rounded-[22px] border border-base-border bg-black/15 backdrop-blur p-5 sm:p-6 xl:sticky xl:top-5">

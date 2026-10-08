@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 import type { CardRow } from "@/lib/types";
 import type { Lot, LotProvenance } from "@/lib/types";
 
@@ -47,6 +48,7 @@ export default function LogPurchaseModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -111,7 +113,7 @@ export default function LogPurchaseModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-card border border-base-border bg-base-surface shadow-card p-5 max-h-[90vh] overflow-y-auto">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Registra acquisto" tabIndex={-1} className="relative w-full max-w-md rounded-card border border-base-border bg-base-surface shadow-card p-5 max-h-[90vh] overflow-y-auto">
         {done ? (
           <>
             <div className="text-ink-primary font-medium">★ Salvato</div>
