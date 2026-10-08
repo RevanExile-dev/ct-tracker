@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import type { BinderValuePoint } from "@/lib/types";
-import { formatCents, formatDate, formatDateLong } from "@/lib/format";
+import { formatCents, formatDate, formatDateLong, formatPercent } from "@/lib/format";
 import { areaPath, monotonePath, xForDate, yForValue } from "@/lib/chartGeometry";
 import { collectionHistoryCsv, historyInRange, normalizeCollectionHistory } from "@/lib/collectionHistory";
 
@@ -147,7 +147,7 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
           {comparable && baseline && <div className="sm:text-right">
             <p className={`font-mono text-lg ${delta >= 0 ? "text-signal-up" : "text-signal-down"}`}>
               {delta >= 0 ? "+" : ""}{formatCents(delta, active.currency ?? "EUR")}
-              {deltaPct !== null && <span className="text-xs ml-2">({deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(2)}%)</span>}
+              {deltaPct !== null && <span className="text-xs ml-2">({deltaPct >= 0 ? "+" : ""}{formatPercent(deltaPct, 2)})</span>}
             </p>
             <p className="text-xs text-ink-muted">Variazione dal {formatDate(baseline.captured_at)}</p>
             <button type="button" onClick={() => setBaselineDate(baselineDate ? null : active.captured_at)}

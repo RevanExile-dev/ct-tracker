@@ -4,7 +4,7 @@ import { expandRarityFilters, normalizeRarity } from "./rarity";
 import { compareExpansions } from "./expansions";
 import topArtists from "@/config/top_artists.json";
 import {
-  MOVERS_PAGE_SIZE,
+  MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE,
   type ArtistOption, type CardRow, type CardsFilterOpts, type CardsSummary, type CardDetail, type ExpansionInfo,
   type Listing, type MoversPageOpts, type MoversPageResult, type PricePoint, type ScannerCatalogRow,
   type SortOption,
@@ -196,6 +196,12 @@ export async function fetchCards(opts: CardsFilterOpts & {
   const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p);
   const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
 
+  // Una variazione calcolata su meno di MIN_MOVER_LISTINGS inserzioni IT NM
+  // Zero e' rumore (vedi types.ts): per "rialzi/ribassi prima" quelle carte
+  // restano nell'elenco ma vanno in fondo, come quelle senza prezzo precedente.
+  // COALESCE: conteggio assente (carta mai ripassata dal sync) = non affidabile.
+  const lowListings = `COALESCE(lp.it_nm_zero_listings_count, 0) < ${MIN_MOVER_LISTINGS}`;
+
   let orderBy = "b.expansion_id DESC, b.name ASC";
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
   if (opts.sortBy === "price_desc") orderBy = `${priceExpr} IS NULL, ${priceExpr} DESC`;
@@ -212,13 +218,13 @@ export async function fetchCards(opts: CardsFilterOpts & {
     // comunque valutata da Postgres su OGNI riga del risultato, quindi va
     // resa sicura a prescindere da dove finisce nell'ordinamento.
     orderBy = `
-      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 OR ${lowListings} THEN 1 ELSE 0 END,
       (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / NULLIF(${prevPriceExpr}, 0) ASC
     `;
   }
   if (opts.sortBy === "rise_first") {
     orderBy = `
-      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 OR ${lowListings} THEN 1 ELSE 0 END,
       (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / NULLIF(${prevPriceExpr}, 0) DESC
     `;
   }
@@ -298,6 +304,7 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     "lp.it_nm_zero_price_cents != 0",
     "lp.prev_it_nm_zero_price_cents IS NOT NULL",
     "lp.prev_it_nm_zero_price_cents != 0",
+    `lp.it_nm_zero_listings_count >= ${MIN_MOVER_LISTINGS}`,
     opts.direction === "rise"
       ? "lp.it_nm_zero_price_cents > lp.prev_it_nm_zero_price_cents"
       : "lp.it_nm_zero_price_cents < lp.prev_it_nm_zero_price_cents",

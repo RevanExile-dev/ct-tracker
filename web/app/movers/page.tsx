@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow,
+  MIN_MOVER_LISTINGS,
   MOVERS_PAGE_SIZE,
   MoversPageResult,
   MoversSort,
@@ -300,11 +301,13 @@ function MoversContent() {
       <h2 className="font-display text-2xl font-bold text-ink-primary">Carte in movimento</h2>
       <p className="text-ink-muted mt-1 max-w-xl">
         Le variazioni di prezzo più marcate registrate nell&apos;ultimo sync rispetto al
-        precedente, sulla serie italiano · Near Mint · CardTrader Zero.
+        precedente, sulla serie italiano · Near Mint · CardTrader Zero. Contano solo le carte con
+        almeno {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che cambia prezzo.
       </p>
 
       <div className="filter-toolbar mt-5 flex flex-row flex-wrap items-center gap-x-5 gap-y-3 rounded-card border border-base-border bg-base-surface/55 px-4 py-3">
         <FilterDropdown
+          reserveSpace
           label="Rarità"
           options={rarities}
           selected={selectedRarities}
