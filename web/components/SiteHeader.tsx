@@ -64,15 +64,20 @@ export default function SiteHeader({
                     {" "}carte
                   </span>
                 ) : (
-                  "carte"
+                  <>
+                    {/* Segnaposto invisibile con la larghezza del numero vero: senza,
+                        il testo si allunga quando arriva il totale e puo' andare a
+                        capo, spostando tutta la pagina sotto. */}
+                    <span aria-hidden className="invisible">00.000</span>{" "}carte
+                  </>
                 )}{" "}
                 Pokémon TCG tracciate — dati aggiornati automaticamente ogni giorno da CardTrader.
               </p>
-              {lastSync && (
-                <p className="text-xs font-mono text-ink-faint mt-3">
-                  Ultimo aggiornamento prezzi: {formatDateLong(lastSync)}
-                </p>
-              )}
+              {/* Riga sempre presente (min-h-4): la data arriva da una chiamata
+                  e, aggiunta dopo, spingerebbe in basso filtri e carte. */}
+              <p className="text-xs font-mono text-ink-faint mt-3 min-h-4">
+                {lastSync ? `Ultimo aggiornamento prezzi: ${formatDateLong(lastSync)}` : null}
+              </p>
             </>
           )}
         </div>
@@ -81,7 +86,7 @@ export default function SiteHeader({
           {!onScanner && (
             <Link
               href="/scan"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 hover:bg-accent/15 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 hover:bg-accent/15 transition-colors active:scale-95"
             >
               ✦ Scanner
             </Link>
@@ -89,15 +94,16 @@ export default function SiteHeader({
           {!onMovers && (
             <Link
               href="/movers"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              aria-label="Carte in movimento"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
-              📈 Carte in movimento
+              📈{" "}<span className="sm:hidden">Movimenti</span><span className="hidden sm:inline">Carte in movimento</span>
             </Link>
           )}
           {!onBinder && (
             <Link
               href="/binder?view=collection"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               📚 Binder
             </Link>
@@ -105,7 +111,7 @@ export default function SiteHeader({
           {!onWishlist && (
             <Link
               href="/wishlist"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               ♡ Desideri
             </Link>
@@ -113,7 +119,7 @@ export default function SiteHeader({
           {!onLots && (
             <Link
               href="/lots"
-              className="btn-lift whitespace-nowrap text-sm px-4 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
               🧾 Lotti
             </Link>

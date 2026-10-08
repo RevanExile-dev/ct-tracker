@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArtistOption, ExpansionInfo, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
-import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
+import { formatDateLong, formatNumber, languageFlag, languageLabel } from "@/lib/format";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
 import ConditionBadge from "./ConditionBadge";
 import FilterDropdown from "./FilterDropdown";
@@ -108,7 +108,7 @@ export default function Toolbar({
     <div className="flex flex-col gap-3">
       {resultCount !== undefined && (
         <div aria-live="polite" className="text-xs font-mono text-ink-faint">
-          {resultCount} {resultCount === 1 ? "carta trovata" : "carte trovate"}
+          {formatNumber(resultCount)} {resultCount === 1 ? "carta trovata" : "carte trovate"}
         </div>
       )}
       {/* Telefono: controlli impilati a larghezza piena. Tablet md: espansione
@@ -120,12 +120,13 @@ export default function Toolbar({
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Cerca per nome o numero (es. 12/98)…"
           aria-label="Cerca una carta per nome o numero"
-          className="lg:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
+          className="lg:flex-1 w-full min-h-11 bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
         />
 
         <div className="min-w-0 w-full grid grid-cols-1 md:grid-cols-2 gap-3 lg:w-auto lg:flex lg:flex-row">
           <div className="min-w-0 w-full lg:w-auto flex items-center gap-1">
             <FilterDropdown
+              reserveSpace
               label={selectedExpansion ? `${selectedExpansion.name} (${selectedExpansion.cardCount})` : "Tutte le espansioni"}
               options={expansions.map((e) => e.code)}
               selected={expansionCode ? [expansionCode] : []}
@@ -187,6 +188,7 @@ export default function Toolbar({
 
       <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
         <FilterDropdown
+          reserveSpace
           label="Rarità"
           options={rarities}
           selected={selectedRarities}
@@ -197,6 +199,7 @@ export default function Toolbar({
         {/* Pochi artisti scelti (non tutti gli illustratori): lista corta con
             ricerca, il numero di carte accanto al nome. */}
         <FilterDropdown
+          reserveSpace
           label="Artista"
           options={artists.map((a) => a.name)}
           selected={selectedArtists}
@@ -213,6 +216,7 @@ export default function Toolbar({
           onOpenChange={(open) => setActiveFilter(open ? "artist" : null)}
         />
         <FilterDropdown
+          reserveSpace
           label="Lingua"
           options={languages}
           selected={selectedLanguages}
@@ -222,6 +226,7 @@ export default function Toolbar({
           onOpenChange={(open) => setActiveFilter(open ? "language" : null)}
         />
         <FilterDropdown
+          reserveSpace
           label="Condizione"
           options={conditions}
           selected={selectedConditions}

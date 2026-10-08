@@ -49,7 +49,7 @@ export default function FilterPresetControls({ scope, current, onApply }: {
 
   return (
     <div className="flex min-h-11 items-center gap-2 flex-wrap" aria-label="Preset filtri">
-      {!ready && <span className="h-9 w-36 rounded-full bg-base-surface2 skeleton" aria-hidden />}
+      {!ready && <span className="h-11 w-[10.1rem] rounded-full bg-base-surface2 skeleton" aria-hidden />}
       {ready && saved ? (
         <>
           <button

@@ -83,6 +83,16 @@ export type MoversSort = "pct" | "abs";
 
 export const MOVERS_PAGE_SIZE = 12;
 
+/** Inserzioni italiane Near Mint + CardTrader Zero minime perche' la
+ * variazione di una carta conti come "movimento" (pagina Carte in movimento
+ * e righe "In tendenza"/rialzi-ribassi in cima al catalogo). Il prezzo e' il
+ * minimo tra quelle inserzioni: con 1-2 sole offerte un singolo venditore
+ * che esce o entra fa saltare il prezzo di 10-20 volte (es. Hard Charm
+ * 0,85 € -> 19,82 € con una sola inserzione: +2232%) e riempie la classifica
+ * di rumore. Soglia scelta sui dati reali: con 5 restano ~2.000 rialzi e
+ * ~2.700 ribassi e i primi sono variazioni plausibili. */
+export const MIN_MOVER_LISTINGS = 5;
+
 export type MoversPageOpts = {
   direction: MoversDirection;
   rarities?: string[];
