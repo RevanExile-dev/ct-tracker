@@ -530,10 +530,9 @@ export function assessScan(
   // Misurato sulle foto di prova: la carta giusta resta sopra 0.4, le carte
   // diverse con lo stesso nome o numero scendono di 0.3 e oltre.
   const topVisual = visual(top);
-  // Non vale per una carta su cui nome e numero letti concordano (uno dei due
-  // pienamente): li' sono due indizi contro uno e la carta resta da confermare.
+  // Non vale per una carta con il nome letto pienamente e un numero
+  // compatibile: li' sono due indizi contro uno e la carta resta da confermare.
   const refuted = (candidate: ScannerCandidate) => {
-    if (isStrong(candidate) || (candidate.numberScore === 1 && candidate.nameScore >= 0.5)) return false;
     if (candidate.nameScore >= STRONG_NAME && candidate.numberScore >= 0.68) return false;
     const candidateVisual = visual(candidate);
     return topVisual !== null && topVisual >= 0.4 && candidateVisual !== null && topVisual - candidateVisual >= 0.3;
@@ -542,8 +541,11 @@ export function assessScan(
 
   // Un'altra carta con un nome che combacia nettamente meglio e un numero
   // "vicino" (una cifra di differenza) e' il segno di un numero letto male.
+  // Il nome deve essere letto almeno a meta': sotto sono lettere sparse, come
+  // sulle carte italiane dove il nome tradotto ("Escursionista") somiglia per
+  // caso a un 30-40% di un nome inglese del catalogo.
   const betterNamedNeighbour = others.some(
-    (candidate) => candidate.nameScore >= top.nameScore + 0.1 && candidate.numberScore >= 0.5 && counts(candidate),
+    (candidate) => candidate.nameScore >= 0.5 && candidate.nameScore >= top.nameScore + 0.1 && candidate.numberScore >= 0.5 && counts(candidate),
   );
 
   const exactNumberAndName = top.numberScore === 1 && top.nameScore >= 0.5;

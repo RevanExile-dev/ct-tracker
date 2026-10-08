@@ -11,10 +11,12 @@ import {
   catalogNumberKeys,
   entryNumberLabel,
   hydrateScannerCard,
+  languageExcludes,
   loadScannerCatalog,
   orderByLanguage,
   rankScannerCandidates,
   resolveScan,
+  STRONG_NAME,
 } from "@/lib/scanner/catalog";
 import { extractAllNumberKeys } from "@/lib/scanner/collector-number";
 import { catalogSignature, visualSignature, visualSimilarity } from "@/lib/scanner/visual";
@@ -69,22 +71,44 @@ function visualPool(candidates: ScannerCandidate[]): Set<number> {
   return pool;
 }
 
-async function withVisualScores(cropUrl: string, candidates: ScannerCandidate[]): Promise<ScannerCandidate[]> {
+// Calcola la somiglianza con la foto per le proposte scelte (quelle gia'
+// confrontate restano com'erano) e le riordina: prima le confrontate, poi le
+// altre nell'ordine del testo.
+async function withVisualScores(
+  cropUrl: string,
+  candidates: ScannerCandidate[],
+  picked: Set<number> = visualPool(candidates),
+): Promise<ScannerCandidate[]> {
   if (!candidates.length) return candidates;
   try {
     const photo = await visualSignature(cropUrl);
-    const pool = visualPool(candidates);
-    const head = await Promise.all(candidates.filter((_, index) => pool.has(index)).map(async (candidate) => {
+    const scored = await Promise.all(candidates.map(async (candidate, index) => {
+      if (candidate.visualScore !== undefined || !picked.has(index)) return candidate;
       const signature = await catalogSignature(candidate.id);
       return { ...candidate, visualScore: signature ? visualSimilarity(photo, signature) : null };
     }));
     // L'immagine riordina le proposte a parita' di testo; non puo' scavalcare
     // una carta su cui nome e numero letti concordano (bonus di +0.1 nel match).
     const boost = (candidate: ScannerCandidate) => candidate.score + 0.25 * Math.max(0, candidate.visualScore ?? 0);
-    return [...head.sort((a, b) => boost(b) - boost(a)), ...candidates.filter((_, index) => !pool.has(index))];
+    const compared = scored.filter((candidate) => candidate.visualScore !== undefined);
+    return [...compared.sort((a, b) => boost(b) - boost(a)), ...scored.filter((candidate) => candidate.visualScore === undefined)];
   } catch {
     return candidates;
   }
+}
+
+// Secondo giro, solo se serve: con il nome letto e il numero no, la certezza
+// per immagine richiede di aver confrontato TUTTE le carte con quel nome
+// (Greninja: 36 versioni non giapponesi). Si confrontano anche le restanti,
+// fino a questo limite; oltre (Pikachu: 233) si chiede all'utente.
+const VISUAL_SAME_NAME_LIMIT = 48;
+
+function uncomparedSameName(candidates: ScannerCandidate[], language: string | null): Set<number> | null {
+  const missing = new Set<number>();
+  candidates.forEach((candidate, index) => {
+    if (candidate.visualScore === undefined && candidate.nameScore >= STRONG_NAME && !languageExcludes(candidate, language)) missing.add(index);
+  });
+  return missing.size > 0 && missing.size <= VISUAL_SAME_NAME_LIMIT ? missing : null;
 }
 
 function itemStatusLabel(item: ScanItem) {
@@ -258,7 +282,10 @@ export default function ScannerStudio() {
             // o inglese (e viceversa non si esclude nulla): con stesso nome e
             // numero, la versione giapponese non deve togliere certezza.
             const ranked = orderByLanguage(rankScannerCandidates(evidence, catalog, Number.POSITIVE_INFINITY), language.code);
-            const resolved = resolveScan(await withVisualScores(item.cropUrl, ranked), { complete: true, language: language.code });
+            const options = { complete: true, language: language.code };
+            let resolved = resolveScan(await withVisualScores(item.cropUrl, ranked), options);
+            const missing = resolved.verdict === "certain" ? null : uncomparedSameName(resolved.candidates, language.code);
+            if (missing) resolved = resolveScan(await withVisualScores(item.cropUrl, resolved.candidates, missing), options);
             const candidates = resolved.candidates;
             let verdict = resolved.verdict;
             const top = candidates[0];

@@ -318,12 +318,16 @@ test("l'immagine smentisce un vicino letto per caso, ma non una carta su cui nom
   const top = { ...card(1, 'Servine', '002/086', 'blk'), score: 0.55, nameScore: 0, numberScore: 1, visualScore: 0.98 };
   const neighbour = { ...card(2, 'Serperior', '003/086', 'blk'), score: 0.56, nameScore: 0.42, numberScore: 0.68, visualScore: 0.53 };
   assert.equal(catalog.assessScan([top, neighbour], { complete: true }), 'certain');
-  assert.equal(catalog.assessScan([top, { ...neighbour, visualScore: 0.8 }], { complete: true }), 'probable');
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.55, visualScore: 0.8 }], { complete: true }), 'probable');
+  // Lettere sparse (meno di mezzo nome, tipico dei nomi tradotti) non sono un vicino.
+  assert.equal(catalog.assessScan([top, { ...neighbour, visualScore: 0.8 }], { complete: true }), 'certain');
   // Con il nome letto pienamente e un numero compatibile il vicino resta
   // un'alternativa vera, per quanto diversa sia l'immagine.
   assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.8 }], { complete: true }), 'probable');
-  // Mezzo nome e un numero simile, invece, si' (Vibrava FFI contro Cacnea 5/111).
+  // Mezzo nome e un numero simile, invece, si' (Vibrava FFI contro Cacnea 5/111),
+  // anche con il numero esatto se il nome e' letto solo a meta'.
   assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.5 }], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.5, numberScore: 1, score: 0.7 }], { complete: true }), 'certain');
 });
 
 test('numero + immagine sulle foto: somiglianza media ma molto sopra tutte le altre', () => {
