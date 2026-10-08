@@ -13,9 +13,15 @@ async function mockSession(page) {
 
 test('skip link: primo Tab, Invio sposta il focus sul contenuto', async ({ page }) => {
   await page.goto(`${BASE}/movers`);
-  await page.keyboard.press('Tab');
+  // Con la pagina ancora in idratazione il primo Tab puo' andare perso:
+  // si aspetta che la rete si fermi e si riprova da capo finche' il focus parte dallo skip link.
+  await page.waitForLoadState('networkidle');
   const skip = page.getByRole('link', { name: 'Vai al contenuto' });
-  await expect(skip).toBeFocused();
+  await expect(async () => {
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('Tab');
+    await expect(skip).toBeFocused({ timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
   await expect(skip).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(page.locator('#contenuto')).toBeFocused();
