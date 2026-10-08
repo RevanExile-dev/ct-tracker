@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import HTMLFlipBook, { type BookSnapshot, type FlipBookHandle } from "@gullabs/react-flipbook";
@@ -303,6 +304,10 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   const bookRef = useRef<FlipBookHandle | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   useCardSwipeBridge(frameRef, bookRef);
+  // Il blocco interno del motore (.stf__block) esiste solo dopo che il motore
+  // ha montato il libro, e viene ricreato quando il libro viene rimontato
+  // (key su singlePage): lo si cerca con un osservatore finche' compare.
+  const [blockEl, setBlockEl] = useState<HTMLElement | null>(null);
   // Il primissimo render deve aprire il libro sulla pagina di partenza senza
   // animare uno sfoglio dall'inizio - dopo il mount ogni cambio di `page`
   // (bottoni, tastiera, drag) e' invece un vero sfoglio animato.
@@ -347,6 +352,22 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   // riallinea comunque via onPageChange.
   const clampedPage = Math.max(0, Math.min(page, screens.length - 1));
 
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const find = () => {
+      const next = frame.querySelector<HTMLElement>(".stf__block");
+      setBlockEl((current) => (current === next ? current : next));
+    };
+    const observer = new MutationObserver(find);
+    observer.observe(frame, { childList: true, subtree: true });
+    const frameId = requestAnimationFrame(find);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frameId);
+    };
+  }, [singlePage]);
+
   useEffect(() => onPageChange?.(clampedPage), [clampedPage, onPageChange]);
 
   const handleSnapshot = useCallback((snapshot: BookSnapshot) => {
@@ -378,10 +399,15 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
         <div className="binder-zip binder-zip-bottom" aria-hidden />
         <div className="binder-zip-pull" aria-hidden />
         <div ref={frameRef} className="binder-book-frame">
-          {visiblePages.length > 1 && (
+          {/* Il dorso vive DENTRO il blocco del motore (portale), tra i fogli fermi
+              (z-index 1) e il foglio che si gira (3-5): come un vero binder, la
+              pagina che si solleva gli passa sopra. Prima era fratello del
+              libro con z-index 5 e restava disegnato sopra al foglio in volo. */}
+          {visiblePages.length > 1 && blockEl && createPortal(
             <div className="binder-center-spine" aria-hidden>
               <span className="binder-ring" /><span className="binder-ring" /><span className="binder-ring" />
-            </div>
+            </div>,
+            blockEl,
           )}
           <HTMLFlipBook
             key={singlePage ? "single" : "spread"}

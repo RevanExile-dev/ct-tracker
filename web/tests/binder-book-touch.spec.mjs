@@ -162,9 +162,39 @@ test.describe("binder a libro - rotazione tablet", () => {
 test.describe("binder a libro - telefono in orizzontale", () => {
   test.use({ viewport: { width: 863, height: 360 }, hasTouch: true, isMobile: true });
 
-  test("il libro resta leggibile (non rimpicciolito dall'altezza bassa)", async ({ page }) => {
+  test("usa fogli da 4 tasche e il libro resta leggibile", async ({ page }) => {
     await openBook(page);
-    const box = await bookBox(page);
-    expect(box.width).toBeGreaterThanOrEqual(380);
+    await nextSpread(page);
+    // Con fogli da 9 tasche il libro (dimensionato sull'altezza bassa) restava
+    // largo poche centinaia di pixel con carte illeggibili.
+    await expect(page.locator(".binder-sheet-grid-4").first()).toBeAttached();
+    const pocket = await page.locator(".stf__item.--shown .binder-pocket[aria-label]").first().boundingBox();
+    expect(pocket.width).toBeGreaterThanOrEqual(60);
+  });
+});
+
+test.describe("binder a libro - dorso centrale su PC", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("il dorso sta tra i fogli fermi e il foglio che si gira, non sopra", async ({ page }) => {
+    await openBook(page);
+    await nextSpread(page);
+    // Il dorso e' dentro il blocco del motore: i fogli fermi hanno z-index 1,
+    // quello in volo 3-5, e il dorso deve cadere in mezzo (prima era fuori dal
+    // blocco con z-index 5 e restava disegnato sopra il foglio che si girava).
+    const spineZ = await page.evaluate(() => {
+      const spine = document.querySelector(".binder-center-spine");
+      return spine && spine.parentElement?.classList.contains("stf__block") ? Number(getComputedStyle(spine).zIndex) : null;
+    });
+    expect(spineZ).toBe(2);
+    await page.getByRole("button", { name: /succ/ }).click();
+    await page.waitForTimeout(250);
+    const zs = await page.evaluate(() => {
+      const list = [...document.querySelectorAll(".stf__block > .stf__item")].filter((e) => getComputedStyle(e).display !== "none");
+      return list.filter((e) => e.classList.contains("--shown")).map((e) => Number(getComputedStyle(e).zIndex) || 0);
+    });
+    // Durante il giro esiste almeno un foglio sopra al dorso e uno sotto.
+    expect(Math.max(...zs)).toBeGreaterThan(2);
+    expect(Math.min(...zs)).toBeLessThan(2);
   });
 });
