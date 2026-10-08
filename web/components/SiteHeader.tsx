@@ -35,6 +35,12 @@ export default function SiteHeader({
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
+      <a
+        href="#contenuto"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-card focus:bg-base-surface focus:px-4 focus:py-2.5 focus:text-sm focus:text-accent-bright focus:ring-2 focus:ring-accent/70 focus:outline-none"
+      >
+        Vai al contenuto
+      </a>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -82,7 +88,7 @@ export default function SiteHeader({
           )}
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <nav aria-label="Sezioni del sito" className="flex gap-2 flex-wrap">
           {!onScanner && (
             <Link
               href="/scan"
@@ -125,8 +131,9 @@ export default function SiteHeader({
             </Link>
           )}
           <UserMenu />
-        </div>
+        </nav>
       </div>
+      <span id="contenuto" tabIndex={-1} className="block outline-none" />
     </header>
   );
 }

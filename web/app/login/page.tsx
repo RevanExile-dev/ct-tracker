@@ -77,7 +77,7 @@ export default async function LoginPage({
         ← Torna al catalogo
       </Link>
 
-      <h2 className="font-display text-2xl font-bold text-ink-primary">Accedi</h2>
+      <h1 className="font-display text-2xl font-bold text-ink-primary">Accedi</h1>
       <p className="text-ink-muted mt-1 mb-8">
         Il tuo binder, la lista desideri e i filtri salvati ti seguono su ogni dispositivo.
       </p>
@@ -136,7 +136,7 @@ function LoginNotConfigured() {
       >
         ← Torna al catalogo
       </Link>
-      <h2 className="font-display text-2xl font-bold text-ink-primary">Accedi</h2>
+      <h1 className="font-display text-2xl font-bold text-ink-primary">Accedi</h1>
       <div className="rounded-card border border-base-border bg-base-surface/55 text-ink-muted p-5 text-sm mt-6">
         L&apos;accesso non è ancora configurato su questo sito. Riprova più tardi.
       </div>
