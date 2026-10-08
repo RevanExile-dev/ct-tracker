@@ -4,6 +4,7 @@ import { ipAddress } from "@vercel/functions";
 import Link from "next/link";
 import { auth, signIn } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rateLimit";
+import { isRateLimitedShared } from "@/lib/rateLimitShared";
 import SiteHeader from "@/components/SiteHeader";
 import type { Metadata } from "next";
 
@@ -54,7 +55,7 @@ export default async function LoginPage({
     // contro email bombing/esaurimento della quota Resend resterebbe
     // quello sulla route API diretta, mai toccata dal form vero.
     const ip = ipAddress(await headers()) ?? "unknown";
-    if (isRateLimited(`login-email:${ip}`, 5, 60_000)) {
+    if (isRateLimited(`login-email:${ip}`, 5, 60_000) || (await isRateLimitedShared(`login-email:${ip}`, 5, 60_000))) {
       redirect("/login?error=RateLimited");
     }
     // redirectTo per il provider email va dentro lo stesso FormData (vedi

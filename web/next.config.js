@@ -56,10 +56,35 @@ const securityHeaders = [
     : []),
 ];
 
+// Cache della CDN di Vercel sulle API pubbliche di sola lettura: le risposte
+// non dipendono dall'utente (nessun cookie/sessione) e cambiano solo quando
+// gira un sync, quindi una copia di pochi minuti evita di rieseguire la
+// funzione e la query su Neon per ogni visita identica. La CDN risponde anche
+// prima del proxy, quindi queste richieste non consumano nemmeno il limite di
+// richieste. Mai su /api/account, /api/auth, /api/telegram e su
+// /api/cards/language-prices (POST con gli id delle carte dell'utente).
+const publicApiCache = (sMaxAge, swr) => [
+  { key: "Cache-Control", value: `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}` },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Gli elenchi (espansioni, rarita', lingue, condizioni, artisti,
+      // statistiche, meta) mandano gia' il proprio Cache-Control da
+      // lib/apiCache.ts: qui restano le rotte che non lo facevano.
+      { source: "/api/scanner-catalog", headers: publicApiCache(600, 3600) },
+      // Prezzi: si aggiornano a ogni sync prioritario, 2 minuti bastano a
+      // togliere i picchi senza rendere i prezzi visibilmente vecchi.
+      {
+        source: "/api/:name(cards|movers)",
+        headers: publicApiCache(120, 600),
+      },
+      { source: "/api/cards/:name(count|summary|trend)", headers: publicApiCache(120, 600) },
+      { source: "/api/cards/:id(\\d+)", headers: publicApiCache(120, 600) },
+    ];
   },
   images: {
     // Il piano gratuito Vercel concede solo 5.000 Image Optimization
