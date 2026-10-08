@@ -20,6 +20,7 @@ import Toolbar from "@/components/Toolbar";
 import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
 import HomeHighlights from "@/components/HomeHighlights";
+import { formatPercent } from "@/lib/format";
 
 // Spike Three.js isolato (PR #6, stesso flag di ThreeCardHero in
 // card/[id]): mai importato/scaricato nel percorso di default - ssr:false +
@@ -435,7 +436,7 @@ function HomeContent() {
               {expansionSummary.avgPct >= 0 ? "▲" : "▼"}{" "}
               <CountUp
                 value={Math.abs(expansionSummary.avgPct)}
-                format={(n) => `${n.toFixed(1)}%`}
+                format={(n) => formatPercent(n, 1)}
               />
               <span className="text-xs font-mono text-ink-faint ml-1.5">
                 (media su {expansionSummary.sampleSize}/{expansionSummary.totalCards} carte)

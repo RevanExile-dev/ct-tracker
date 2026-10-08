@@ -21,7 +21,7 @@ import ConditionBadge from "@/components/ConditionBadge";
 import FilterDropdown from "@/components/FilterDropdown";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import LoginToTrackToast from "@/components/LoginToTrackToast";
-import { countryFlag, formatCents, languageFlag, trendVsMovingAverage } from "@/lib/format";
+import { countryFlag, formatCents, formatPercent, languageFlag, trendVsMovingAverage } from "@/lib/format";
 
 // Spike Three.js isolato (PR #6): mai importato/scaricato nel percorso di
 // default (nessun flag ?three=1) - ssr:false + import dinamico tengono
@@ -351,7 +351,7 @@ function CardDetailContent() {
                   }`}
                   title={`Media ${trend.days}gg: ${formatCents(trend.avgCents, currency)}`}
                 >
-                  {trend.deltaPct >= 0 ? "▲" : "▼"} {Math.abs(trend.deltaPct).toFixed(1)}% vs
+                  {trend.deltaPct >= 0 ? "▲" : "▼"} {formatPercent(Math.abs(trend.deltaPct), 1)} vs
                   media {trend.days}gg
                 </div>
               )}

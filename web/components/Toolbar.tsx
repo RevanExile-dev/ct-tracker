@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArtistOption, ExpansionInfo, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
-import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
+import { formatDateLong, formatNumber, languageFlag, languageLabel } from "@/lib/format";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
 import ConditionBadge from "./ConditionBadge";
 import FilterDropdown from "./FilterDropdown";
@@ -108,7 +108,7 @@ export default function Toolbar({
     <div className="flex flex-col gap-3">
       {resultCount !== undefined && (
         <div aria-live="polite" className="text-xs font-mono text-ink-faint">
-          {resultCount} {resultCount === 1 ? "carta trovata" : "carte trovate"}
+          {formatNumber(resultCount)} {resultCount === 1 ? "carta trovata" : "carte trovate"}
         </div>
       )}
       {/* Telefono: controlli impilati a larghezza piena. Tablet md: espansione

@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { cachedJson, LISTS_CACHE } from "@/lib/apiCache";
 import { fetchLanguages } from "@/lib/db.server";
 
 export async function GET() {
-  return NextResponse.json(await fetchLanguages());
+  return cachedJson(await fetchLanguages(), LISTS_CACHE);
 }
