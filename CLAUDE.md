@@ -257,6 +257,13 @@ caso che tocchi un elemento INTERNO a un pannello che non si chiude da solo
 alla selezione (es. una pillola in un filtro senza `closeOnSelect`, o la
 casella di ricerca) per verificare che il tap non lo richiuda per errore.
 
+## Skill di terzi fissate nel repo
+
+In `.claude/skills/` ci sono copie fissate di skill gratuite (design, prestazioni React,
+Neon, audit Lighthouse/accessibilità). Fonti, controlli fatti, cosa è stato escluso e perché:
+`docs/skill_di_terzi.md`. Regola: nessuna skill di terzi si aggiunge o si aggiorna senza aver
+letto il testo e senza registrarla lì; niente `npx` che scarica codice a ogni uso.
+
 ## Struttura del progetto
 
 CartaViva è un tracker di carte Pokémon TCG basato sui dati di CardTrader.
