@@ -7,6 +7,7 @@ on:
       - "config/**"
       - "web/config/top_artists.json"
       - ".github/workflows/sync_catalog.yml"
+      - ".github/workflows/sync_cardmarket_prices.yml"
       - ".github/workflows/ci_backend.yml"
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - "config/**"
       - "web/config/top_artists.json"
       - ".github/workflows/sync_catalog.yml"
+      - ".github/workflows/sync_cardmarket_prices.yml"
       - ".github/workflows/ci_backend.yml"
 
 permissions:
@@ -40,3 +42,6 @@ jobs:
 
       - name: Test incrocio artisti (sync_artists)
         run: python scripts/test_sync_artists.py
+
+      - name: Test sync prezzi Cardmarket (sync_cardmarket_prices)
+        run: python scripts/test_sync_cardmarket_prices.py

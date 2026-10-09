@@ -567,3 +567,57 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   hits INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (key, window_start)
 );
+
+-- Prezzi di RIFERIMENTO da fonti esterne (Cardmarket in euro via TCGdex,
+-- TCGplayer in dollari via tcgcsv): scritti solo dagli script
+-- scripts/sync_cardmarket_prices.py / sync_external_prices.py, mai dal giro
+-- prezzi CardTrader.
+--
+-- NON sono prezzi di annunci veri: sono medie/stime per prodotto, senza
+-- lingua ne' condizione. Per questo vivono qui e NON in latest_prices, e non
+-- entrano nei tre profili di prezzo (min / best / it_nm_zero), nei movers e
+-- negli allarmi: il sito li mostra solo come "riferimento di mercato".
+--
+-- Significato delle colonne per fonte (tutti in centesimi della valuta):
+--   cardmarket: price = trend, low = low, mid = avg, avg1/avg7/avg30 = medie
+--               a 1/7/30 giorni
+--   tcgplayer : price = marketPrice, low = lowPrice, mid = midPrice, high = highPrice
+-- variant: 'cardmarket' -> '' (normale) o 'holo' (la riga "-holo" della fonte,
+-- cioe' la versione reverse/holo); 'tcgplayer' -> il sottotipo ('Normal',
+-- 'Holofoil', '1st Edition'...). Stringa vuota se la fonte non distingue (la
+-- chiave primaria non ammette NULL).
+-- fetched_at = quando lo abbiamo scaricato; source_updated_at = data riportata
+-- dalla fonte per quel prezzo, se la da' (TCGdex si', tcgcsv no -> NULL).
+-- Nessun DELETE automatico: una riga che sparisce dalla fonte resta, e la
+-- lettura si basa su fetched_at per ignorare quelle vecchie.
+CREATE TABLE IF NOT EXISTS external_prices (
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  variant TEXT NOT NULL DEFAULT '',
+  currency TEXT NOT NULL,
+  price_cents INTEGER,
+  low_cents INTEGER,
+  mid_cents INTEGER,
+  high_cents INTEGER,
+  source_updated_at TIMESTAMPTZ,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (blueprint_id, source, variant)
+);
+
+-- Medie Cardmarket a 1/7/30 giorni (solo la fonte 'cardmarket' le usa).
+ALTER TABLE external_prices ADD COLUMN IF NOT EXISTS avg1_cents INTEGER;
+ALTER TABLE external_prices ADD COLUMN IF NOT EXISTS avg7_cents INTEGER;
+ALTER TABLE external_prices ADD COLUMN IF NOT EXISTS avg30_cents INTEGER;
+
+-- Abbinamento carta CardTrader -> carta della fonte esterna (per Cardmarket:
+-- l'id TCGdex preceduto dalla lingua, es. "en:sv03.5-199" o "ja:SV4a-001"). Calcolato per set + numero (CardTrader non
+-- ha chiavi comuni con Cardmarket) e riusato ogni giorno senza rifarlo.
+-- external_id NULL = "ho provato e non c'e' / era sospetto": checked_at serve
+-- a ritentare ogni tanto invece di riprovare ogni giorno o mai piu'.
+CREATE TABLE IF NOT EXISTS external_card_map (
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  external_id TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (blueprint_id, source)
+);

@@ -1,0 +1,59 @@
+name: Sync prezzi di riferimento (Cardmarket da TCGdex)
+
+on:
+  schedule:
+    # Una volta al giorno, dopo l'aggiornamento di TCGdex (verso le 22:54 UTC).
+    # Minuto "dispari" per non cadere sull'ora di punta dei cron di GitHub.
+    # Se GitHub salta un giorno non succede nulla di grave: i prezzi di
+    # riferimento restano quelli del giorno prima e il sito mostra la data.
+    - cron: "17 23 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo abbina e scarica, senza scrivere sul database"
+        type: boolean
+        default: false
+      limit:
+        description: "Scarica al massimo N carte (vuoto = giro normale del giorno)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# Gruppo SUO, diverso da ct-tracker-db-write: scrive solo external_prices e
+# external_card_map e non deve mai fare aspettare (o essere cancellato da) il
+# giro prezzi CardTrader ogni 30 minuti. cancel-in-progress false: un run gia'
+# partito non va ucciso. Condiviso con il job TCGplayer di riferimento, cosi'
+# i due non scrivono mai nella stessa tabella insieme.
+concurrency:
+  group: ct-tracker-external-prices
+  cancel-in-progress: false
+
+jobs:
+  sync-cardmarket-prices:
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
+    # Misurato il 2026-10-09: ~14 richieste/s con 4 thread. Primo giro (fino a
+    # 15.000 carte, tetto di sicurezza) ~20 minuti; a regime ~6.000 carte al
+    # giorno, ~8 minuti.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Abbina, scarica e salva i prezzi Cardmarket
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          LIMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.limit || '' }}
+        run: |
+          args=""
+          if [ "$DRY_RUN" = "true" ]; then args="$args --dry-run"; fi
+          if [ -n "$LIMIT" ]; then args="$args --limit $LIMIT"; fi
+          python scripts/sync_cardmarket_prices.py $args
