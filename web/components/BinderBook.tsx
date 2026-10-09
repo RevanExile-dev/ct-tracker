@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import HTMLFlipBook, { type BookSnapshot, type FlipBookHandle } from "@gullabs/react-flipbook";
@@ -116,18 +117,197 @@ const LEAF_SIZE = {
   spread: { width: 460, height: 644, minWidth: 240, maxWidth: 560, minHeight: 336, maxHeight: 784 },
 } as const;
 
+
+// Il motore di sfoglio rifiuta per scelta di far partire un giro quando il
+// dito tocca un link (respectInteractiveContent) - ma qui ogni tasca e' un
+// link e copre quasi tutta la pagina (su telefono non resta nemmeno un bordo
+// libero), quindi uno swipe che parte su una carta non girava mai la pagina
+// (riprodotto con eventi touch reali: pointerdown/move/up consegnati alla
+// carta, nessun cambio di pagina). Questo ponte riconosce lo swipe
+// orizzontale che parte su una tasca e lo gira al motore tramite la sua API
+// pubblica (startUserTouch/userMove/userStop), cosi' la piega segue il dito
+// come per i gesti partiti altrove. Un gesto verticale resta del browser
+// (scroll della pagina, vedi allowTouchScroll), un tap resta un tap (il link
+// si apre), e il click che il browser genererebbe alla fine di uno swipe
+// corto sulla stessa carta viene scartato.
+// Una pagina per facciata (4 tasche invece di 9) su telefono e tablet stretto
+// e anche su un telefono girato in orizzontale: li' l'altezza e' di poche
+// centinaia di pixel, e con due facciate da 9 tasche il libro (dimensionato
+// sull'altezza) restava largo meno di 200px e illeggibile.
+const SINGLE_PAGE_QUERY = "(max-width: 767px), (max-width: 1023px) and (orientation: portrait), (max-height: 500px) and (orientation: landscape)";
+const SWIPE_SLOP_PX = 12;
+const SWIPE_FLICK_MS = 250;
+const SWIPE_FLICK_MIN_PX = 30;
+
+function useCardSwipeBridge(frameRef: React.RefObject<HTMLDivElement | null>, bookRef: React.RefObject<FlipBookHandle | null>) {
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    let gesture: { id: number; sx: number; sy: number; at: number; started: boolean } | null = null;
+    let suppressClickUntil = 0;
+    // Dita appoggiate sul libro, nell'ordine di arrivo: con due dita (pinch o
+    // zoom) il primo dito aveva gia' avviato un gesto di sfoglio e muovendosi
+    // girava una pagina (riprodotto con un pinch touch vero: la pagina
+    // cambiava). Alla comparsa del secondo dito il gesto viene annullato.
+    const touches: number[] = [];
+    // True da quando compare il secondo dito fino a quando le dita si sono
+    // alzate tutte: in questo intervallo il motore non deve vedere nulla, o il
+    // secondo dito (che ricade spesso su una zona senza link) conta come un
+    // tocco sulla pagina e la gira.
+    let multiTouch = false;
+    let forwardingCancel = false;
+
+    // Stesso sistema di coordinate che il motore usa per i propri gesti:
+    // relativo a .stf__block, corretto per l'eventuale scala CSS.
+    const toBookPos = (clientX: number, clientY: number) => {
+      const block = frame.querySelector<HTMLElement>(".stf__block");
+      if (!block) return null;
+      const rect = block.getBoundingClientRect();
+      const scaleX = block.offsetWidth > 0 && rect.width > 0 ? rect.width / block.offsetWidth : 1;
+      const scaleY = block.offsetHeight > 0 && rect.height > 0 ? rect.height / block.offsetHeight : 1;
+      return { x: (clientX - rect.left) / scaleX, y: (clientY - rect.top) / scaleY, height: block.offsetHeight };
+    };
+
+    const onDown = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") return;
+      if (!touches.includes(event.pointerId)) touches.push(event.pointerId);
+      if (touches.length > 1) {
+        if (!multiTouch) {
+          multiTouch = true;
+          if (gesture?.started) bookRef.current?.cancelTurn();
+          // Il gesto del motore (partito altrove, non su una tasca) si annulla
+          // con lo stesso evento che il browser gli manderebbe: pulisce lui
+          // piega, animazione e stato interno.
+          const block = frame.querySelector<HTMLElement>(".stf__block");
+          if (block) {
+            forwardingCancel = true;
+            block.dispatchEvent(new PointerEvent("pointercancel", { pointerId: touches[0], pointerType: event.pointerType, bubbles: true }));
+            forwardingCancel = false;
+          }
+        }
+        gesture = null;
+      }
+      if (multiTouch) {
+        event.stopPropagation();
+        return;
+      }
+      if (gesture) return;
+      if (!(event.target instanceof Element) || !event.target.closest("a[href]")) return;
+      gesture = { id: event.pointerId, sx: event.clientX, sy: event.clientY, at: Date.now(), started: false };
+    };
+    const release = (event: PointerEvent) => {
+      const index = touches.indexOf(event.pointerId);
+      if (index >= 0) touches.splice(index, 1);
+      if (touches.length === 0) multiTouch = false;
+    };
+    const onMove = (event: PointerEvent) => {
+      if (multiTouch) {
+        event.stopPropagation();
+        return;
+      }
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const engine = bookRef.current?.pageFlip();
+      if (!engine) return;
+      if (!gesture.started) {
+        const dx = event.clientX - gesture.sx;
+        const dy = event.clientY - gesture.sy;
+        if (Math.abs(dx) < SWIPE_SLOP_PX || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+        const start = toBookPos(gesture.sx, gesture.sy);
+        if (!start) return;
+        gesture.started = true;
+        engine.startUserTouch({ x: start.x, y: start.y });
+      }
+      const pos = toBookPos(event.clientX, event.clientY);
+      if (pos) engine.userMove({ x: pos.x, y: pos.y }, true);
+      if (event.cancelable) event.preventDefault();
+    };
+    const onUp = (event: PointerEvent) => {
+      const wasMulti = multiTouch;
+      release(event);
+      if (wasMulti) {
+        event.stopPropagation();
+        return;
+      }
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const current = gesture;
+      gesture = null;
+      if (!current.started) return;
+      suppressClickUntil = Date.now() + 400;
+      const engine = bookRef.current?.pageFlip();
+      const pos = toBookPos(event.clientX, event.clientY);
+      const start = toBookPos(current.sx, current.sy);
+      if (!engine || !pos || !start) return;
+      const dx = event.clientX - current.sx;
+      const dy = Math.abs(event.clientY - current.sy);
+      const flick = Math.abs(dx) > SWIPE_FLICK_MIN_PX && dy < SWIPE_FLICK_MIN_PX * 2 && Date.now() - current.at < SWIPE_FLICK_MS;
+      if (flick) {
+        const corner = start.y >= start.height / 2 ? "bottom" : "top";
+        if (dx > 0) bookRef.current?.flipPrev(corner);
+        else bookRef.current?.flipNext(corner);
+      }
+      engine.userStop({ x: pos.x, y: pos.y }, flick);
+    };
+    const onCancel = (event: PointerEvent) => {
+      if (forwardingCancel) return;
+      const wasMulti = multiTouch;
+      release(event);
+      if (wasMulti) {
+        event.stopPropagation();
+        return;
+      }
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const wasStarted = gesture.started;
+      gesture = null;
+      if (wasStarted) {
+        suppressClickUntil = Date.now() + 400;
+        bookRef.current?.cancelTurn();
+      }
+    };
+    const onClick = (event: MouseEvent) => {
+      if (Date.now() < suppressClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    frame.addEventListener("pointerdown", onDown, true);
+    frame.addEventListener("pointermove", onMove, true);
+    frame.addEventListener("pointerup", onUp, true);
+    frame.addEventListener("pointercancel", onCancel, true);
+    frame.addEventListener("click", onClick, true);
+    return () => {
+      frame.removeEventListener("pointerdown", onDown, true);
+      frame.removeEventListener("pointermove", onMove, true);
+      frame.removeEventListener("pointerup", onUp, true);
+      frame.removeEventListener("pointercancel", onCancel, true);
+      frame.removeEventListener("click", onClick, true);
+    };
+  }, [frameRef, bookRef]);
+}
+
 export default function BinderBook({ cards, initialPage = 0, onPageChange, returnTo }: {
   cards: CardRow[];
   initialPage?: number;
   onPageChange?: (page: number) => void;
   returnTo: string;
 }) {
-  const [singlePage, setSinglePage] = useState(false);
+  // Letto subito al primo render (il componente monta solo dopo che la
+  // collezione e' stata caricata lato client, quindi window esiste): partire
+  // da false e correggere dopo il mount faceva interpretare `initialPage`
+  // con la densita' sbagliata e rimontava il libro a ogni apertura su telefono.
+  const [singlePage, setSinglePage] = useState(() => typeof window !== "undefined" && window.matchMedia(SINGLE_PAGE_QUERY).matches);
+  const singlePageRef = useRef(singlePage);
   const screens = useMemo(() => buildScreens(cards, singlePage ? 4 : 9), [cards, singlePage]);
   const [page, setPage] = useState(() => Math.max(0, Math.min(initialPage, screens.length - 1)));
   const [pageCount, setPageCount] = useState(screens.length);
   const [visiblePages, setVisiblePages] = useState<number[]>([0]);
   const bookRef = useRef<FlipBookHandle | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  useCardSwipeBridge(frameRef, bookRef);
+  // Il blocco interno del motore (.stf__block) esiste solo dopo che il motore
+  // ha montato il libro, e viene ricreato quando il libro viene rimontato
+  // (key su singlePage): lo si cerca con un osservatore finche' compare.
+  const [blockEl, setBlockEl] = useState<HTMLElement | null>(null);
   // Il primissimo render deve aprire il libro sulla pagina di partenza senza
   // animare uno sfoglio dall'inizio - dopo il mount ogni cambio di `page`
   // (bottoni, tastiera, drag) e' invece un vero sfoglio animato.
@@ -140,9 +320,27 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   }, []);
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 767px), (max-width: 1023px) and (orientation: portrait)");
-    const update = () => setSinglePage(media.matches);
-    update();
+    const media = window.matchMedia(SINGLE_PAGE_QUERY);
+    const update = () => {
+      const next = media.matches;
+      const previous = singlePageRef.current;
+      if (next === previous) return;
+      singlePageRef.current = next;
+      // Girando il telefono (o ridimensionando la finestra oltre la soglia)
+      // cambia quante tasche ha ogni foglio, quindi lo stesso indice di
+      // pagina indicherebbe altre carte: si resta sul foglio che contiene la
+      // stessa prima carta. Il motore va ricreato (key sul libro) perche'
+      // cambia l'intero elenco di pagine; il primo render dopo la ricreazione
+      // e' istantaneo, senza animare uno sfoglio dalla copertina.
+      setPage((current) => {
+        if (current <= 0) return 0;
+        const firstCard = (current - 1) * (previous ? 4 : 9);
+        return 1 + Math.floor(firstCard / (next ? 4 : 9));
+      });
+      setHasOpened(false);
+      setSinglePage(next);
+      requestAnimationFrame(() => setHasOpened(true));
+    };
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
@@ -153,6 +351,22 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
   // "correggere" lo state con un effetto - il prossimo sfoglio reale lo
   // riallinea comunque via onPageChange.
   const clampedPage = Math.max(0, Math.min(page, screens.length - 1));
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const find = () => {
+      const next = frame.querySelector<HTMLElement>(".stf__block");
+      setBlockEl((current) => (current === next ? current : next));
+    };
+    const observer = new MutationObserver(find);
+    observer.observe(frame, { childList: true, subtree: true });
+    const frameId = requestAnimationFrame(find);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frameId);
+    };
+  }, [singlePage]);
 
   useEffect(() => onPageChange?.(clampedPage), [clampedPage, onPageChange]);
 
@@ -184,13 +398,19 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
         <div className="binder-zip binder-zip-right" aria-hidden />
         <div className="binder-zip binder-zip-bottom" aria-hidden />
         <div className="binder-zip-pull" aria-hidden />
-        <div className="binder-book-frame">
-          {visiblePages.length > 1 && (
+        <div ref={frameRef} className="binder-book-frame">
+          {/* Il dorso vive DENTRO il blocco del motore (portale), tra i fogli fermi
+              (z-index 1) e il foglio che si gira (3-5): come un vero binder, la
+              pagina che si solleva gli passa sopra. Prima era fratello del
+              libro con z-index 5 e restava disegnato sopra al foglio in volo. */}
+          {visiblePages.length > 1 && blockEl && createPortal(
             <div className="binder-center-spine" aria-hidden>
               <span className="binder-ring" /><span className="binder-ring" /><span className="binder-ring" />
-            </div>
+            </div>,
+            blockEl,
           )}
           <HTMLFlipBook
+            key={singlePage ? "single" : "spread"}
             ref={bookRef}
             className="binder-flipbook"
             width={size.width}
@@ -224,7 +444,7 @@ export default function BinderBook({ cards, initialPage = 0, onPageChange, retur
             // intero il drag - si perde la possibilita' di scorrere la
             // pagina iniziando esattamente sopra il libro, accettabile per
             // un binder pensato per essere sfogliato.
-            allowTouchScroll={false}
+            allowTouchScroll={true}
             flippingTime={620}
             lazyRadius={2}
             pageBackground="#171b21"

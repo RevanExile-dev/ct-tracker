@@ -79,6 +79,7 @@ BUDGET_SECONDS = 3000  # default (nessun argomento): tutte le fasce, come prima
 # il tetto serve solo a fermare il run se le tracciate crescono molto.
 TRACKED_BUDGET_SECONDS = 600
 CATALOG_BUDGET_SECONDS = 2700
+BINDER_MIN_INTERVAL_MINUTES = 50  # binder: circa ogni ora (< 60 cosi' un giro in ritardo non salta un ciclo intero)
 # Margine ampio sopra quante carte un budget di 50 minuti a 1 richiesta/secondo
 # puo' mai processare davvero (~3000): solo per non caricare in memoria un
 # numero di righe arbitrariamente grande se il budget venisse alzato in futuro.
@@ -208,7 +209,12 @@ def main():
     non_catalog = [row for row in batch if row[3] != db.PRIORITY_CATALOG]
     catalog = [row for row in batch if row[3] == db.PRIORITY_CATALOG]
     if mode == "tracked":
-        batch = non_catalog
+        # Allarmi e desideri a ogni giro (30 min); il binder circa ogni ora
+        # (vedi BINDER_MIN_INTERVAL_MINUTES): giri piu' corti = il DB Neon resta sveglio meno a lungo.
+        binder_ids = [r[0] for r in non_catalog if r[3] == db.PRIORITY_BINDER]
+        fresh = db.fetch_recently_attempted_ids(conn, binder_ids, BINDER_MIN_INTERVAL_MINUTES)
+        batch = [r for r in non_catalog if r[0] not in fresh]
+        print(f"  Binder saltato perche' aggiornato da meno di {BINDER_MIN_INTERVAL_MINUTES} min: {len(fresh)} carte.")
     elif mode == "catalog":
         batch = catalog
     else:

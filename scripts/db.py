@@ -572,6 +572,25 @@ def fetch_priority_batch(conn, limit: int):
         return cur.fetchall()
 
 
+def fetch_recently_attempted_ids(conn, blueprint_ids, minutes: int) -> set:
+    """Id tra `blueprint_ids` con un tentativo di sync negli ultimi `minutes`
+    minuti (latest_prices.last_attempted_at). Usato da --tracked per
+    aggiornare le carte del binder meno spesso di allarmi/desideri."""
+    ids = list(blueprint_ids)
+    if not ids:
+        return set()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT blueprint_id FROM latest_prices
+            WHERE blueprint_id = ANY(%s)
+              AND last_attempted_at > now() - make_interval(mins => %s)
+            """,
+            (ids, minutes),
+        )
+        return {r[0] for r in cur.fetchall()}
+
+
 def mark_attempted(conn, blueprint_id: int, attempted_at: str):
     """Registra "abbiamo provato a sincronizzare questa carta adesso",
     A PRESCINDERE dall'esito - va chiamata (e committata) PRIMA della
