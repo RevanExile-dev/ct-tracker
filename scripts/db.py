@@ -700,7 +700,7 @@ def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
     problema alla radice - il resto del testo (etichette fisse) non
     contiene caratteri da escapare."""
     profile_bits = [
-        f"lingua {html.escape('/'.join(alert['languages']))}" if alert["languages"] else "qualunque lingua",
+        f"lingua {html.escape(' o '.join(alert['languages']))}" if alert["languages"] else "qualunque lingua",
         f"condizione {alert['condition']}" if alert["condition"] else "qualunque condizione",
     ]
     if alert["can_sell_via_hub"] == 1:
