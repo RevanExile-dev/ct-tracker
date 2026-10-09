@@ -669,10 +669,17 @@ export function resolveScan(
   candidates: ScannerCandidate[],
   options: { complete?: boolean; language?: string | null } = {},
 ): { candidates: ScannerCandidate[]; verdict: ScanVerdict } {
+  // assessScan giudica la prima carta compatibile con la lingua letta: la
+  // lista restituita deve avere in cima proprio quella, perche' e' la carta
+  // che viene scelta. Il riordino per immagine puo' aver riportato in alto una
+  // versione giapponese (caso reale nelle prove: Servine sv11b scelta al posto
+  // di Servine BLK su una foto inglese).
+  candidates = orderByLanguage(candidates, options.language);
   const verdict = assessScan(candidates, options);
   if (verdict === "certain" || candidates.length < 2) return { candidates, verdict };
   const promoted: ScannerCandidate[][] = [];
   for (let index = 1; index < Math.min(candidates.length, RESOLVE_CANDIDATES); index += 1) {
+    if (languageExcludes(candidates[index], options.language)) break;
     const reordered = [candidates[index], ...candidates.slice(0, index), ...candidates.slice(index + 1)];
     if (assessScan(reordered, options) === "certain") promoted.push(reordered);
   }

@@ -382,3 +382,16 @@ test('numero letto quasi per intero + illustrazione quasi identica (allenatore i
   assert.equal(catalog.assessScan([top, other, { ...other, id: 3, visualScore: null }], all), 'probable');
   assert.equal(catalog.assessScan([top, other]), 'probable');
 });
+
+test('la carta scelta e quella giudicata: mai una versione giapponese in cima su una foto inglese', () => {
+  // Caso reale nelle prove: il riordino per immagine riportava in cima Servine
+  // sv11b (giapponese, 0.85) sopra Servine BLK (0.81); la certezza era calcolata
+  // su BLK ma la carta mostrata era quella giapponese.
+  const jp = { ...card(1, 'Servine', '002/086', 'sv11b'), score: 1, nameScore: 1, numberScore: 1, visualScore: 0.85 };
+  const en = { ...card(2, 'Servine', '002/086', 'blk'), score: 1, nameScore: 1, numberScore: 1, visualScore: 0.81 };
+  const snivy = { ...card(3, 'Snivy', '001/086', 'blk'), score: 0.82, nameScore: 1, numberScore: 0.68, visualScore: 0.3 };
+  const resolved = catalog.resolveScan([jp, en, snivy], { complete: true, language: 'en' });
+  assert.equal(resolved.verdict, 'certain');
+  assert.equal(resolved.candidates[0].id, 2);
+  assert.equal(resolved.candidates.at(-1).id, 1);
+});
