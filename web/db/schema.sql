@@ -567,3 +567,38 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   hits INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (key, window_start)
 );
+
+-- --- Prezzi di riferimento da altri portali (Cardmarket, TCGplayer) ---
+-- Solo l'ULTIMO prezzo noto per (carta, fonte, variante): nessuno storico per
+-- ora (Cardmarket porta gia' le medie a 1/7/30 giorni, tcgcsv conserva lo
+-- storico dal 2024). Scritta in blocco, una volta al giorno, da
+-- scripts/sync_external_prices.py - mai dal giro prezzi CardTrader.
+--
+-- NON sono prezzi di annunci veri: sono medie/stime per prodotto, senza
+-- lingua ne' condizione. Per questo vivono qui e NON in latest_prices, e non
+-- entrano nei tre profili di prezzo (min / best / it_nm_zero), nei movers e
+-- negli allarmi: il sito li mostra solo come "riferimento di mercato".
+--
+-- Significato delle colonne per fonte (tutti in centesimi della valuta):
+--   tcgplayer : price = marketPrice, low = lowPrice, mid = midPrice, high = highPrice
+--   cardmarket: (step successivo) price = trend, low = low, mid = avg
+-- variant e' il sottotipo della fonte ('Normal', 'Holofoil', 'Reverse Holofoil',
+-- '1st Edition'...): una carta puo' averne piu' di uno. Stringa vuota se la
+-- fonte non distingue (la chiave primaria non ammette NULL).
+-- fetched_at = quando lo abbiamo scaricato; source_updated_at = data riportata
+-- dalla fonte per quel prezzo, se la da' (tcgcsv no -> NULL).
+-- Nessun DELETE automatico: una riga che sparisce dalla fonte resta, e la
+-- lettura si basa su fetched_at per ignorare quelle vecchie.
+CREATE TABLE IF NOT EXISTS external_prices (
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  variant TEXT NOT NULL DEFAULT '',
+  currency TEXT NOT NULL,
+  price_cents INTEGER,
+  low_cents INTEGER,
+  mid_cents INTEGER,
+  high_cents INTEGER,
+  source_updated_at TIMESTAMPTZ,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (blueprint_id, source, variant)
+);

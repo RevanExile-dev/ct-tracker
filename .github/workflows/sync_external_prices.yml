@@ -1,0 +1,51 @@
+name: Sync prezzi di riferimento (TCGplayer da tcgcsv)
+
+on:
+  schedule:
+    # Una volta al giorno, dopo l'aggiornamento di tcgcsv (verso le 20:00 UTC).
+    # Minuto "dispari" per non cadere sull'ora di punta dei cron di GitHub.
+    # Se GitHub salta un giorno non succede nulla di grave: i prezzi di
+    # riferimento restano quelli del giorno prima e il sito mostra la data.
+    - cron: "40 21 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo scarica e riporta, senza scrivere sul database"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Gruppo SUO, diverso da ct-tracker-db-write: scrive solo la tabella
+# external_prices e non deve mai fare aspettare (o essere cancellato da) il
+# giro prezzi CardTrader ogni 30 minuti. cancel-in-progress false: un run gia'
+# partito non va ucciso.
+concurrency:
+  group: ct-tracker-external-prices
+  cancel-in-progress: false
+
+jobs:
+  sync-external-prices:
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
+    # Misurato il 2026-10-09: ~4 minuti (683 richieste con 0,25 s di pausa).
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Scarica e salva i prezzi TCGplayer
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            python scripts/sync_external_prices.py --dry-run
+          else
+            python scripts/sync_external_prices.py
+          fi
