@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
-  PriceAlertValidationError, createPriceAlert, getPriceAlerts, isValidPriceAlertCanSellViaHub,
-  isValidPriceAlertFireMode, isValidPriceAlertTargetType, isValidPriceAlertTargetValue,
-  isValidRearmCooldownHours,
+  PriceAlertValidationError, createPriceAlert, getPriceAlerts, parsePriceAlertFields,
 } from "@/lib/account.server";
 import type { PriceAlertInput } from "@/lib/types";
-
-// Stesso tetto di web/app/api/account/lots/[id]/route.ts per i campi
-// stringa corti (lingua/condizione) - non un vincolo di prodotto, solo
-// evitare una riga arbitrariamente grande in una colonna TEXT.
-const MAX_SHORT_FIELD_LENGTH = 40;
-
-function isNullableShortString(value: unknown): value is string | null {
-  return value === null || (typeof value === "string" && value.length > 0 && value.length <= MAX_SHORT_FIELD_LENGTH);
-}
 
 function parseAlertInput(body: unknown): { input: PriceAlertInput } | { error: string } {
   if (!body || typeof body !== "object") return { error: "Payload non valido" };
@@ -29,45 +18,9 @@ function parseAlertInput(body: unknown): { input: PriceAlertInput } | { error: s
     return { error: "blueprintId mancante o non valido" };
   }
 
-  if (v.language !== undefined && !isNullableShortString(v.language)) {
-    return { error: `Lingua non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
-  }
-  if (v.condition !== undefined && !isNullableShortString(v.condition)) {
-    return { error: `Condizione non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
-  }
-  if (v.canSellViaHub !== undefined && !isValidPriceAlertCanSellViaHub(v.canSellViaHub)) {
-    return { error: "canSellViaHub non valido: deve essere 0, 1, oppure null per \"indifferente\"" };
-  }
-  if (!isValidPriceAlertTargetType(v.targetType)) {
-    return { error: "targetType non valido: deve essere 'absolute_cents' o 'percent_drop'" };
-  }
-  if (!isValidPriceAlertTargetValue(v.targetType, v.targetValue)) {
-    return {
-      error: v.targetType === "absolute_cents"
-        ? "targetValue non valido: intero positivo in centesimi"
-        : "targetValue non valido: intero positivo, percentuale di calo (1-99)",
-    };
-  }
-  if (v.fireMode !== undefined && !isValidPriceAlertFireMode(v.fireMode)) {
-    return { error: "fireMode non valido: deve essere 'once' o 'rearm'" };
-  }
-  const fireMode = (v.fireMode as PriceAlertInput["fireMode"]) ?? "once";
-  if (fireMode === "rearm" && !isValidRearmCooldownHours(v.rearmCooldownHours)) {
-    return { error: "rearmCooldownHours obbligatorio e valido (ore intere, >= 1) quando fireMode è 'rearm'" };
-  }
-
-  return {
-    input: {
-      blueprintId,
-      language: (v.language as string | null | undefined) ?? undefined,
-      condition: (v.condition as string | null | undefined) ?? undefined,
-      canSellViaHub: (v.canSellViaHub as number | null | undefined) ?? undefined,
-      targetType: v.targetType,
-      targetValue: v.targetValue as number,
-      fireMode,
-      rearmCooldownHours: fireMode === "rearm" ? (v.rearmCooldownHours as number) : undefined,
-    },
-  };
+  const fields = parsePriceAlertFields(v);
+  if ("error" in fields) return fields;
+  return { input: { blueprintId, ...fields.fields } };
 }
 
 export async function GET() {

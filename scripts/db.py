@@ -660,20 +660,21 @@ OUTBOX_BATCH_SIZE = 20
 CARDTRADER_CARD_URL = "https://www.cardtrader.com/cards/{}"  # stesso link di "Apri su CardTrader" in web/app/card/[id]/page.tsx
 
 
-def find_matching_listing_price(conn, blueprint_id: int, language: str | None,
+def find_matching_listing_price(conn, blueprint_id: int, languages: list[str] | None,
                                  condition: str | None, can_sell_via_hub: int | None):
     """Stesso identico algoritmo di findMatchingListingPrice in
     web/lib/account.server.ts (TypeScript, usata li' per fissare il
     baseline alla creazione di un allarme): inserzione piu' economica per
     un profilo ESATTO, None = nessun vincolo su quel campo - MAI un
-    fallback su un profilo diverso da quello scelto dall'utente. Le due
+    fallback su un profilo diverso da quello scelto dall'utente (piu' lingue
+    = una qualsiasi di esse, lista vuota/None = qualunque). Le due
     implementazioni vivono in runtime separati (Python qui, TypeScript
     li') e vanno tenute allineate a mano se la logica cambia."""
     conditions = ["blueprint_id = %s"]
     params: list = [blueprint_id]
-    if language is not None:
-        conditions.append("language = %s")
-        params.append(language)
+    if languages:
+        conditions.append("language = ANY(%s)")
+        params.append(list(languages))
     if condition is not None:
         conditions.append("condition = %s")
         params.append(condition)
@@ -718,7 +719,7 @@ def _format_alert_message(card_name: str, expansion_name: str, alert: dict,
     problema alla radice - il resto del testo (etichette fisse) non
     contiene caratteri da escapare."""
     profile_bits = [
-        f"lingua {alert['language']}" if alert["language"] else "qualunque lingua",
+        f"lingua {html.escape(' o '.join(alert['languages']))}" if alert["languages"] else "qualunque lingua",
         f"condizione {alert['condition']}" if alert["condition"] else "qualunque condizione",
     ]
     if alert["can_sell_via_hub"] == 1:
@@ -767,7 +768,7 @@ def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str,
     sono scattati in questa chiamata."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, user_id, language, condition, can_sell_via_hub,
+            """SELECT id, user_id, language, languages, condition, can_sell_via_hub,
                       target_type, target_value, baseline_price_cents,
                       baseline_currency, fire_mode
                FROM price_alerts
@@ -785,14 +786,15 @@ def evaluate_price_alerts_for_blueprint(conn, blueprint_id: int, card_name: str,
 
     fired = 0
     now = datetime.now(timezone.utc)
-    for (alert_id, user_id, language, condition, can_sell_via_hub,
+    for (alert_id, user_id, language, languages, condition, can_sell_via_hub,
          target_type, target_value, baseline_price_cents, baseline_currency, fire_mode) in rows:
         alert = {
-            "language": language, "condition": condition, "can_sell_via_hub": can_sell_via_hub,
+            "languages": languages or ([language] if language else []),
+            "condition": condition, "can_sell_via_hub": can_sell_via_hub,
             "target_type": target_type, "target_value": target_value,
             "baseline_price_cents": baseline_price_cents, "baseline_currency": baseline_currency,
         }
-        matching = find_matching_listing_price(conn, blueprint_id, language, condition, can_sell_via_hub)
+        matching = find_matching_listing_price(conn, blueprint_id, alert["languages"], condition, can_sell_via_hub)
         if matching is None or not _alert_target_met(alert, matching["price_cents"]):
             continue
 
@@ -852,7 +854,7 @@ def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
     non inviato piuttosto che intasare la coda all'infinito)."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, chat_id, payload, image_url
+            """SELECT id, chat_id, payload, image_url, alert_id
                FROM telegram_outbox
                WHERE sent_at IS NULL
                  AND retry_count < %s
@@ -863,6 +865,19 @@ def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
             (MAX_OUTBOX_RETRIES, limit),
         )
         return cur.fetchall()
+
+
+def alert_reply_markup(alert_id: int | None) -> dict | None:
+    """Bottoni inline sotto l'avviso di un allarme scattato: "Riattiva" e
+    "Cambia soglia". Le callback_data (`ar:<id>`, `at:<id>`) sono gestite dal
+    webhook TypeScript, web/app/api/telegram/webhook/route.ts (CALLBACK_RE):
+    i due lati vivono in runtime separati e vanno tenuti allineati a mano."""
+    if alert_id is None:
+        return None
+    return {"inline_keyboard": [[
+        {"text": "🔄 Riattiva", "callback_data": f"ar:{alert_id}"},
+        {"text": "✏️ Cambia soglia", "callback_data": f"at:{alert_id}"},
+    ]]}
 
 
 def mark_outbox_sent(conn, outbox_id: int):

@@ -653,8 +653,86 @@ export function isValidPriceAlertCanSellViaHub(value: unknown): value is number 
   return value === null || value === 0 || value === 1;
 }
 
+// Stesso tetto di web/app/api/account/lots/[id]/route.ts per i campi
+// stringa corti (lingua/condizione) - non un vincolo di prodotto, solo
+// evitare una riga arbitrariamente grande in una colonna TEXT.
+const MAX_SHORT_FIELD_LENGTH = 40;
+const MAX_ALERT_LANGUAGES = 10;
+
+function isNullableShortString(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.length > 0 && value.length <= MAX_SHORT_FIELD_LENGTH);
+}
+
+export type PriceAlertFields = Omit<PriceAlertInput, "blueprintId">;
+
+/** Validazione dei campi di un allarme condivisa da creazione (POST
+ * /api/account/alerts) e modifica (PATCH /api/account/alerts/[id]): stessi
+ * campi, stesse regole, cosi' le due strade non possono divergere. */
+export function parsePriceAlertFields(v: Record<string, unknown>): { fields: PriceAlertFields } | { error: string } {
+  // "languages" (lista) e' la forma attuale; "language" (singola, o null per
+  // "qualunque") resta accettata per i client scritti prima del multi-lingua.
+  let languages: string[] | undefined;
+  if (v.languages !== undefined) {
+    if (
+      !Array.isArray(v.languages) || v.languages.length > MAX_ALERT_LANGUAGES ||
+      !v.languages.every((l) => typeof l === "string" && isNullableShortString(l))
+    ) {
+      return { error: `Lingue non valide (al massimo ${MAX_ALERT_LANGUAGES} stringhe di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri; lista vuota per "qualunque")` };
+    }
+    languages = [...new Set(v.languages as string[])];
+  } else if (v.language !== undefined) {
+    if (!isNullableShortString(v.language)) {
+      return { error: `Lingua non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
+    }
+    languages = v.language === null ? [] : [v.language];
+  }
+  if (v.condition !== undefined && !isNullableShortString(v.condition)) {
+    return { error: `Condizione non valida (stringa di massimo ${MAX_SHORT_FIELD_LENGTH} caratteri, oppure null per "qualunque")` };
+  }
+  if (v.canSellViaHub !== undefined && !isValidPriceAlertCanSellViaHub(v.canSellViaHub)) {
+    return { error: "canSellViaHub non valido: deve essere 0, 1, oppure null per \"indifferente\"" };
+  }
+  if (!isValidPriceAlertTargetType(v.targetType)) {
+    return { error: "targetType non valido: deve essere 'absolute_cents' o 'percent_drop'" };
+  }
+  if (!isValidPriceAlertTargetValue(v.targetType, v.targetValue)) {
+    return {
+      error: v.targetType === "absolute_cents"
+        ? "targetValue non valido: intero positivo in centesimi"
+        : "targetValue non valido: intero positivo, percentuale di calo (1-99)",
+    };
+  }
+  if (v.fireMode !== undefined && !isValidPriceAlertFireMode(v.fireMode)) {
+    return { error: "fireMode non valido: deve essere 'once' o 'rearm'" };
+  }
+  const fireMode = (v.fireMode as PriceAlertInput["fireMode"]) ?? "once";
+  if (fireMode === "rearm" && !isValidRearmCooldownHours(v.rearmCooldownHours)) {
+    return { error: "rearmCooldownHours obbligatorio e valido (ore intere, >= 1) quando fireMode è 'rearm'" };
+  }
+  return {
+    fields: {
+      languages,
+      condition: (v.condition as string | null | undefined) ?? undefined,
+      canSellViaHub: (v.canSellViaHub as number | null | undefined) ?? undefined,
+      targetType: v.targetType,
+      targetValue: v.targetValue as number,
+      fireMode,
+      rearmCooldownHours: fireMode === "rearm" ? (v.rearmCooldownHours as number) : undefined,
+    },
+  };
+}
+
+/** Colonna `language` (singola) mantenuta per compatibilita' con il valutatore
+ * Python gia' in esecuzione durante un deploy: valorizzata solo quando la
+ * lista ha UNA lingua; `languages` e' la fonte di verita' (vedi
+ * web/db/schema.sql). */
+function legacyLanguage(languages: string[]): string | null {
+  return languages.length === 1 ? languages[0] : null;
+}
+
 function toPriceAlert(row: {
-  id: string | number; blueprint_id: number; language: string | null; condition: string | null;
+  id: string | number; blueprint_id: number; language: string | null; languages: string[] | null;
+  condition: string | null;
   can_sell_via_hub: number | null; target_type: PriceAlertTargetType; target_value: number;
   baseline_price_cents: number | null; baseline_currency: string | null;
   baseline_captured_at: Date | string | null; fire_mode: PriceAlertFireMode;
@@ -664,7 +742,7 @@ function toPriceAlert(row: {
   return {
     id: Number(row.id),
     blueprintId: row.blueprint_id,
-    language: row.language,
+    languages: row.languages ?? (row.language ? [row.language] : []),
     condition: row.condition,
     canSellViaHub: row.can_sell_via_hub,
     targetType: row.target_type,
@@ -690,16 +768,16 @@ function toPriceAlert(row: {
  * identico profilo. */
 async function findMatchingListingPrice(
   blueprintId: number,
-  language: string | null,
+  languages: string[],
   condition: string | null,
   canSellViaHub: number | null
 ): Promise<{ priceCents: number; currency: string | null } | null> {
   const pool = getPgPool();
   const conditions = ["blueprint_id = $1"];
   const params: unknown[] = [blueprintId];
-  if (language !== null) {
-    params.push(language);
-    conditions.push(`language = $${params.length}`);
+  if (languages.length > 0) {
+    params.push(languages);
+    conditions.push(`language = ANY($${params.length})`);
   }
   if (condition !== null) {
     params.push(condition);
@@ -736,13 +814,13 @@ export async function getPriceAlerts(userId: string): Promise<PriceAlert[]> {
  * calcolare un calo percentuale) - per "absolute_cents" e' invece
  * consentito, la soglia resta valida anche senza un baseline. */
 export async function createPriceAlert(userId: string, input: PriceAlertInput): Promise<PriceAlert> {
-  const language = input.language ?? null;
+  const languages = input.languages ?? [];
   const condition = input.condition ?? null;
   const canSellViaHub = input.canSellViaHub ?? null;
   const fireMode = input.fireMode ?? "once";
   const rearmCooldownHours = fireMode === "rearm" ? (input.rearmCooldownHours ?? null) : null;
 
-  const matching = await findMatchingListingPrice(input.blueprintId, language, condition, canSellViaHub);
+  const matching = await findMatchingListingPrice(input.blueprintId, languages, condition, canSellViaHub);
   if (input.targetType === "percent_drop" && !matching) {
     throw new PriceAlertValidationError(
       "Nessuna inserzione trovata per questo identico profilo (lingua/condizione/hub): impossibile calcolare un calo percentuale senza un prezzo di riferimento. Scegli un profilo con almeno un'inserzione attiva, oppure usa una soglia di prezzo assoluta."
@@ -753,13 +831,14 @@ export async function createPriceAlert(userId: string, input: PriceAlertInput): 
   try {
     const { rows } = await pool.query(
       `INSERT INTO price_alerts (
-         user_id, blueprint_id, language, condition, can_sell_via_hub,
+         user_id, blueprint_id, language, languages, condition, can_sell_via_hub,
          target_type, target_value, baseline_price_cents, baseline_currency,
          baseline_captured_at, fire_mode, rearm_cooldown_hours
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
-        userId, input.blueprintId, language, condition, canSellViaHub,
+        userId, input.blueprintId, legacyLanguage(languages), languages.length > 0 ? languages : null,
+        condition, canSellViaHub,
         input.targetType, input.targetValue,
         matching?.priceCents ?? null, matching?.currency ?? null,
         matching ? new Date() : null,
@@ -801,5 +880,105 @@ export async function setPriceAlertEnabled(userId: string, id: number, enabled: 
     `UPDATE price_alerts SET state = $3 WHERE user_id = $1 AND id = $2 RETURNING *`,
     [userId, id, enabled ? "armed" : "disabled"]
   );
+  return rows.length > 0 ? toPriceAlert(rows[0]) : null;
+}
+
+/** Modifica un allarme esistente (stessi campi della creazione, tranne la
+ * carta). Il baseline di un calo percentuale e' fissato una volta sola alla
+ * creazione, ma qui va ricatturato quando smette di essere valido: se cambia
+ * il profilo (lingua/condizione/hub) il vecchio prezzo era di un altro
+ * profilo, e passando da prezzo fisso a calo % il riferimento deve essere il
+ * prezzo di oggi. Modificare solo la percentuale lascia il baseline com'e'.
+ * Un allarme 'fired' torna 'armed' (chi cambia la soglia di un allarme
+ * scattato vuole di nuovo monitorarlo), uno 'disabled' resta disattivato.
+ * Ritorna null se l'allarme non esiste o non e' dell'utente. */
+export async function updatePriceAlert(
+  userId: string, id: number, input: PriceAlertFields
+): Promise<PriceAlert | null> {
+  const pool = getPgPool();
+  const { rows: existingRows } = await pool.query(
+    "SELECT * FROM price_alerts WHERE user_id = $1 AND id = $2", [userId, id]
+  );
+  if (existingRows.length === 0) return null;
+  const existing = toPriceAlert(existingRows[0]);
+
+  const languages = input.languages ?? [];
+  const condition = input.condition ?? null;
+  const canSellViaHub = input.canSellViaHub ?? null;
+  const fireMode = input.fireMode ?? "once";
+  const rearmCooldownHours = fireMode === "rearm" ? (input.rearmCooldownHours ?? null) : null;
+
+  const sameLanguages =
+    languages.length === existing.languages.length && languages.every((l) => existing.languages.includes(l));
+  const profileChanged =
+    !sameLanguages || condition !== existing.condition ||
+    canSellViaHub !== existing.canSellViaHub;
+  const recaptureBaseline = profileChanged || input.targetType !== existing.targetType;
+
+  let baselinePriceCents = existing.baselinePriceCents;
+  let baselineCurrency = existing.baselineCurrency;
+  let baselineCapturedAt: Date | string | null = existing.baselineCapturedAt;
+  if (recaptureBaseline) {
+    const matching = await findMatchingListingPrice(existing.blueprintId, languages, condition, canSellViaHub);
+    if (input.targetType === "percent_drop" && !matching) {
+      throw new PriceAlertValidationError(
+        "Nessuna inserzione trovata per questo identico profilo (lingua/condizione/hub): impossibile calcolare un calo percentuale senza un prezzo di riferimento. Scegli un profilo con almeno un'inserzione attiva, oppure usa una soglia di prezzo assoluta."
+      );
+    }
+    baselinePriceCents = matching?.priceCents ?? null;
+    baselineCurrency = matching?.currency ?? null;
+    baselineCapturedAt = matching ? new Date() : null;
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE price_alerts SET
+       language = $3, languages = $4, condition = $5, can_sell_via_hub = $6,
+       target_type = $7, target_value = $8,
+       baseline_price_cents = $9, baseline_currency = $10, baseline_captured_at = $11,
+       fire_mode = $12, rearm_cooldown_hours = $13,
+       state = CASE WHEN state = 'fired' THEN 'armed' ELSE state END
+     WHERE user_id = $1 AND id = $2
+     RETURNING *`,
+    [
+      userId, id, legacyLanguage(languages), languages.length > 0 ? languages : null,
+      condition, canSellViaHub, input.targetType, input.targetValue,
+      baselinePriceCents, baselineCurrency, baselineCapturedAt, fireMode, rearmCooldownHours,
+    ]
+  );
+  return rows.length > 0 ? toPriceAlert(rows[0]) : null;
+}
+
+/** Cambia solo la soglia di un allarme tenendo profilo e modalita' (usata
+ * dal bottone "Cambia soglia" su Telegram, dove si digita un solo numero). */
+export async function updatePriceAlertTarget(
+  userId: string, id: number, targetValue: number
+): Promise<PriceAlert | null> {
+  const a = await getPriceAlert(userId, id);
+  if (!a) return null;
+  if (!isValidPriceAlertTargetValue(a.targetType, targetValue)) {
+    throw new PriceAlertValidationError(
+      a.targetType === "absolute_cents" ? "Prezzo soglia non valido." : "Percentuale di calo non valida (1-99)."
+    );
+  }
+  return updatePriceAlert(userId, id, {
+    languages: a.languages, condition: a.condition, canSellViaHub: a.canSellViaHub,
+    targetType: a.targetType, targetValue, fireMode: a.fireMode,
+    rearmCooldownHours: a.rearmCooldownHours,
+  });
+}
+
+/** Utente CartaViva collegato a una chat Telegram (null se la chat non e'
+ * collegata): e' l'unica identita' su cui il webhook puo' fare affidamento
+ * per i bottoni degli avvisi, il chat_id arriva da Telegram (webhook gia'
+ * autenticato con il secret_token) e non dal contenuto del messaggio. */
+export async function getUserIdByTelegramChat(chatId: number): Promise<string | null> {
+  const pool = getPgPool();
+  const { rows } = await pool.query("SELECT user_id FROM telegram_links WHERE chat_id = $1", [chatId]);
+  return rows.length > 0 ? String(rows[0].user_id) : null;
+}
+
+export async function getPriceAlert(userId: string, id: number): Promise<PriceAlert | null> {
+  const pool = getPgPool();
+  const { rows } = await pool.query("SELECT * FROM price_alerts WHERE user_id = $1 AND id = $2", [userId, id]);
   return rows.length > 0 ? toPriceAlert(rows[0]) : null;
 }

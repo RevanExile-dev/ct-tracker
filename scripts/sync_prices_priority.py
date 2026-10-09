@@ -129,9 +129,11 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
     problema con l'immagine non fa mai perdere l'avviso."""
     pending = db.fetch_pending_outbox(conn)
     sent, failed = 0, 0
-    for outbox_id, chat_id, payload, image_url in pending:
+    for outbox_id, chat_id, payload, image_url, alert_id in pending:
         ok_response = False
         photo_error = None
+        reply_markup = db.alert_reply_markup(alert_id)
+        extra = {"reply_markup": reply_markup} if reply_markup else {}
 
         # Con immagine si prova prima sendPhoto (foto + didascalia): un
         # fallimento qui (URL scaduta, non raggiungibile da Telegram, ecc.)
@@ -141,7 +143,7 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
             try:
                 resp = requests.post(
                     f"https://api.telegram.org/bot{token}/sendPhoto",
-                    json={"chat_id": chat_id, "photo": image_url, "caption": payload, "parse_mode": "HTML"},
+                    json={"chat_id": chat_id, "photo": image_url, "caption": payload, "parse_mode": "HTML", **extra},
                     timeout=15,
                 )
                 ok_response = resp.ok and resp.json().get("ok")
@@ -157,7 +159,7 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
             try:
                 resp = requests.post(
                     f"https://api.telegram.org/bot{token}/sendMessage",
-                    json={"chat_id": chat_id, "text": payload, "parse_mode": "HTML"},
+                    json={"chat_id": chat_id, "text": payload, "parse_mode": "HTML", **extra},
                     timeout=15,
                 )
                 ok_response = resp.ok and resp.json().get("ok")

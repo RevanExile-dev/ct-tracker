@@ -213,7 +213,10 @@ export type PriceAlertState = "armed" | "fired" | "disabled";
 export type PriceAlert = {
   id: number;
   blueprintId: number;
-  language: string | null;
+  // Lingue accettate: l'allarme scatta se il prezzo e' sotto soglia in
+  // UNA QUALSIASI di queste. Lista vuota = "qualunque lingua" (scelta
+  // esplicita, non un default silenzioso).
+  languages: string[];
   condition: string | null;
   canSellViaHub: number | null;
   targetType: PriceAlertTargetType;
@@ -230,7 +233,7 @@ export type PriceAlert = {
 
 export type PriceAlertInput = {
   blueprintId: number;
-  language?: string | null;
+  languages?: string[];
   condition?: string | null;
   canSellViaHub?: number | null;
   targetType: PriceAlertTargetType;
