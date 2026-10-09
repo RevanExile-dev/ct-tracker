@@ -31,6 +31,13 @@ test("mew: pertinenza prima, poi Nome esatto esclude Mewtwo", async ({ page }) =
 
 test("suggerimenti: \"char\" propone i nomi, tap e Invio filtrano", async ({ page }) => {
   await page.goto(BASE_URL);
+  // Aspetta l'idratazione di React sul campo (React vi aggancia le sue
+  // proprieta'): scrivere prima fa perdere i primi tasti o il fuoco e la
+  // lista dei suggerimenti resta vuota (test instabile, visto anche su main).
+  await page.waitForFunction(() => {
+    const el = document.querySelector("input[role=combobox]");
+    return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps"));
+  });
   const input = page.getByLabel("Cerca una carta per nome o numero");
   await input.tap();
   await page.keyboard.type("char");
