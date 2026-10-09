@@ -79,9 +79,10 @@ async function handleThresholdReply(chatId: number, alertId: number, text: strin
     await sendTelegramMessage(chatId, "Allarme non trovato (forse eliminato).", PLAIN);
     return;
   }
-  const parsed = Number(text.replace(",", "."));
+  // Tollera simboli e parole attorno al numero ("12,50€", "12 euro", "20%").
+  const parsed = Number(text.replace(/[^0-9.,]/g, "").replace(",", "."));
   const targetValue = alert.targetType === "absolute_cents" ? Math.round(parsed * 100) : parsed;
-  if (!Number.isFinite(parsed)) {
+  if (!text.match(/\d/) || !Number.isFinite(parsed)) {
     await sendTelegramMessage(chatId, "Non riesco a leggere il numero. Premi di nuovo «Cambia soglia» e riprova.", PLAIN);
     return;
   }

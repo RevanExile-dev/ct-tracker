@@ -217,7 +217,7 @@ export default function QuickAlertModal({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setTargetType("absolute_cents")}
+                    onClick={() => { if (targetType !== "absolute_cents") { setTargetType("absolute_cents"); setTargetInput(""); } }}
                     className={`flex-1 text-xs font-mono uppercase tracking-wider px-3 py-2 rounded-card border transition-colors ${
                       targetType === "absolute_cents"
                         ? "bg-accent/10 border-accent/60 text-accent-bright"
@@ -228,7 +228,7 @@ export default function QuickAlertModal({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTargetType("percent_drop")}
+                    onClick={() => { if (targetType !== "percent_drop") { setTargetType("percent_drop"); setTargetInput(""); } }}
                     className={`flex-1 text-xs font-mono uppercase tracking-wider px-3 py-2 rounded-card border transition-colors ${
                       targetType === "percent_drop"
                         ? "bg-accent/10 border-accent/60 text-accent-bright"
