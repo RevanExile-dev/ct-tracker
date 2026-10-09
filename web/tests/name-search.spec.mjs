@@ -28,3 +28,25 @@ test("mew: pertinenza prima, poi Nome esatto esclude Mewtwo", async ({ page }) =
   await expect(page.getByRole("button", { name: "Nome esatto" }).first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("body")).toContainText("2 carte trovate");
 });
+
+test("suggerimenti: \"char\" propone i nomi, tap e Invio filtrano", async ({ page }) => {
+  await page.goto(BASE_URL);
+  const input = page.getByLabel("Cerca una carta per nome o numero");
+  await input.tap();
+  await page.keyboard.type("char");
+  const options = page.getByRole("listbox").getByRole("option");
+  await expect(options).toHaveText(["Charizard", "Charmeleon", "Charizard ex"]);
+
+  // Tap su un suggerimento: filtra su quel nome e chiude l'elenco.
+  await options.nth(1).tap();
+  await expect(input).toHaveValue("Charmeleon");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("1 carta trovata");
+
+  // Invio senza scegliere: prende il suggerimento piu' vicino (il primo).
+  await input.fill("char");
+  await expect(page.getByRole("listbox").getByRole("option").first()).toHaveText("Charizard");
+  await page.keyboard.press("Enter");
+  await expect(input).toHaveValue("Charizard");
+  await expect(page.locator("body")).toContainText("2 carte trovate");
+});

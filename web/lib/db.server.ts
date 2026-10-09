@@ -295,6 +295,29 @@ export async function fetchCards(opts: CardsFilterOpts & {
   return rows.map(mapCardRow);
 }
 
+/** Suggerimenti di nome per la barra di ricerca: nomi distinti (non una
+ * riga per ogni stampa) che contengono tutte le parole digitate, i piu'
+ * pertinenti prima (parola intera, poi inizio nome, poi il resto) e, a
+ * parita', i nomi piu' corti ("Charizard" prima di "Charizard ex"). Una
+ * sola scansione di blueprints, come la ricerca normale. */
+export async function fetchNameSuggestions(search: string, limit = 8): Promise<string[]> {
+  const tokens = searchTokens(search);
+  if (tokens.length === 0) return [];
+  const pool = getPgPool();
+  const p = new Params();
+  const where = tokens.map((t) => `b.name ILIKE ${p.add(`%${escapeLike(t)}%`)}`);
+  const rank = buildSearchRank(search, p);
+  const sql = `
+    SELECT b.name FROM blueprints b
+    WHERE ${where.join(" AND ")}
+    GROUP BY b.name
+    ORDER BY ${rank}, length(b.name), b.name
+    LIMIT ${p.add(Math.min(Math.max(limit, 1), 12))}
+  `;
+  const { rows } = await pool.query(sql, p.values);
+  return rows.map((r: { name: string }) => r.name);
+}
+
 /** Conteggio delle carte che soddisfano gli stessi filtri di fetchCards. */
 export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
   const pool = getPgPool();

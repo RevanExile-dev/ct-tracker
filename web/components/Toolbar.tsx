@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArtistOption, ExpansionInfo, SortOption } from "@/lib/db";
+import { useEffect, useId, useState } from "react";
+import { ArtistOption, ExpansionInfo, fetchNameSuggestions, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, formatNumber, languageFlag, languageLabel } from "@/lib/format";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
@@ -86,6 +86,31 @@ export default function Toolbar({
   const [activeFilter, setActiveFilter] = useState<"rarity" | "artist" | "language" | "condition" | null>(null);
   const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
 
+  // Suggerimenti di nome mentre si digita (tipo Google): l'elenco si apre
+  // solo con il campo a fuoco; Invio sceglie quello evidenziato o, se non
+  // ce n'e' uno, il piu' vicino (il primo).
+  const listboxId = useId();
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const trimmedSearch = search.trim();
+  useEffect(() => {
+    if (trimmedSearch.length < 2) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchNameSuggestions(trimmedSearch)
+        .then((names) => { if (!cancelled) { setSuggestions(names); setActiveSuggestion(-1); } })
+        .catch(() => { if (!cancelled) setSuggestions([]); });
+    }, 150);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [trimmedSearch]);
+  const shownSuggestions = suggestOpen && trimmedSearch.length >= 2 ? suggestions : [];
+  function chooseSuggestion(name: string) {
+    onSearch(name);
+    setSuggestOpen(false);
+    setActiveSuggestion(-1);
+  }
+
   useEffect(() => {
     onAnyFilterOpenChange?.(activeFilter !== null || expansionFilterOpen);
   }, [activeFilter, expansionFilterOpen, onAnyFilterOpenChange]);
@@ -127,11 +152,59 @@ export default function Toolbar({
         <div className="relative lg:flex-1 w-full">
           <input
             value={search}
-            onChange={(e) => onSearch(e.target.value)}
+            onChange={(e) => { onSearch(e.target.value); setSuggestOpen(true); }}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setSuggestOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setSuggestOpen(false); return; }
+              if (shownSuggestions.length === 0) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActiveSuggestion((i) => (i + 1) % shownSuggestions.length);
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActiveSuggestion((i) => (i <= 0 ? shownSuggestions.length - 1 : i - 1));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                chooseSuggestion(shownSuggestions[Math.max(activeSuggestion, 0)]);
+              }
+            }}
             placeholder="Cerca per nome o numero (es. 12/98)…"
             aria-label="Cerca una carta per nome o numero"
+            role="combobox"
+            aria-expanded={shownSuggestions.length > 0}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeSuggestion >= 0 ? `${listboxId}-${activeSuggestion}` : undefined}
+            autoComplete="off"
             className="w-full min-h-11 bg-base-surface border border-base-border rounded-card pl-4 pr-28 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
           />
+          {shownSuggestions.length > 0 && (
+            <ul
+              id={listboxId}
+              role="listbox"
+              aria-label="Suggerimenti"
+              className="absolute left-0 right-0 top-full mt-1 z-30 max-h-72 overflow-y-auto bg-base-surface border border-base-border rounded-card shadow-lg py-1"
+            >
+              {shownSuggestions.map((name, i) => (
+                <li
+                  key={name}
+                  id={`${listboxId}-${i}`}
+                  role="option"
+                  aria-selected={i === activeSuggestion}
+                  // mousedown (che il tap genera comunque) non deve togliere il
+                  // fuoco al campo, altrimenti l'elenco si chiude prima del click.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => chooseSuggestion(name)}
+                  className={`min-h-11 flex items-center px-4 text-sm cursor-pointer ${
+                    i === activeSuggestion ? "bg-accent/10 text-accent-bright" : "text-ink-primary hover:bg-base-surface2"
+                  }`}
+                >
+                  {name}
+                </li>
+              ))}
+            </ul>
+          )}
           <button
             type="button"
             onClick={onToggleExactName}

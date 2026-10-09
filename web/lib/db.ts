@@ -86,6 +86,11 @@ export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
   return count;
 }
 
+/** Nomi suggeriti mentre si digita nella barra di ricerca. */
+export async function fetchNameSuggestions(search: string): Promise<string[]> {
+  return apiFetch<string[]>("/api/cards/suggest", { search });
+}
+
 /** Media delle variazioni giorno-su-giorno delle carte che soddisfano i filtri correnti. */
 export async function fetchCardsSummary(opts: CardsFilterOpts): Promise<CardsSummary | null> {
   return apiFetch<CardsSummary | null>("/api/cards/summary", cardsFilterParams(opts));
