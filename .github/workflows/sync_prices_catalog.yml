@@ -2,18 +2,19 @@ name: Sync prezzi CardTrader (resto del catalogo)
 
 on:
   schedule:
-    # Resto del catalogo (~30.000 carte, tutte tranne le tracciate): 3 run
+    # Resto del catalogo (~30.000 carte, tutte tranne le tracciate): 4 run
     # lunghi (~45 minuti ciascuno) di NOTTE, quando l'utente non compra
     # comunque carte, cosi' di giorno i giri frequenti delle carte tracciate
     # (sync_prices_priority.yml) non restano mai in coda dietro il catalogo.
-    # Orari UTC: 00:30, 01:30, 02:30 = 02:30/03:30/04:30 in ora legale
-    # italiana (CEST, fino al 25/10/2026) e 01:30/02:30/03:30 in ora
-    # solare (CET) - sempre dentro la notte italiana. Un'ora di distanza
+    # Orari UTC: 00:30, 01:30, 02:30, 03:30 = 02:30-05:30 in ora legale
+    # italiana (CEST, fino al 25/10/2026) e 01:30-04:30 in ora solare
+    # (CET); l'ultimo run finisce entro le ~06:20 - sempre dentro la notte
+    # italiana (finestra del passo sotto: 00:30-07:00 ora di Roma). Un'ora di distanza
     # (run di ~47 minuti) lascia ~13 minuti liberi tra uno e l'altro per un
     # giro delle tracciate. GitHub ritarda o salta i cron, anche di ore:
     # il passo "Finestra notturna" sotto fa uscire subito un run schedulato
     # che parte fuori dalla notte italiana, invece di bloccare il giorno.
-    - cron: "30 0,1,2 * * *"
+    - cron: "30 0,1,2,3 * * *"
   workflow_dispatch: {}
 
 permissions:
