@@ -2,12 +2,19 @@ name: Sync prezzi CardTrader (resto del catalogo)
 
 on:
   schedule:
-    # Resto del catalogo (~30.000 carte, tutte tranne le tracciate): un run
-    # lungo (~45 minuti, ~2700 carte a 1 req/s) 4 volte al giorno, a minuti
-    # "dispari". Anche se GitHub salta qualche giro, ne bastano un paio al
-    # giorno per far ruotare il catalogo in pochi giorni. Le carte tracciate
-    # hanno il loro workflow frequente: sync_prices_priority.yml.
-    - cron: "47 1,7,13,19 * * *"
+    # Resto del catalogo (~30.000 carte, tutte tranne le tracciate): 4 run
+    # lunghi (~45 minuti ciascuno) di NOTTE, quando l'utente non compra
+    # comunque carte, cosi' di giorno i giri frequenti delle carte tracciate
+    # (sync_prices_priority.yml) non restano mai in coda dietro il catalogo.
+    # Orari UTC: 00:30, 01:30, 02:30, 03:30 = 02:30-05:30 in ora legale
+    # italiana (CEST, fino al 25/10/2026) e 01:30-04:30 in ora solare
+    # (CET); l'ultimo run finisce entro le ~06:20 - sempre dentro la notte
+    # italiana (finestra del passo sotto: 00:30-07:00 ora di Roma). Un'ora di distanza
+    # (run di ~47 minuti) lascia ~13 minuti liberi tra uno e l'altro per un
+    # giro delle tracciate. GitHub ritarda o salta i cron, anche di ore:
+    # il passo "Finestra notturna" sotto fa uscire subito un run schedulato
+    # che parte fuori dalla notte italiana, invece di bloccare il giorno.
+    - cron: "30 0,1,2,3 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -43,16 +50,35 @@ jobs:
     # generico che non lascerebbe nemmeno scrivere il checkpoint.
     timeout-minutes: 70
     steps:
-      - uses: actions/checkout@v4
+      # Solo per i run schedulati (workflow_dispatch parte sempre): solo
+      # tra le 00:30 e le 07:00 ora di Roma (Europe/Rome gestisce da solo
+      # ora legale/solare). Fuori finestra i passi sotto vengono saltati.
+      - name: Finestra notturna
+        id: finestra
+        run: |
+          now=$(TZ=Europe/Rome date +%H%M)
+          echo "Ora di Roma: $now (evento: ${{ github.event_name }})"
+          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$now" -lt 0030 ] || [ "$now" -ge 0700 ]; }; then
+            echo "Fuori dalla notte italiana: salto questo run del catalogo."
+            echo "esegui=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "esegui=si" >> "$GITHUB_OUTPUT"
+          fi
 
-      - uses: actions/setup-python@v5
+      - if: steps.finestra.outputs.esegui == 'si'
+        uses: actions/checkout@v4
+
+      - if: steps.finestra.outputs.esegui == 'si'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Installa dipendenze
+        if: steps.finestra.outputs.esegui == 'si'
         run: pip install -r requirements.txt
 
       - name: Batch prioritario (allarmi -> desideri -> binder -> catalogo)
+        if: steps.finestra.outputs.esegui == 'si'
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}

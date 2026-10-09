@@ -59,6 +59,7 @@ Uso:
 """
 import os
 import sys
+from collections import deque
 from datetime import datetime, timezone
 
 import requests
@@ -79,6 +80,8 @@ BUDGET_SECONDS = 3000  # default (nessun argomento): tutte le fasce, come prima
 # il tetto serve solo a fermare il run se le tracciate crescono molto.
 TRACKED_BUDGET_SECONDS = 600
 CATALOG_BUDGET_SECONDS = 2700
+TRACKED_PASS_INTERVAL_SECONDS = 25 * 60  # --catalog: ogni ~25 min un passaggio sulle carte tracciate
+TRACKED_MIN_INTERVAL_MINUTES = 20  # allarmi/desideri gia' aggiornati da meno di cosi' non si rifanno nello stesso passaggio
 BINDER_MIN_INTERVAL_MINUTES = 50  # binder: circa ogni ora (< 60 cosi' un giro in ritardo non salta un ciclo intero)
 # Margine ampio sopra quante carte un budget di 50 minuti a 1 richiesta/secondo
 # puo' mai processare davvero (~3000): solo per non caricare in memoria un
@@ -179,6 +182,21 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
     return sent, failed
 
 
+def tracked_due(conn) -> list:
+    """Carte tracciate (allarmi, desideri, binder, in quest'ordine) da
+    aggiornare ora: allarmi e desideri se non tentati negli ultimi
+    TRACKED_MIN_INTERVAL_MINUTES, il binder se non tentato negli ultimi
+    BINDER_MIN_INTERVAL_MINUTES. Usata da --catalog per non lasciare ferme
+    le carte tracciate durante il run lungo (stesso gruppo di concorrenza:
+    i giri --tracked restano in coda finche' il catalogo non finisce)."""
+    rows = [r for r in db.fetch_priority_batch(conn, FETCH_LIMIT) if r[3] != db.PRIORITY_CATALOG]
+    binder_ids = [r[0] for r in rows if r[3] == db.PRIORITY_BINDER]
+    other_ids = [r[0] for r in rows if r[3] != db.PRIORITY_BINDER]
+    skip = db.fetch_recently_attempted_ids(conn, binder_ids, BINDER_MIN_INTERVAL_MINUTES)
+    skip |= db.fetch_recently_attempted_ids(conn, other_ids, TRACKED_MIN_INTERVAL_MINUTES)
+    return [r for r in rows if r[0] not in skip]
+
+
 def main():
     global BUDGET_SECONDS
     mode = "all"
@@ -228,10 +246,27 @@ def main():
     circuit_breaker_triggered = False
     processed = 0
 
-    for bp_id, name, expansion_name, priority in batch:
-        if datetime.now(timezone.utc).timestamp() >= deadline:
+    # In --catalog le carte tracciate scadute si inseriscono in testa alla coda
+    # ogni TRACKED_PASS_INTERVAL_SECONDS (la prima volta subito): stessa
+    # priorita' di sempre (allarmi > desideri > binder), il catalogo prosegue dopo.
+    queue = deque(batch)
+    next_tracked_pass = start.timestamp() if mode == "catalog" else None
+    tracked_passes = 0
+
+    while True:
+        now_ts = datetime.now(timezone.utc).timestamp()
+        if now_ts >= deadline:
             print(f"  Budget di {BUDGET_SECONDS}s esaurito dopo {processed} carte, mi fermo qui.")
             break
+        if next_tracked_pass is not None and now_ts >= next_tracked_pass:
+            due = tracked_due(conn)
+            queue.extendleft(reversed(due))
+            tracked_passes += 1
+            next_tracked_pass = now_ts + TRACKED_PASS_INTERVAL_SECONDS
+            print(f"  Passaggio tracciate #{tracked_passes}: {len(due)} carte scadute messe in testa alla coda.")
+        if not queue:
+            break
+        bp_id, name, expansion_name, priority = queue.popleft()
         processed += 1
         tier_counts[priority] = tier_counts.get(priority, 0) + 1
 
@@ -297,7 +332,7 @@ def main():
             print(
                 f"  [ATTENZIONE] {consecutive_errors} carte di fila fallite: mi fermo qui "
                 f"invece di continuare a perdere il budget di questo run, "
-                f"{processed}/{len(batch)} carte candidate tentate.",
+                f"{processed} carte tentate.",
                 file=sys.stderr,
             )
             break
