@@ -160,6 +160,10 @@ BEGIN
     AS 'SELECT public.unaccent(''public.unaccent'', $1)';
   CREATE INDEX IF NOT EXISTS idx_blueprint_name_norm_trgm
     ON blueprints USING gin (f_unaccent(lower(name)) gin_trgm_ops);
+  -- Stessa cosa per la versione (numero/rarita'): la ricerca guarda nome O
+  -- versione, senza questo indice la parte sulla versione scansionerebbe tutto.
+  CREATE INDEX IF NOT EXISTS idx_blueprint_version_norm_trgm
+    ON blueprints USING gin (f_unaccent(lower(version)) gin_trgm_ops);
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'ricerca senza accenti/refusi non disponibile: %', SQLERRM;
 END $$;

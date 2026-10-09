@@ -60,8 +60,10 @@ test("Nome esatto: una parola senza cifre non cerca nella versione, il numero si
 
 test("accenti e refusi: \"pokemon\" trova Pokémon, \"charmilion\" suggerisce Charmeleon", async ({ request }) => {
   const count = async (qs) => (await (await request.get(`${BASE_URL}/api/cards/count?${qs}`)).json()).count;
-  expect(await count("search=pokemon")).toBeGreaterThan(0);
-  expect(await count("search=pok%C3%A9mon")).toBeGreaterThan(0);
+  // Anche nella versione ("Pokémon Day | 18/98"): con o senza accento lo stesso numero.
+  const senza = await count("search=pokemon");
+  expect(senza).toBeGreaterThanOrEqual(2);
+  expect(await count("search=pok%C3%A9mon")).toBe(senza);
   const sugg = await (await request.get(`${BASE_URL}/api/cards/suggest?search=charmilion`)).json();
   expect(sugg).toContain("Charmeleon");
 });

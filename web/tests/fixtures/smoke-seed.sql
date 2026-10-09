@@ -117,5 +117,6 @@ INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, e
   (910005, 'Charizard', '14/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
   (910006, 'Charizard ex', '15/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
   (910007, 'Charmeleon', '16/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
-  (910008, 'Pokémon Catcher', '17/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0)
+  (910008, 'Pokémon Catcher', '17/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910009, 'Promo Speciale', 'Pokémon Day | 18/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0)
 ON CONFLICT (id) DO NOTHING;

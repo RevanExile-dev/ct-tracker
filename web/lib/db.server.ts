@@ -183,9 +183,17 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean): {
         ? (norm ? `(${m.like(token, p)} AND ${m.word(token, p)})` : m.word(token, p))
         : m.like(token, p);
       const matchVersion = !opts.exactName || /\d/.test(token);
-      where.push(
-        matchVersion ? `(${nameMatch} OR b.version ILIKE ${p.add(`%${escapeLike(token)}%`)})` : nameMatch,
-      );
+      // Anche la versione e' normalizzata (stesso trattamento del nome): con le
+      // estensioni entrambi i lati usano un indice trigramma; confrontare la
+      // versione con ILIKE costringerebbe a scansionare tutta la tabella.
+      if (!matchVersion) {
+        where.push(nameMatch);
+        continue;
+      }
+      const versionMatch = norm
+        ? `f_unaccent(lower(b.version)) LIKE ${p.add(`%${escapeLike(normalizeToken(token))}%`)}`
+        : `b.version ILIKE ${p.add(`%${escapeLike(token)}%`)}`;
+      where.push(`(${nameMatch} OR ${versionMatch})`);
     }
   }
   if (opts.expansionCode) {
