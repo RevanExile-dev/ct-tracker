@@ -12,26 +12,27 @@ gira è questo, riletto e versionato qui.
 | Skill | Fonte e commit | Serve a |
 |---|---|---|
 | `frontend-design` | anthropics/skills @ 683bc88 | Linee guida per un'estetica con identità (solo testo) |
-| `vercel-react-best-practices` | vercel-labs/agent-skills @ 063bee9 | 70 regole di prestazioni React/Next (`rules/`, 72 file) |
 | `neon-postgres-egress-optimizer` | neondatabase/agent-skills @ bfd013c | Trovare query che scaricano troppi dati da Neon |
 | `neon-postgres-branches` | neondatabase/agent-skills @ bfd013c | Scegliere il tipo di branch per provare migrazioni |
 | `web-quality-audit`, `performance`, `core-web-vitals`, `accessibility`, `seo`, `best-practices` | addyosmani/web-quality-skills @ afa8da9 | Audit misurato (Lighthouse, tracce, WCAG 2.2) |
 
+Regola applicata: copiata solo una skill con licenza permissiva (MIT/Apache-2.0) e file di licenza presente accanto ai file; il resto è fuori.
 Licenze e fonti: `.claude/skills/THIRD_PARTY_NOTICES.md`. Le licenze originali restano
 valide per quei file (la licenza del repo "tutti i diritti riservati" non le sostituisce).
 
 ## Come sono state controllate
 
-- Letti per intero: i `SKILL.md` di tutte le skill, lo script `web-quality-audit/scripts/analyze.sh` (sola lettura, nessuna scrittura).
-- Scansionati con ricerca automatica, **non letti riga per riga**: i 72 file `rules/` e i file `references/`.
+- Letti per intero: i `SKILL.md` di tutte le skill copiate, lo script `web-quality-audit/scripts/analyze.sh` (sola lettura, nessuna scrittura).
+- Scansionati con ricerca automatica, **non letti riga per riga**: i file `references/`.
 - Su tutti i file copiati: 0 caratteri nascosti o invisibili; nessun comando eseguito al caricamento (`!`), nessun hook, nessun `allowed-tools`; nessuna frase che chiede di ignorare istruzioni, nascondere cose all'utente o inviare dati altrove.
-- Modifiche locali (solo queste): in `neon-postgres-egress-optimizer` e `neon-postgres-branches`, un blocco "ct-tracker note" dopo l'intestazione: vieta i comandi `neon skills`/`npm i @neon/config` e il download della skill madre, ricorda la conferma prima di DELETE/DROP/TRUNCATE e di cancellare branch. Il file `AGENTS.md` di Vercel (108 KB, versione compilata delle stesse regole) non è stato copiato: `SKILL.md` lo cita ma le regole sono in `rules/`.
+- Modifiche locali (solo queste): in `neon-postgres-egress-optimizer` e `neon-postgres-branches`, un blocco "ct-tracker note" dopo l'intestazione: vieta i comandi `neon skills`/`npm i @neon/config` e il download della skill madre, ricorda la conferma prima di DELETE/DROP/TRUNCATE e di cancellare branch. 
 - Aggiornamenti: nessun aggiornamento automatico. Per aggiornare si ricopia dalla fonte, si rilegge il diff e si aggiorna questa tabella.
 
 ## Valutate e NON copiate
 
 - Trail of Bits `agentic-actions-auditor` / `differential-review`: licenza CC-BY-SA 4.0 (condivisione allo stesso modo), incompatibile con "tutti i diritti riservati" del repo; hanno anche `allowed-tools: Bash`. Il metodo è stato applicato a mano ai workflow (sotto).
 - Impeccable, ui-ux-pro-max: letto solo il README; Impeccable scarica un programma e installa un hook su ogni modifica UI. Da riconsiderare solo dopo averne letto il codice.
+- `vercel-react-best-practices` (Vercel): tolta prima del merge, il repo di origine non ha un file di licenza né un avviso di copyright (solo un campo "MIT" nell'intestazione della skill): termini non abbastanza chiari. Da riammettere se Vercel aggiunge la licenza.
 - `vercel-optimize` (richiede Observability Plus a pagamento), `web-design-guidelines` (scarica regole da un altro repo a ogni uso), Context7, shadcn (Tailwind 4), Playwright MCP, Blender MCP: non servono o non sono gratuiti/sicuri ora.
 
 ## Chrome DevTools MCP: non attivo
