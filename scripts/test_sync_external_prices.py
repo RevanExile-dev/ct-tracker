@@ -77,5 +77,18 @@ class BuildRows(unittest.TestCase):
         self.assertEqual(sep.build_rows(res, self.PRODUCTS)[0][2], "")
 
 
+class CoverageCheck(unittest.TestCase):
+    def test_copertura_normale(self):
+        self.assertFalse(sep.coverage_too_low(22000, 30000, partial=False))
+
+    def test_copertura_crollata(self):
+        self.assertTrue(sep.coverage_too_low(0, 30000, partial=False))
+        self.assertTrue(sep.coverage_too_low(14000, 30000, partial=False))
+
+    def test_giro_parziale_o_db_vuoto_non_scattano(self):
+        self.assertFalse(sep.coverage_too_low(0, 30000, partial=True))
+        self.assertFalse(sep.coverage_too_low(0, 50, partial=False))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -55,6 +55,8 @@ FETCH_TRIES = 4
 COMMIT_EVERY_GROUPS = 25
 MAX_CONSECUTIVE_FAILURES = 15  # fonte giu': inutile continuare, il run diventa rosso
 MAX_FAILED_GROUPS_PCT = 5  # oltre questa quota di set falliti il run esce con errore
+MIN_COVERAGE_PCT = 50  # sotto questa copertura (misurata: ~73-93%) il formato della fonte e' probabilmente cambiato
+MIN_CARDS_FOR_COVERAGE_CHECK = 100  # su un DB quasi vuoto (prove locali) la percentuale non significa nulla
 INT32_MAX = 2_147_483_647
 
 
@@ -73,6 +75,17 @@ def to_cents(value) -> int | None:
         return None
     cents = round(f * 100)
     return cents if cents <= INT32_MAX else None
+
+
+def coverage_too_low(covered: int, total: int, partial: bool, min_pct: float = MIN_COVERAGE_PCT) -> bool:
+    """True se un giro COMPLETO ha agganciato troppo poche carte: la fonte e'
+    raggiungibile ma ha cambiato formato (es. id come stringhe, campi
+    rinominati) e senza questo controllo il run risulterebbe verde con zero
+    prezzi scritti. Mai su un giro parziale (--limit-groups) o su un database
+    quasi vuoto."""
+    if partial or total < MIN_CARDS_FOR_COVERAGE_CHECK:
+        return False
+    return 100 * covered / total < min_pct
 
 
 def build_rows(results: list, product_map: dict[int, list[int]]) -> list[tuple]:
@@ -129,6 +142,7 @@ def load_product_map(conn) -> dict[int, list[int]]:
         cur.execute("SELECT id, tcg_player_id FROM blueprints WHERE tcg_player_id ~ '^[0-9]+$'")
         for bid, tid in cur.fetchall():
             m.setdefault(int(tid), []).append(bid)
+    conn.rollback()  # niente transazione aperta durante le attese di rete che seguono
     return m
 
 
@@ -188,7 +202,7 @@ def main() -> int:
               f"({len(product_map)} prodotti distinti)")
 
         total_groups = failed_groups = consecutive_failures = 0
-        seen_products: set[int] = set()
+        covered_cards: set[int] = set()
         written = 0
         pending: list[tuple] = []
         groups_since_commit = 0
@@ -226,8 +240,9 @@ def main() -> int:
                     continue
                 consecutive_failures = 0
                 results = d.get("results", [])
-                seen_products.update(p["productId"] for p in results if p.get("productId") in product_map)
-                pending.extend(build_rows(results, product_map))
+                rows = build_rows(results, product_map)
+                covered_cards.update(r[0] for r in rows)
+                pending.extend(rows)
                 groups_since_commit += 1
                 if groups_since_commit >= COMMIT_EVERY_GROUPS:
                     flush()
@@ -237,12 +252,15 @@ def main() -> int:
             db.set_meta(conn, "last_external_prices_sync", fetched_at.isoformat())
             conn.commit()
 
-        covered_cards = sum(len(product_map[p]) for p in seen_products)
         total_cards = sum(len(v) for v in product_map.values())
-        pct = 100 * covered_cards / total_cards if total_cards else 0
+        pct = 100 * len(covered_cards) / total_cards if total_cards else 0
         print(f"Set scaricati: {total_groups - failed_groups}/{total_groups} (falliti {failed_groups})")
-        print(f"Carte con almeno un prezzo: {covered_cards}/{total_cards} ({pct:.1f}%), righe {'previste' if args.dry_run else 'scritte'}: {written}")
+        print(f"Carte con almeno un prezzo: {len(covered_cards)}/{total_cards} ({pct:.1f}%), righe {'previste' if args.dry_run else 'scritte'}: {written}")
         print(f"Tempo: {time.time() - started:.0f} s")
+        if coverage_too_low(len(covered_cards), total_cards, partial=bool(args.limit_groups)):
+            print(f"ERRORE: solo {pct:.1f}% delle carte ha un prezzo (soglia {MIN_COVERAGE_PCT}%): "
+                  "formato di tcgcsv cambiato?", file=sys.stderr)
+            return 1
         if total_groups and 100 * failed_groups / total_groups > MAX_FAILED_GROUPS_PCT:
             print(f"ERRORE: oltre il {MAX_FAILED_GROUPS_PCT}% dei set e' fallito.", file=sys.stderr)
             return 1
