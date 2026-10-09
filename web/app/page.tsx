@@ -13,6 +13,7 @@ import { splitCsv } from "@/lib/queryParams";
 import { useBinderWishlistIds } from "@/lib/useBinderWishlistIds";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
+import { useProgressiveCount } from "@/lib/useProgressiveCount";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 import CardTile from "@/components/CardTile";
@@ -29,6 +30,9 @@ import { formatPercent } from "@/lib/format";
 const HomeHero3D = dynamic(() => import("@/components/HomeHero3D"), { ssr: false });
 
 const PAGE_SIZE = 60;
+// Montaggio a scaglioni della griglia: quante tile subito e quante per frame.
+const GRID_INITIAL = 8;
+const GRID_STEP = 6;
 
 function HomeContent() {
   const router = useRouter();
@@ -250,11 +254,17 @@ function HomeContent() {
 
   // Gia' limitato lato SQL a visibleCount (vedi fetchCards sopra): nessuno
   // slice() lato client necessario.
-  const visible = cards;
+  // Le tile si montano a scaglioni (vedi useProgressiveCount): stesso
+  // risultato finale, ma senza un unico blocco lungo che tiene la pagina
+  // ferma ai tocchi. Le prime sono quelle sopra la piega.
+  const { count: mountedCount, done: gridMounted } = useProgressiveCount(cards?.length ?? 0, GRID_INITIAL, GRID_STEP);
+  const visible = cards && cards.slice(0, mountedCount);
   const currentQuery = searchParams.toString();
   const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
 
-  useScrollRestoration("catalog", cards !== null || error !== null, returnTo);
+  // Il ripristino dello scroll aspetta che tutte le tile siano montate: se
+  // la pagina non e' ancora alta abbastanza, scrollTo() si fermerebbe prima.
+  useScrollRestoration("catalog", (cards !== null && gridMounted) || error !== null, returnTo);
 
   const expansionSummary = expansionSummaryData && cards
     ? { ...expansionSummaryData, expansionName: cards[0]?.expansion_name ?? "" }
@@ -524,7 +534,7 @@ function HomeContent() {
               ))}
           </div>
 
-          {resultCount !== undefined && visibleCount < resultCount && (
+          {gridMounted && resultCount !== undefined && visibleCount < resultCount && (
             <div className="flex justify-center mt-8">
               <button
                 onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
