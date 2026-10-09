@@ -33,6 +33,18 @@ import { useEffect, useRef, useState } from "react";
  * spariva a meta' consultazione. Passare qui lo stato "e' aperto un
  * filtro" gia' tracciato dal chiamante evita di dover indovinare dal DOM.
  *
+ * Anti-oscillazione (bug reale "il sito vibra in fondo", riprodotto in
+ * produzione con rotella reale: scrollY alternava ~6571/6610 all'infinito,
+ * senza input, 12 volte al secondo): nascondere la barra accorcia il
+ * documento; se si e' vicini al fondo, il browser riporta scrollY indietro
+ * ("clamp"), il hook lo legge come "l'utente sale", rimostra la barra, il
+ * documento si riallunga, e cosi' via. Due difese complementari: (1) uno
+ * scroll all'indietro che finisce esattamente sul fondo scorrevole non e' un
+ * gesto dell'utente, solo un aggiustamento del layout (documento accorciato): si aggiorna
+ * l'ancora e basta; (2) non si nasconde la barra quando la distanza dal fondo
+ * e' minore dello spazio che la barra libererebbe (nessun clamp = nessun
+ * salto di contenuto).
+ *
  * Confronta lo scroll corrente con un "ancora" (l'ultima posizione in cui
  * la direzione e' stata confermata), non con l'evento immediatamente
  * precedente: un vero gesto di scroll desktop genera tanti eventi piccoli
@@ -115,6 +127,7 @@ export function useHideOnScrollDown(
 
   useEffect(() => {
     anchorY.current = window.scrollY;
+    let lastY = window.scrollY;
 
     function enterTouchManualMode() {
       if (window.matchMedia("(max-width: 639px)").matches) {
@@ -129,6 +142,9 @@ export function useHideOnScrollDown(
       requestAnimationFrame(() => {
         ticking.current = false;
         const y = window.scrollY;
+        const docHeight = document.documentElement.scrollHeight;
+        const prevY = lastY;
+        lastY = y;
         const mobile = window.matchMedia("(max-width: 639px)").matches;
 
         // Dopo il primo tocco su mobile, lo scroll non ha piu' autorita'
@@ -150,8 +166,24 @@ export function useHideOnScrollDown(
         }
         if (containerRef?.current?.contains(document.activeElement)) return;
 
+        // scrollY arretrato e fermo esattamente sul fondo scorrevole: e' il
+        // browser che rientra nei nuovi limiti dopo che il documento si e'
+        // accorciato (o il rimbalzo di iOS oltre il fondo), non l'utente che
+        // sale - uno scroll verso l'alto vero si ferma sopra il fondo.
+        // Niente confronto con l'altezza precedente: il documento puo'
+        // accorciarsi senza alcun evento scroll in mezzo.
+        if (y < prevY && y >= docHeight - window.innerHeight - 1) {
+          anchorY.current = y;
+          return;
+        }
+
         const delta = y - anchorY.current;
         if (delta > directionThresholdPx) {
+          // Vicino al fondo nascondere la barra accorcerebbe il documento
+          // sotto i piedi dell'utente: resta com'e'.
+          const barHeight = containerRef?.current?.getBoundingClientRect().height ?? 0;
+          const distanceToBottom = docHeight - (y + window.innerHeight);
+          if (distanceToBottom < barHeight) return;
           setVisible(false);
           anchorY.current = y;
         } else if (delta < -directionThresholdPx) {
