@@ -11,9 +11,14 @@
 
 import { useEffect, useState } from "react";
 import { CardRow, MIN_MOVER_LISTINGS, fetchCards } from "@/lib/db";
+import { useProgressiveCount } from "@/lib/useProgressiveCount";
 import CardTile from "./CardTile";
 
 const ROW_LIMIT = 10;
+// Montaggio a scaglioni delle tile delle tre righe (stesso motivo e stessa
+// tecnica della griglia in app/page.tsx): quante per riga subito, quante in piu' per frame.
+const ROW_INITIAL = 4;
+const ROW_STEP = 3;
 
 type Row = {
   key: string;
@@ -23,9 +28,11 @@ type Row = {
 };
 
 function HighlightRow({
-  row, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
+  row, mountedCount, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
 }: {
   row: Row;
+  /** Quante tile montare ora (le altre seguono a scaglioni). */
+  mountedCount: number;
   binderIds: Set<number>;
   onToggleBinder: (card: CardRow) => void;
   wishlistIds: Set<number>;
@@ -36,6 +43,10 @@ function HighlightRow({
   // art italiana ancora in catalogo): non mostrare un titolo vuoto.
   if (row.cards !== null && row.cards.length === 0) return null;
 
+  const items: (CardRow | undefined)[] = row.cards
+    ? row.cards.slice(0, mountedCount)
+    : Array.from({ length: 4 }, () => undefined);
+
   return (
     <div className="mt-6 first:mt-0">
       <div className="mb-2.5">
@@ -43,7 +54,7 @@ function HighlightRow({
         <div className="text-xs font-mono text-ink-faint">{row.subtitle}</div>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2 -mx-5 sm:-mx-8 px-5 sm:px-8 snap-x snap-mandatory [scrollbar-width:thin]">
-        {(row.cards ?? Array.from({ length: 4 })).map((card, i) => (
+        {items.map((card, i) => (
           <div key={card?.id ?? i} className="shrink-0 w-[42vw] sm:w-44 snap-start">
             {card ? (
               <CardTile
@@ -118,6 +129,9 @@ export default function HomeHighlights({
     return () => { cancelled = true; };
   }, []);
 
+  const longestRow = rows.reduce((max, r) => Math.max(max, r.cards?.length ?? 0), 0);
+  const { count: mountedCount } = useProgressiveCount(longestRow, ROW_INITIAL, ROW_STEP);
+
   if (!active) return null;
 
   return (
@@ -126,6 +140,7 @@ export default function HomeHighlights({
         <HighlightRow
           key={row.key}
           row={row}
+          mountedCount={mountedCount}
           binderIds={binderIds}
           onToggleBinder={onToggleBinder}
           wishlistIds={wishlistIds}
