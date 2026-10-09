@@ -95,7 +95,9 @@ function HomeContent() {
   const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
   const [visibleCount, setVisibleCount] = useState(() => {
     const shown = Number(searchParams.get("shown"));
-    return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
+    // Tetto uguale a quello di /api/cards: un ?shown enorme nell'URL non deve
+    // chiedere (e far serializzare) mezzo catalogo in una sola risposta.
+    return Number.isFinite(shown) && shown >= PAGE_SIZE ? Math.min(shown, 1000) : PAGE_SIZE;
   });
   const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedArtists.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, exactName, sortBy].join("|");
   const previousFilterKey = useRef(filterKey);
