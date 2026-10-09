@@ -1,6 +1,10 @@
 import "server-only";
 import { randomBytes } from "crypto";
 import { getPgPool } from "./pgPool";
+import {
+  AccountLimitError, MAX_BINDER_CARDS, MAX_FILTER_PRESETS, MAX_LOTS, MAX_PRICE_ALERTS, MAX_WISHLIST_CARDS,
+  exceedsLimit, limitMessage,
+} from "./accountLimits";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
 import type {
@@ -20,6 +24,41 @@ import type {
 // scripts/db.py fuori dal range che il suo controllo a regex accetta
 // ('^[1-9][0-9]{0,2}$', 1-999) - le due soglie vanno tenute allineate.
 export const MAX_BINDER_QUANTITY = 999;
+
+/** Quante righe ha gia' l'utente in `table` e se tra queste c'e' gia' `key`
+ * (un id carta o un nome di filtro): serve a bloccare solo le righe NUOVE
+ * oltre il tetto, mai l'aggiornamento di una riga che l'utente ha gia'.
+ * `table`/`keyColumn` sono costanti scritte qui sotto, mai input dell'utente.
+ * Due richieste in parallelo possono superare il tetto di poche righe:
+ * accettabile, il tetto serve contro l'abuso, non e' un contatore esatto. */
+async function countRows(
+  runner: { query: (sql: string, values: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  table: "binder_cards" | "wishlist_cards" | "binder_lots" | "price_alerts" | "filter_presets",
+  keyColumn: "blueprint_id" | "scope" | null,
+  userId: string,
+  keys: unknown[],
+): Promise<{ total: number; overlap: number }> {
+  const overlapSql = keyColumn ? `count(*) FILTER (WHERE ${keyColumn} = ANY($2))::int` : "0";
+  const { rows } = await runner.query(
+    `SELECT count(*)::int AS total, ${overlapSql} AS overlap FROM ${table} WHERE user_id = $1`,
+    keyColumn ? [userId, keys] : [userId],
+  );
+  return { total: rows[0].total as number, overlap: rows[0].overlap as number };
+}
+
+async function assertRoomForNew(
+  table: Parameters<typeof countRows>[1],
+  keyColumn: "blueprint_id" | "scope" | null,
+  userId: string,
+  keys: unknown[],
+  max: number,
+  what: string,
+  runner: Parameters<typeof countRows>[0] = getPgPool() as unknown as Parameters<typeof countRows>[0],
+): Promise<void> {
+  const { total, overlap } = await countRows(runner, table, keyColumn, userId, keys);
+  const adding = keyColumn ? new Set(keys).size - overlap : 1;
+  if (exceedsLimit(total, adding, max)) throw new AccountLimitError(limitMessage(what, max));
+}
 
 export function isValidBinderQuantity(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_BINDER_QUANTITY;
@@ -58,6 +97,7 @@ export async function upsertBinderEntry(
   patch: Partial<Omit<BinderEntry, "blueprintId" | "addedAt">>
 ): Promise<BinderEntry> {
   const pool = getPgPool();
+  await assertRoomForNew("binder_cards", "blueprint_id", userId, [blueprintId], MAX_BINDER_CARDS, "carte nel binder");
   const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
   const insertData = { language: null, quantity: 1, finish: "unknown", ...cleanPatch };
   const { rows } = await pool.query(
@@ -88,6 +128,9 @@ export async function mergeBinderEntries(userId: string, entries: BinderEntry[])
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await assertRoomForNew(
+      "binder_cards", "blueprint_id", userId, entries.map((e) => e.blueprintId), MAX_BINDER_CARDS, "carte nel binder", client,
+    );
     for (const entry of entries) {
       const data = { language: entry.language, quantity: entry.quantity, condition: entry.condition, finish: entry.finish };
       await client.query(
@@ -134,6 +177,7 @@ export async function getWishlistIds(userId: string): Promise<number[]> {
 
 export async function addWishlistId(userId: string, blueprintId: number): Promise<void> {
   const pool = getPgPool();
+  await assertRoomForNew("wishlist_cards", "blueprint_id", userId, [blueprintId], MAX_WISHLIST_CARDS, "carte nella lista desideri");
   await pool.query(
     "INSERT INTO wishlist_cards (user_id, blueprint_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
     [userId, blueprintId]
@@ -148,6 +192,7 @@ export async function removeWishlistId(userId: string, blueprintId: number): Pro
 export async function mergeWishlistIds(userId: string, ids: number[]): Promise<void> {
   if (!ids.length) return;
   const pool = getPgPool();
+  await assertRoomForNew("wishlist_cards", "blueprint_id", userId, ids, MAX_WISHLIST_CARDS, "carte nella lista desideri");
   await pool.query(
     "INSERT INTO wishlist_cards (user_id, blueprint_id) SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING",
     [userId, ids]
@@ -166,6 +211,7 @@ export async function getFilterPreset(userId: string, scope: string): Promise<{ 
 
 export async function setFilterPreset(userId: string, scope: string, data: FilterPreset): Promise<{ data: FilterPreset; updatedAt: string }> {
   const pool = getPgPool();
+  await assertRoomForNew("filter_presets", "scope", userId, [scope], MAX_FILTER_PRESETS, "filtri salvati");
   const { rows } = await pool.query(
     `INSERT INTO filter_presets (user_id, scope, data)
      VALUES ($1, $2, $3::jsonb)
@@ -274,6 +320,7 @@ async function recordLotEvent(
 
 export async function createLot(userId: string, input: LotInput): Promise<Lot> {
   const pool = getPgPool();
+  await assertRoomForNew("binder_lots", null, userId, [], MAX_LOTS, "lotti");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -814,6 +861,7 @@ export async function getPriceAlerts(userId: string): Promise<PriceAlert[]> {
  * calcolare un calo percentuale) - per "absolute_cents" e' invece
  * consentito, la soglia resta valida anche senza un baseline. */
 export async function createPriceAlert(userId: string, input: PriceAlertInput): Promise<PriceAlert> {
+  await assertRoomForNew("price_alerts", null, userId, [], MAX_PRICE_ALERTS, "allarmi prezzo");
   const languages = input.languages ?? [];
   const condition = input.condition ?? null;
   const canSellViaHub = input.canSellViaHub ?? null;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isValidLotCost, isValidLotDate } from "@/lib/account.server";
 import { resolveImportRow } from "@/lib/lotImport.server";
+import { limitErrorResponse } from "@/lib/accountLimitResponse";
 
 /** Risoluzione manuale di UNA riga dell'import Markdown rimasta ambigua o
  * senza corrispondenza (web/components/LotImportPanel.tsx): l'utente ha
@@ -30,7 +31,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Data di acquisizione non valida (attesa YYYY-MM-DD)" }, { status: 400 });
   }
 
-  const result = await resolveImportRow(userId, blueprintId, { costTotalCents, acquiredAt });
+  let result;
+  try {
+    result = await resolveImportRow(userId, blueprintId, { costTotalCents, acquiredAt });
+  } catch (err) {
+    const limited = limitErrorResponse(err);
+    if (limited) return limited;
+    throw err;
+  }
   if (!result.ok) return NextResponse.json({ error: "Carta non trovata nel catalogo." }, { status: 404 });
   return NextResponse.json(result);
 }

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { isRateLimitedShared } from "@/lib/rateLimitShared";
 import { parseLotImportMarkdown } from "@/lib/lotImport";
 import { applyLotImport } from "@/lib/lotImport.server";
+import { limitErrorResponse } from "@/lib/accountLimitResponse";
 
 // Tetto sulla lunghezza del testo (non tecnico): protegge la CPU della
 // route da un payload enorme incollato per errore prima ancora di provare a
@@ -51,6 +52,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Troppe righe (${rows.length}): il limite per importazione è ${MAX_IMPORT_ROWS}.` }, { status: 400 });
   }
 
-  const outcomes = await applyLotImport(userId, rows);
-  return NextResponse.json({ outcomes, warnings });
+  try {
+    const outcomes = await applyLotImport(userId, rows);
+    return NextResponse.json({ outcomes, warnings });
+  } catch (err) {
+    const limited = limitErrorResponse(err);
+    if (limited) return limited;
+    throw err;
+  }
 }

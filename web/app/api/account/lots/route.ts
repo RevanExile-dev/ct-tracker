@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { limitErrorResponse } from "@/lib/accountLimitResponse";
 import {
   MAX_LOT_QUANTITY, createLot, getLots, isValidLotCost, isValidLotCurrency,
   isValidLotDate, isValidLotProvenance, isValidLotQuantity,
@@ -64,6 +65,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = parseLotInput(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  const lot = await createLot(userId, parsed.input);
-  return NextResponse.json(lot, { status: 201 });
+  try {
+    const lot = await createLot(userId, parsed.input);
+    return NextResponse.json(lot, { status: 201 });
+  } catch (err) {
+    const limited = limitErrorResponse(err);
+    if (limited) return limited;
+    throw err;
+  }
 }
