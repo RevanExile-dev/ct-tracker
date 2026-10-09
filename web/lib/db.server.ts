@@ -116,11 +116,17 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
     // punto che ora costruisce davvero la query.
     const tokens = searchTokens(opts.search);
     for (const token of tokens) {
-      const like = p.add(`%${escapeLike(token)}%`);
+      // Il numero/versione conta come corrispondenza solo per parole con una
+      // cifra (es. "12/98") quando "Nome esatto" e' attivo: una parola come
+      // "char" non deve trovare carte che la contengono solo nella versione.
+      // I segnaposto si aggiungono solo se usati (Postgres rifiuta quelli
+      // inutilizzati).
+      const matchVersion = !opts.exactName || /\d/.test(token);
+      const like = matchVersion ? p.add(`%${escapeLike(token)}%`) : null;
       const nameMatch = opts.exactName
         ? `b.name ~* ${p.add(wholeWordRegex(token))}`
         : `b.name ILIKE ${like}`;
-      where.push(`(${nameMatch} OR b.version ILIKE ${like})`);
+      where.push(matchVersion ? `(${nameMatch} OR b.version ILIKE ${like})` : nameMatch);
     }
   }
   if (opts.expansionCode) {
