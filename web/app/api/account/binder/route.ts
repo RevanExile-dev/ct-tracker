@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getBinderEntries, isValidBinderQuantity, mergeBinderEntries } from "@/lib/account.server";
+import { limitErrorResponse } from "@/lib/accountLimitResponse";
+import { MAX_BINDER_CARDS, isValidBlueprintId } from "@/lib/accountLimits";
 import type { BinderEntry } from "@/lib/binder";
 
 function isBinderEntry(value: unknown): value is BinderEntry {
@@ -9,7 +11,7 @@ function isBinderEntry(value: unknown): value is BinderEntry {
   // A differenza di PUT /[id] (patch parziale), qui ogni entry sostituisce
   // per intero la riga corrispondente (vedi mergeBinderEntries) - quantity
   // deve quindi essere sempre valida, non solo se presente.
-  return typeof v.blueprintId === "number" && Number.isFinite(v.blueprintId) && isValidBinderQuantity(v.quantity);
+  return isValidBlueprintId(v.blueprintId) && isValidBinderQuantity(v.quantity);
 }
 
 export async function GET() {
@@ -27,9 +29,15 @@ export async function POST(req: NextRequest) {
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
   const body = await req.json().catch(() => null);
-  if (!Array.isArray(body) || !body.every(isBinderEntry)) {
+  if (!Array.isArray(body) || body.length > MAX_BINDER_CARDS || !body.every(isBinderEntry)) {
     return NextResponse.json({ error: "Payload non valido" }, { status: 400 });
   }
-  await mergeBinderEntries(userId, body);
+  try {
+    await mergeBinderEntries(userId, body);
+  } catch (err) {
+    const limited = limitErrorResponse(err);
+    if (limited) return limited;
+    throw err;
+  }
   return NextResponse.json(await getBinderEntries(userId));
 }

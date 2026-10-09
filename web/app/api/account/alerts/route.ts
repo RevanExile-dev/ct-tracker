@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { limitErrorResponse } from "@/lib/accountLimitResponse";
 import {
   PriceAlertValidationError, createPriceAlert, getPriceAlerts, parsePriceAlertFields,
 } from "@/lib/account.server";
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
     if (err instanceof PriceAlertValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    const limited = limitErrorResponse(err);
+    if (limited) return limited;
     throw err;
   }
 }
