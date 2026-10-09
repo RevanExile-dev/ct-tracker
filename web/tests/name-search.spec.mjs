@@ -57,3 +57,11 @@ test("Nome esatto: una parola senza cifre non cerca nella versione, il numero si
   expect(await count("search=char")).toBeGreaterThan(0);
   expect(await count("search=14%2F98&exactName=1")).toBeGreaterThan(0);
 });
+
+test("accenti e refusi: \"pokemon\" trova Pokémon, \"charmilion\" suggerisce Charmeleon", async ({ request }) => {
+  const count = async (qs) => (await (await request.get(`${BASE_URL}/api/cards/count?${qs}`)).json()).count;
+  expect(await count("search=pokemon")).toBeGreaterThan(0);
+  expect(await count("search=pok%C3%A9mon")).toBeGreaterThan(0);
+  const sugg = await (await request.get(`${BASE_URL}/api/cards/suggest?search=charmilion`)).json();
+  expect(sugg).toContain("Charmeleon");
+});

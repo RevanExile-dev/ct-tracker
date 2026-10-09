@@ -144,6 +144,26 @@ CREATE TABLE IF NOT EXISTS blueprints (
 CREATE INDEX IF NOT EXISTS idx_blueprint_expansion ON blueprints (expansion_id);
 CREATE INDEX IF NOT EXISTS idx_blueprint_rarity ON blueprints (rarity);
 
+-- Ricerca per nome senza accenti e con refusi ("pokemon" -> Pokémon,
+-- "charmilion" -> Charmeleon): estensioni pg_trgm/unaccent e un indice
+-- trigramma sul nome normalizzato. unaccent() non e' IMMUTABLE di suo, quindi
+-- serve il wrapper f_unaccent per poterlo usare in un indice. Tutto in un
+-- blocco che non fallisce mai: se le estensioni non sono permesse lo schema
+-- (e quindi ogni sync) va avanti e il sito cerca come prima (vedi
+-- hasSearchExtras in web/lib/db.server.ts). Idempotente.
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  CREATE EXTENSION IF NOT EXISTS unaccent;
+  CREATE OR REPLACE FUNCTION f_unaccent(text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+    AS 'SELECT public.unaccent(''public.unaccent'', $1)';
+  CREATE INDEX IF NOT EXISTS idx_blueprint_name_norm_trgm
+    ON blueprints USING gin (f_unaccent(lower(name)) gin_trgm_ops);
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'ricerca senza accenti/refusi non disponibile: %', SQLERRM;
+END $$;
+
 -- Illustratore della carta (filtro "Artista"). CardTrader non lo espone: lo
 -- scrive scripts/sync_artists.py incrociando set+numero con pokemon-tcg-data
 -- (carte inglesi) e TCGdex (giapponesi). NULL = nessuna corrispondenza certa,
