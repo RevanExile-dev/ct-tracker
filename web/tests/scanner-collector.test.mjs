@@ -286,3 +286,112 @@ test('"Evolves from X" sotto il nome non conta come nome (caso reale Mismagius S
   assert.equal(catalog.rankScannerCandidates({ name: 'Mismagius\nEvolves from Misdreavus', number: '' }, entries, 10)[0].id, 1);
   assert.equal(catalog.rankScannerCandidates({ name: 'Si evolve da Misdreavus', number: '' }, entries, 10).length, 0);
 });
+
+test('sigla stampata accanto al numero: separa 151 inglese e giapponese con stesso nome e numero', () => {
+  const entries = [card(1, 'Mew ex', 'Ultra Rare | 151/165', 'mew'), card(2, 'Mew ex', '151/165', 'sv2a')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Mew ex', number: 'MEW EN 151/165' }, entries, Infinity);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(ranked[0].setCodeMatch, true);
+  assert.equal(catalog.assessScan(ranked, { complete: true }), 'certain');
+  // Senza sigla letta restano due carte uguali: da confermare, a meno che la
+  // lingua letta escluda quella giapponese.
+  const blind = catalog.rankScannerCandidates({ name: 'Mew ex', number: '151/165' }, entries, Infinity);
+  assert.equal(catalog.assessScan(blind, { complete: true }), 'probable');
+  assert.equal(catalog.assessScan(blind, { complete: true, language: 'it' }), 'certain');
+  // La riga del copyright non e' una sigla.
+  const copyright = catalog.rankScannerCandidates({ name: 'Mew ex', number: '151/165\n©2023 Pokemon MEW' }, entries, Infinity);
+  assert.notEqual(copyright[0].setCodeMatch, true);
+});
+
+test('numero + sigla + immagine bastano senza nome (nome tradotto sulle carte italiane)', () => {
+  const top = { ...card(1, 'Brute Bonnet', 'Rare | 123/182', 'par'), score: 0.63, nameScore: 0, numberScore: 1, setCodeMatch: true, visualScore: 0.5 };
+  const other = { ...card(2, 'Brute Bonnet', '123/182', 'sv4'), score: 0.55, nameScore: 0, numberScore: 1, visualScore: 0.49 };
+  assert.equal(catalog.assessScan([top, other], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.3 }, other], { complete: true }), 'probable');
+  assert.equal(catalog.assessScan([top, { ...other, visualScore: 0.7 }], { complete: true }), 'probable');
+});
+
+test("l'immagine smentisce un vicino letto per caso, ma non una carta su cui nome e numero concordano", () => {
+  // Caso reale (Servine BLK 2/86): numero esatto e illustrazione identica, nome
+  // non letto; un'altra carta con mezza parola del nome e un numero simile
+  // bloccava la certezza pur non somigliando affatto alla foto.
+  const top = { ...card(1, 'Servine', '002/086', 'blk'), score: 0.55, nameScore: 0, numberScore: 1, visualScore: 0.98 };
+  const neighbour = { ...card(2, 'Serperior', '003/086', 'blk'), score: 0.56, nameScore: 0.42, numberScore: 0.68, visualScore: 0.53 };
+  assert.equal(catalog.assessScan([top, neighbour], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.55, visualScore: 0.8 }], { complete: true }), 'probable');
+  // Lettere sparse (meno di mezzo nome, tipico dei nomi tradotti) non sono un vicino.
+  assert.equal(catalog.assessScan([top, { ...neighbour, visualScore: 0.8 }], { complete: true }), 'certain');
+  // Con il nome letto pienamente e un numero compatibile il vicino resta
+  // un'alternativa vera, per quanto diversa sia l'immagine.
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.8 }], { complete: true }), 'probable');
+  // Mezzo nome e un numero simile, invece, si' (Vibrava FFI contro Cacnea 5/111),
+  // anche con il numero esatto se il nome e' letto solo a meta'.
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.5 }], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, { ...neighbour, nameScore: 0.5, numberScore: 1, score: 0.7 }], { complete: true }), 'certain');
+});
+
+test('numero + immagine sulle foto: somiglianza media ma molto sopra tutte le altre', () => {
+  const top = { ...card(1, 'Healing Scarf', '084/108', 'ros'), score: 0.73, nameScore: 0.41, numberScore: 1, visualScore: 0.55 };
+  const other = { ...card(2, 'Hawlucha', '064/108', 'ros'), score: 0.58, nameScore: 0.45, numberScore: 0.68, visualScore: 0.19 };
+  assert.equal(catalog.assessScan([top, other], { complete: true }), 'certain');
+  assert.equal(catalog.assessScan([top, { ...other, visualScore: 0.35 }], { complete: true }), 'probable');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.38 }, { ...other, visualScore: 0 }], { complete: true }), 'probable');
+});
+
+test('numero corto con la barra letta come cifra, e barra nel nome', () => {
+  const entries = [card(1, 'Articuno', '27/99', 'nxd'), card(2, 'Articuno', '17/108', 'roaring')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Articuno', number: 'O 27199 x' }, entries, Infinity);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(ranked[0].numberScore, 0.75);
+  // Quattro cifre attaccate non bastano: troppo facili da trovare per caso.
+  assert.equal(catalog.rankScannerCandidates({ name: 'Articuno', number: '12799 3' }, entries, Infinity)[0].numberScore, 0);
+  const servine = catalog.rankScannerCandidates({ name: 'mecl/Sarvine', number: '' }, [card(3, 'Servine', '002/086', 'blk')], Infinity);
+  assert.ok(servine[0]?.nameScore >= 0.75);
+});
+
+test('suffissi ex/V non letti non contano contro il nome', () => {
+  const entries = [card(1, 'Glimmora ex', 'Double Rare | 123/197', 'obf'), card(2, 'Glimmora', '124/197', 'obf')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Glimmora', number: '123/197' }, entries, Infinity);
+  assert.equal(ranked[0].id, 1);
+  assert.equal(ranked[0].nameScore, 1);
+});
+
+test('una cifra letta male non tiene seconda la carta che nome e immagine indicano', () => {
+  // Caso reale (Cloyster 24/122 in foto): "20/122" letto, Slowbro 20/122 primo
+  // per il testo; Cloyster ha il nome letto e l'illustrazione identica.
+  const slowbro = { ...card(1, 'Slowbro', '20/122', 'bkp'), score: 0.61, nameScore: 0.25, numberScore: 0.9, visualScore: 0.62 };
+  const cloyster = { ...card(2, 'Cloyster', '24/122', 'bkp'), score: 0.45, nameScore: 1, numberScore: 0, visualScore: 0.96 };
+  const other = { ...card(3, 'Cloyster', '020/083', 'gen'), score: 0.45, nameScore: 1, numberScore: 0, visualScore: 0.57 };
+  const resolved = catalog.resolveScan([slowbro, cloyster, other], { complete: true });
+  assert.equal(resolved.verdict, 'certain');
+  assert.equal(resolved.candidates[0].id, 2);
+  // Due varianti identiche restano da confermare anche scambiandole.
+  const twin = { ...cloyster, id: 4, visualScore: 0.95 };
+  assert.equal(catalog.resolveScan([slowbro, cloyster, twin], { complete: true }).verdict, 'probable');
+});
+
+test('numero letto quasi per intero + illustrazione quasi identica (allenatore italiano)', () => {
+  // Caso reale (Judge LOT 209/214 italiana, "Arbitro"): numero "209214".
+  const top = { ...card(1, 'Judge', 'Ultra Rare | 209/214', 'lot'), score: 0.48, nameScore: 0.14, numberScore: 0.75, visualScore: 0.94 };
+  const other = { ...card(2, 'Treecko', '020/214', 'lot'), score: 0.54, nameScore: 0.29, numberScore: 0.75, visualScore: 0.13 };
+  const all = { complete: true };
+  assert.equal(catalog.assessScan([top, other], all), 'certain');
+  assert.equal(catalog.assessScan([{ ...top, visualScore: 0.7 }, other], all), 'probable');
+  assert.equal(catalog.assessScan([top, { ...other, visualScore: 0.7 }], all), 'probable');
+  // Un'altra carta con un numero compatibile non confrontata: niente certezza.
+  assert.equal(catalog.assessScan([top, other, { ...other, id: 3, visualScore: null }], all), 'probable');
+  assert.equal(catalog.assessScan([top, other]), 'probable');
+});
+
+test('la carta scelta e quella giudicata: mai una versione giapponese in cima su una foto inglese', () => {
+  // Caso reale nelle prove: il riordino per immagine riportava in cima Servine
+  // sv11b (giapponese, 0.85) sopra Servine BLK (0.81); la certezza era calcolata
+  // su BLK ma la carta mostrata era quella giapponese.
+  const jp = { ...card(1, 'Servine', '002/086', 'sv11b'), score: 1, nameScore: 1, numberScore: 1, visualScore: 0.85 };
+  const en = { ...card(2, 'Servine', '002/086', 'blk'), score: 1, nameScore: 1, numberScore: 1, visualScore: 0.81 };
+  const snivy = { ...card(3, 'Snivy', '001/086', 'blk'), score: 0.82, nameScore: 1, numberScore: 0.68, visualScore: 0.3 };
+  const resolved = catalog.resolveScan([jp, en, snivy], { complete: true, language: 'en' });
+  assert.equal(resolved.verdict, 'certain');
+  assert.equal(resolved.candidates[0].id, 2);
+  assert.equal(resolved.candidates.at(-1).id, 1);
+});

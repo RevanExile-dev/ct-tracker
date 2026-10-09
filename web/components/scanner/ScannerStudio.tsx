@@ -7,13 +7,16 @@ import { formatCents, languageFlag } from "@/lib/format";
 import { getBinderIds, upsertBinderEntry } from "@/lib/binder";
 import { assessQuality, cropRegion, detectCardRegions, expandRegionForOcr } from "@/lib/scanner/image";
 import {
-  assessScan,
   catalogNameChecker,
   catalogNumberKeys,
   entryNumberLabel,
   hydrateScannerCard,
+  languageExcludes,
   loadScannerCatalog,
+  orderByLanguage,
   rankScannerCandidates,
+  resolveScan,
+  STRONG_NAME,
 } from "@/lib/scanner/catalog";
 import { extractAllNumberKeys } from "@/lib/scanner/collector-number";
 import { catalogSignature, visualSignature, visualSimilarity } from "@/lib/scanner/visual";
@@ -51,22 +54,61 @@ type ScanItem = {
 // Quante proposte confrontare con la foto: abbastanza da coprire le varianti
 // con lo stesso nome (es. tutte le Alolan Meowth), poche da scaricare.
 const VISUAL_CANDIDATES = 8;
+// A pari punteggio di testo (stesso nome letto, numero illeggibile) l'immagine
+// e' l'unico modo per scegliere: si confrontano tutte le pari merito, fino a
+// questo limite, invece di tagliarle a caso alla ottava. Si confrontano sempre
+// anche tutte le carte con il numero letto esatto (stesso numero in espansioni
+// diverse): senza, la regola "numero + immagine" non puo' dare certezza.
+const VISUAL_CANDIDATES_TIED = 32;
 
-async function withVisualScores(cropUrl: string, candidates: ScannerCandidate[]): Promise<ScannerCandidate[]> {
+function visualPool(candidates: ScannerCandidate[]): Set<number> {
+  const pool = new Set<number>();
+  const cutoff = candidates[Math.min(candidates.length, VISUAL_CANDIDATES) - 1]?.score ?? 0;
+  for (let index = 0; index < candidates.length && pool.size < VISUAL_CANDIDATES_TIED; index += 1) {
+    const candidate = candidates[index];
+    if (index < VISUAL_CANDIDATES || candidate.score >= cutoff - 1e-9 || candidate.numberScore === 1) pool.add(index);
+  }
+  return pool;
+}
+
+// Calcola la somiglianza con la foto per le proposte scelte (quelle gia'
+// confrontate restano com'erano) e le riordina: prima le confrontate, poi le
+// altre nell'ordine del testo.
+async function withVisualScores(
+  cropUrl: string,
+  candidates: ScannerCandidate[],
+  picked: Set<number> = visualPool(candidates),
+): Promise<ScannerCandidate[]> {
   if (!candidates.length) return candidates;
   try {
     const photo = await visualSignature(cropUrl);
-    const head = await Promise.all(candidates.slice(0, VISUAL_CANDIDATES).map(async (candidate) => {
+    const scored = await Promise.all(candidates.map(async (candidate, index) => {
+      if (candidate.visualScore !== undefined || !picked.has(index)) return candidate;
       const signature = await catalogSignature(candidate.id);
       return { ...candidate, visualScore: signature ? visualSimilarity(photo, signature) : null };
     }));
     // L'immagine riordina le proposte a parita' di testo; non puo' scavalcare
     // una carta su cui nome e numero letti concordano (bonus di +0.1 nel match).
     const boost = (candidate: ScannerCandidate) => candidate.score + 0.25 * Math.max(0, candidate.visualScore ?? 0);
-    return [...head.sort((a, b) => boost(b) - boost(a)), ...candidates.slice(VISUAL_CANDIDATES)];
+    const compared = scored.filter((candidate) => candidate.visualScore !== undefined);
+    return [...compared.sort((a, b) => boost(b) - boost(a)), ...scored.filter((candidate) => candidate.visualScore === undefined)];
   } catch {
     return candidates;
   }
+}
+
+// Secondo giro, solo se serve: con il nome letto e il numero no, la certezza
+// per immagine richiede di aver confrontato TUTTE le carte con quel nome
+// (Greninja: 36 versioni non giapponesi). Si confrontano anche le restanti,
+// fino a questo limite; oltre (Pikachu: 233) si chiede all'utente.
+const VISUAL_SAME_NAME_LIMIT = 48;
+
+function uncomparedSameName(candidates: ScannerCandidate[], language: string | null): Set<number> | null {
+  const missing = new Set<number>();
+  candidates.forEach((candidate, index) => {
+    if (candidate.visualScore === undefined && candidate.nameScore >= STRONG_NAME && !languageExcludes(candidate, language)) missing.add(index);
+  });
+  return missing.size > 0 && missing.size <= VISUAL_SAME_NAME_LIMIT ? missing : null;
 }
 
 function itemStatusLabel(item: ScanItem) {
@@ -236,9 +278,16 @@ export default function ScannerStudio() {
             // Lista completa (non troncata): assessScan deve sapere se TUTTE le
             // carte compatibili sono state confrontate con la foto. All'utente
             // se ne mostrano 6.
-            const ranked = rankScannerCandidates(evidence, catalog, Number.POSITIVE_INFINITY);
-            const candidates = await withVisualScores(item.cropUrl, ranked);
-            let verdict = assessScan(candidates, { complete: true });
+            // Carte di espansioni giapponesi in fondo se il testo letto e' italiano
+            // o inglese (e viceversa non si esclude nulla): con stesso nome e
+            // numero, la versione giapponese non deve togliere certezza.
+            const ranked = orderByLanguage(rankScannerCandidates(evidence, catalog, Number.POSITIVE_INFINITY), language.code);
+            const options = { complete: true, language: language.code };
+            let resolved = resolveScan(await withVisualScores(item.cropUrl, ranked), options);
+            const missing = resolved.verdict === "certain" ? null : uncomparedSameName(resolved.candidates, language.code);
+            if (missing) resolved = resolveScan(await withVisualScores(item.cropUrl, resolved.candidates, missing), options);
+            const candidates = resolved.candidates;
+            let verdict = resolved.verdict;
             const top = candidates[0];
 
             const hydrated = verdict === "certain" && top ? await hydrateScannerCard(top.id, language.code) : null;
@@ -599,7 +648,20 @@ export default function ScannerStudio() {
                 const price = priceFor(selected);
                 const inBinder = selected ? binderIds.has(selected.id) : false;
                 return (
-                  <article key={item.id} className={`${styles.resultCard} rounded-[22px] p-4 sm:p-5`} style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}>
+                  <article
+                    key={item.id}
+                    className={`${styles.resultCard} rounded-[22px] p-4 sm:p-5`}
+                    style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}
+                    // Esito leggibile dai test end-to-end (web/tests/scanner*.spec.mjs e
+                    // prove su foto vere): niente da indovinare dal testo mostrato.
+                    data-scan-status={item.status}
+                    data-scan-verdict={item.verdict ?? ""}
+                    data-scan-card={selected?.id ?? ""}
+                    data-scan-candidates={item.candidates.slice(0, 6).map((candidate) => candidate.id).join(",")}
+                    data-scan-language={item.language.code ?? ""}
+                    data-scan-ocr={item.ocrText}
+                    data-scan-debug={JSON.stringify(item.candidates.slice(0, 8).map((c) => [c.id, +c.score.toFixed(3), +c.nameScore.toFixed(2), +c.numberScore.toFixed(2), c.visualScore == null ? null : +c.visualScore.toFixed(3), c.setCodeMatch ? 1 : 0]))}
+                  >
                     <div className="grid sm:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-[180px_minmax(0,1fr)_auto] gap-4 sm:gap-5 items-start">
                       <div className={styles.imageShell}>
                         <Image

@@ -16,58 +16,66 @@ type CropSpec = {
   width: number;
   height: number;
   targetWidth: number;
+  // Altezza finale in px: se presente prevale su targetWidth. Serve ai ritagli
+  // binarizzati, dove conta l'altezza delle lettere e non la larghezza.
+  targetHeight?: number;
   // Fattore massimo di contrasto adattivo; 1 = solo scala di grigi.
   contrast: number;
   // Bordo bianco (px a scala finale): Tesseract legge meglio una riga isolata
   // se attorno c'e' margine, soprattutto sulle full-art dove il testo poggia
   // sull'illustrazione.
   pad: number;
+  // Soglia locale (Sauvola): ogni pixel e' confrontato con media e varianza
+  // dei vicini (raggio in frazione dell'altezza finale), cosi' il testo scuro
+  // diventa nero anche dove lo sfondo cambia (foil, fasce colorate, ombre).
+  binarize?: { k: number; radius: number };
 };
 
 // worker "body": stessa passata col modello multilingua. Misurato: su alcune
 // carte (es. Alolan Exeggutor 002/128) e' l'unica che legge il numero.
 type FieldRead = { crop: CropSpec; psm: "6" | "7" | "11"; worker?: "body" };
 
-// Misurato con tesseract.js 7 su carte reali (pulite e "fotografate"), il
-// 2026-10-07: il crop largo in scala di grigi con margine bianco legge il nome
-// in 6 casi su 7 e il numero in 6 su 7; il contrasto spinto e i modelli
-// giapponese/coreano attivi sulle stesse fasce peggioravano le letture (testo
-// inventato in caratteri CJK dentro il nome). Le passate successive servono
-// solo come ripiego e si fermano appena il risultato e' utile.
+// Misurato con tesseract.js 7 il 2026-10-08 su 142 immagini di catalogo (71
+// espansioni da BW a Mega Evolution, versione inglese e italiana di ogni carta):
+// la fascia in basso in scala di grigi leggeva il numero giusto su 38 carte; la
+// stessa fascia binarizzata con soglia locale (Sauvola) e letta come testo
+// sparso (psm 11) su 111, e con una seconda soglia su 125. Sul nome la stessa
+// tecnica porta le letture esatte da 34 a 47 (inglese) e da 20 a 36 (italiano).
+// Le passate successive servono solo come ripiego e si fermano appena il
+// risultato e' utile.
 const NAME_WIDE: CropSpec = { x: 0.035, y: 0.018, width: 0.76, height: 0.145, targetWidth: 1300, contrast: 1, pad: 24 };
+const NAME_BIN: CropSpec = { ...NAME_WIDE, targetHeight: 440, binarize: { k: 0.35, radius: 0.06 } };
+// Tutta la larghezza in alto: nomi lunghi ("Team Rocket's Tarountula") e carte
+// con il nome spostato a destra del badge di stadio.
+const NAME_FULL_BIN: CropSpec = { x: 0, y: 0, width: 1, height: 0.16, targetWidth: 1300, targetHeight: 480, contrast: 1, pad: 24, binarize: { k: 0.35, radius: 0.06 } };
 // Riga piu' stretta, senza badge di stadio a sinistra e HP/tipo a destra.
 const NAME_TIGHT: CropSpec = { x: 0.15, y: 0.015, width: 0.5, height: 0.09, targetWidth: 1300, contrast: 1, pad: 24 };
-// Stesso crop largo col contrasto adattivo di prima: su alcune carte (testo
-// chiaro su fondo chiaro) e' l'unica passata che legge.
-const NAME_WIDE_CONTRAST: CropSpec = { ...NAME_WIDE, contrast: 1.55 };
 // Numero collezione: in basso a SINISTRA sui layout moderni, a DESTRA su quelli
-// vintage (Base Set - HGSS), quindi l'intera larghezza inferiore.
+// vintage (fino a XY), quindi l'intera larghezza inferiore. Alta apposta: il
+// ritaglio OCR ha un margine extra sotto la carta (expandRegionForOcr), quindi
+// l'ultima riga non e' sempre nello stesso punto.
+const NUMBER_BIN: CropSpec = { x: 0, y: 0.76, width: 1, height: 0.24, targetWidth: 1400, targetHeight: 540, contrast: 1, pad: 24, binarize: { k: 0.35, radius: 0.035 } };
+const NUMBER_BIN_STRONG: CropSpec = { ...NUMBER_BIN, binarize: { k: 0.5, radius: 0.035 } };
 const NUMBER_WIDE: CropSpec = { x: 0.018, y: 0.8, width: 0.964, height: 0.185, targetWidth: 1400, contrast: 1, pad: 24 };
-const NUMBER_WIDE_CONTRAST: CropSpec = { ...NUMBER_WIDE, contrast: 1.9 };
 const NUMBER_WIDE_LEGACY: CropSpec = { ...NUMBER_WIDE, contrast: 1.9, pad: 0 };
-// Meta' sinistra e destra separate: su alcune full-art la fascia intera contiene
-// testo di attacchi/flavor che copre il numero. Alte apposta: il ritaglio OCR ha
-// un margine extra sotto la carta (expandRegionForOcr), quindi l'ultima riga
-// non e' sempre nello stesso punto.
-const NUMBER_LEFT: CropSpec = { x: 0.0, y: 0.82, width: 0.52, height: 0.17, targetWidth: 1400, contrast: 1, pad: 24 };
-const NUMBER_RIGHT: CropSpec = { x: 0.48, y: 0.82, width: 0.52, height: 0.17, targetWidth: 1400, contrast: 1, pad: 24 };
+// Meta' sinistra separata: su alcune full-art la fascia intera contiene testo
+// di attacchi/flavor che copre il numero.
+const NUMBER_LEFT_BIN: CropSpec = { x: 0, y: 0.8, width: 0.52, height: 0.2, targetWidth: 1400, targetHeight: 480, contrast: 1, pad: 24, binarize: { k: 0.35, radius: 0.03 } };
 // Fascia testo/weakness/retreat: serve solo a riconoscere la lingua.
 const BODY: CropSpec = { x: 0.025, y: 0.48, width: 0.95, height: 0.47, targetWidth: 1250, contrast: 1.35, pad: 0 };
 
 const NAME_READS: FieldRead[] = [
+  { crop: NAME_BIN, psm: "11" },
+  { crop: NAME_FULL_BIN, psm: "11" },
   { crop: NAME_WIDE, psm: "6" },
   { crop: NAME_TIGHT, psm: "6" },
-  { crop: NAME_WIDE, psm: "11" },
-  { crop: NAME_WIDE_CONTRAST, psm: "6" },
 ];
 const NUMBER_READS: FieldRead[] = [
+  { crop: NUMBER_BIN, psm: "11" },
+  { crop: NUMBER_BIN_STRONG, psm: "11" },
   { crop: NUMBER_WIDE, psm: "6" },
-  { crop: NUMBER_WIDE_CONTRAST, psm: "6" },
+  { crop: NUMBER_LEFT_BIN, psm: "11" },
   { crop: NUMBER_WIDE_LEGACY, psm: "6", worker: "body" },
-  { crop: NUMBER_WIDE, psm: "11" },
-  { crop: NUMBER_RIGHT, psm: "6" },
-  { crop: NUMBER_LEFT, psm: "6" },
-  { crop: NUMBER_LEFT, psm: "11" },
 ];
 // Tiene i prefissi gallery (TG/GG/SV/RC), le sigle promo (MEP, SVP, SWSH, SM,
 // XY, BW, "EN") e le confusioni O/I/L tipiche: una whitelist di sole cifre
@@ -163,13 +171,53 @@ function clampByte(value: number) {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
+// Soglia di Sauvola con immagini integrali: costo lineare nei pixel, qualunque
+// sia il raggio. Testo scuro (sotto la soglia locale) nero, tutto il resto bianco.
+function sauvola(gray: Float32Array, width: number, height: number, k: number, radius: number) {
+  const stride = width + 1;
+  const sum = new Float64Array(stride * (height + 1));
+  const sumSq = new Float64Array(stride * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let row = 0;
+    let rowSq = 0;
+    for (let x = 0; x < width; x += 1) {
+      const value = gray[y * width + x];
+      row += value;
+      rowSq += value * value;
+      sum[(y + 1) * stride + x + 1] = sum[y * stride + x + 1] + row;
+      sumSq[(y + 1) * stride + x + 1] = sumSq[y * stride + x + 1] + rowSq;
+    }
+  }
+  const out = new Uint8ClampedArray(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height, y + radius + 1);
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width, x + radius + 1);
+      const n = (x1 - x0) * (y1 - y0);
+      const s = sum[y1 * stride + x1] - sum[y0 * stride + x1] - sum[y1 * stride + x0] + sum[y0 * stride + x0];
+      const s2 = sumSq[y1 * stride + x1] - sumSq[y0 * stride + x1] - sumSq[y1 * stride + x0] + sumSq[y0 * stride + x0];
+      const mean = s / n;
+      const std = Math.sqrt(Math.max(0, s2 / n - mean * mean));
+      out[y * width + x] = gray[y * width + x] < mean * (1 + k * (std / 128 - 1)) ? 0 : 255;
+    }
+  }
+  return out;
+}
+
 function makeCrop(image: HTMLImageElement, spec: CropSpec) {
   const sx = Math.max(0, Math.round(spec.x * image.naturalWidth));
   const sy = Math.max(0, Math.round(spec.y * image.naturalHeight));
   const sw = Math.max(1, Math.min(image.naturalWidth - sx, Math.round(spec.width * image.naturalWidth)));
   const sh = Math.max(1, Math.min(image.naturalHeight - sy, Math.round(spec.height * image.naturalHeight)));
-  const targetW = Math.max(sw, Math.min(spec.targetWidth, Math.round(sw * 2.4)));
-  const targetH = Math.max(1, Math.round(targetW * (sh / sw)));
+  // Con targetHeight la scala dipende dall'altezza (lettere sempre della stessa
+  // taglia per Tesseract), limitata a 5x e a 2600 px di larghezza per il costo.
+  const scale = spec.targetHeight
+    ? Math.max(1, Math.min(5, spec.targetHeight / sh, 2600 / sw))
+    : Math.max(1, Math.min(spec.targetWidth / sw, 2.4));
+  const targetW = Math.max(1, Math.round(sw * scale));
+  const targetH = Math.max(1, Math.round(sh * scale));
   const pad = spec.pad;
   const canvas = document.createElement("canvas");
   canvas.width = targetW + pad * 2;
@@ -185,6 +233,21 @@ function makeCrop(image: HTMLImageElement, spec: CropSpec) {
   // Statistiche e contrasto solo sull'area della carta, non sul margine bianco.
   const pixels = ctx.getImageData(pad, pad, targetW, targetH);
   const data = pixels.data;
+  if (spec.binarize) {
+    const gray = new Float32Array(targetW * targetH);
+    for (let i = 0; i < gray.length; i += 1) {
+      gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
+    }
+    const radius = Math.max(8, Math.round(targetH * spec.binarize.radius));
+    const binary = sauvola(gray, targetW, targetH, spec.binarize.k, radius);
+    for (let i = 0; i < binary.length; i += 1) {
+      data[i * 4] = binary[i];
+      data[i * 4 + 1] = binary[i];
+      data[i * 4 + 2] = binary[i];
+    }
+    ctx.putImageData(pixels, pad, pad);
+    return canvas.toDataURL("image/png");
+  }
   let adaptive = 1;
   let mean = 128;
   if (spec.contrast > 1) {
@@ -302,13 +365,17 @@ export async function terminateOcr(): Promise<void> {
   }));
 }
 
+// Parole tipiche di ogni lingua nel testo della carta. "pokemon" stava sia
+// nell'italiano sia nell'inglese: a parita' vinceva l'italiano, e una Nest Ball
+// inglese risultava "Italiano" (prezzo della lingua sbagliata). Ora si contano
+// solo parole intere distintive, e il pareggio resta "lingua incerta".
 const LANGUAGE_RULES: Array<{ code: string; label: string; words: string[] }> = [
-  { code: "it", label: "Italiano", words: ["debolezza", "resistenza", "ritirata", "danno", "avversario", "pokemon", "carta"] },
-  { code: "en", label: "English", words: ["weakness", "resistance", "retreat", "damage", "opponent", "during", "pokemon"] },
-  { code: "fr", label: "Français", words: ["faiblesse", "resistance", "retraite", "degats", "adversaire", "pendant"] },
-  { code: "de", label: "Deutsch", words: ["schwache", "resistenz", "ruckzug", "schaden", "gegner", "wahrend"] },
-  { code: "es", label: "Español", words: ["debilidad", "resistencia", "retirada", "dano", "rival", "durante"] },
-  { code: "pt", label: "Português", words: ["fraqueza", "resistencia", "recuo", "dano", "oponente", "durante"] },
+  { code: "it", label: "Italiano", words: ["debolezza", "resistenza", "ritirata", "danno", "danni", "avversario", "tuo", "tua", "questo", "questa", "carte", "turno", "mazzo", "panchina", "attivo", "puoi", "della", "degli", "nel"] },
+  { code: "en", label: "English", words: ["weakness", "resistance", "retreat", "damage", "opponent", "opponents", "during", "your", "this", "cards", "turn", "deck", "bench", "active", "you", "the", "may", "each"] },
+  { code: "fr", label: "Français", words: ["faiblesse", "resistance", "retraite", "degats", "adversaire", "pendant", "votre", "cette", "cartes", "tour", "banc", "vous"] },
+  { code: "de", label: "Deutsch", words: ["schwache", "resistenz", "ruckzug", "schaden", "gegner", "wahrend", "deinen", "dieses", "karten", "zug", "bank", "du"] },
+  { code: "es", label: "Español", words: ["debilidad", "resistencia", "retirada", "dano", "rival", "durante", "tu", "este", "cartas", "turno", "banca", "puedes"] },
+  { code: "pt", label: "Português", words: ["fraqueza", "resistencia", "recuo", "dano", "oponente", "durante", "seu", "este", "cartas", "turno", "banco", "voce"] },
 ];
 
 function normalize(value: string) {
@@ -324,6 +391,14 @@ export function detectLanguage(text: string): DetectedLanguage {
   // un solo carattere bastava a segnare la carta come giapponese, con prezzo
   // della lingua sbagliata. Serve una quantita' reale di testo CJK, prevalente
   // sulle lettere latine.
+  // Dalle carte Scarlatto e Violetto in poi la lingua e' stampata accanto
+  // alla sigla dell'espansione, in basso a sinistra: "PAR IT 123/182",
+  // "MEG EN 111/132". Quando si legge vale piu' delle parole del testo.
+  const printed = text.match(/(?<![A-Za-z0-9])[A-Z0-9]{3}\s?(EN|IT|FR|DE|ES|PT)\s*[0-9O]{3}(?![0-9])/);
+  if (printed) {
+    const rule = LANGUAGE_RULES.find((language) => language.code === printed[1].toLowerCase());
+    if (rule) return { code: rule.code, label: rule.label, confidence: 0.96 };
+  }
   const latinLetters = (text.match(/[A-Za-z]/g) ?? []).length;
   const japanese = (text.match(/[\u3040-\u30fb\u3400-\u9fff]/gu) ?? []).length;
   const korean = (text.match(/[\uac00-\ud7af]/gu) ?? []).length;
@@ -334,13 +409,12 @@ export function detectLanguage(text: string): DetectedLanguage {
     return { code: "ko", label: "한국어", confidence: 0.95 };
   }
 
-  const normalized = normalize(text);
-  let best: { code: string; label: string; hits: number } | null = null;
-  for (const language of LANGUAGE_RULES) {
-    const hits = language.words.reduce((total, word) => total + (normalized.includes(word) ? 1 : 0), 0);
-    if (!best || hits > best.hits) best = { code: language.code, label: language.label, hits };
-  }
-  if (!best || best.hits === 0) return { code: null, label: "Lingua incerta", confidence: 0 };
+  const tokens = new Set(normalize(text).split(/[^a-z]+/).filter(Boolean));
+  const scored = LANGUAGE_RULES
+    .map((language) => ({ ...language, hits: language.words.reduce((total, word) => total + (tokens.has(word) ? 1 : 0), 0) }))
+    .sort((a, b) => b.hits - a.hits);
+  const [best, second] = scored;
+  if (!best || best.hits === 0 || best.hits === second?.hits) return { code: null, label: "Lingua incerta", confidence: 0 };
   return {
     code: best.code,
     label: best.label,

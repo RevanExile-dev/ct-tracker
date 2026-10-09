@@ -6,6 +6,10 @@ export type ScanRegion = {
   height: number;
   score: number;
   fallback?: boolean;
+  // Angoli della carta (alto-sx, alto-dx, basso-dx, basso-sx) in frazioni
+  // dell'immagine, quando il rilevatore a quadrilatero li ha trovati: il
+  // ritaglio viene raddrizzato invece di essere un semplice rettangolo.
+  quad?: [number, number][];
 };
 
 export type ScanQuality = {
@@ -30,6 +34,8 @@ export type ScannerCandidate = ScannerCatalogEntry & {
   numberScore: number;
   // Somiglianza visiva (-1..1) con la foto, se calcolata; null = non disponibile.
   visualScore?: number | null;
+  // La sigla dell'espansione stampata in basso ("PAL", "SV2a") e' stata letta.
+  setCodeMatch?: boolean;
 };
 
 // Letture OCR separate per campo: il nome si cerca SOLO nella fascia del nome,

@@ -1,4 +1,5 @@
 import type { ScanQuality, ScanRegion } from "./types";
+import { detectCardQuad, expandQuad, warpQuad, type Point } from "./quad";
 
 const CARD_ASPECT = 63 / 88;
 const MAX_REGIONS = 12;
@@ -605,7 +606,60 @@ export function detectOnUniformBackground(
 export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
   const image = await loadImage(src);
   const { ctx, width, height } = workCanvas(image);
-  const rgba = ctx.getImageData(0, 0, width, height).data;
+  return detectCardRegionsFromPixels(ctx.getImageData(0, 0, width, height).data, width, height);
+}
+
+/** Stesso rilevamento su pixel RGBA gia' ridotti (lato lungo ~480 px): separato
+ * dal canvas per poterlo provare in Node su foto vere. */
+export function detectCardRegionsFromPixels(rgba: Uint8ClampedArray, width: number, height: number): ScanRegion[] {
+  const frameAspect = width / height;
+  // Immagine con le proporzioni esatte di una carta (63:88, scansione o foto
+  // ritagliata sulla carta, come le immagini del catalogo e gli screenshot):
+  // la carta e' l'intera immagine. Le foto del telefono sono 3:4 o 9:16, fuori
+  // da questa tolleranza. Senza questo controllo il rilevatore a quadrilatero
+  // agganciava la cornice interna di 50 scansioni pulite su 215.
+  if (Math.abs(frameAspect - CARD_ASPECT) < 0.02) {
+    return [{ id: "region-frame", x: 0, y: 0, width: 1, height: 1, score: 0.8 }];
+  }
+  const uniformRegions = detectOnUniformBackground(rgba, width, height);
+  // Piu' carte su un fondo uniforme: il rilevatore a "macchie" le separa bene.
+  if (uniformRegions.length >= 2) return uniformRegions.sort((a, b) => a.y - b.y || a.x - b.x);
+
+  // Una carta sola: i suoi quattro lati dritti (vedi quad.ts). Il ritaglio
+  // viene poi raddrizzato, anche se la foto e' un po' storta o inclinata.
+  const quad = detectCardQuad(rgba, width, height);
+  if (quad) {
+    const xs = quad.corners.map(([x]) => x);
+    const ys = quad.corners.map(([, y]) => y);
+    const minX = Math.max(0, Math.min(...xs));
+    const minY = Math.max(0, Math.min(...ys));
+    const maxX = Math.min(width, Math.max(...xs));
+    const maxY = Math.min(height, Math.max(...ys));
+    const quadRegion: ScanRegion = {
+      id: "region-quad",
+      x: minX / width,
+      y: minY / height,
+      width: (maxX - minX) / width,
+      height: (maxY - minY) / height,
+      score: 0.6 + 0.4 * quad.support,
+      quad: quad.corners.map(([x, y]) => [x / width, y / height]),
+    };
+    // La carta riempie gia' la foto (margini sotto il 6%): e' una foto
+    // ritagliata o una scansione, e il quadrilatero trovato puo' essere la
+    // cornice interna. Meglio l'intera immagine.
+    const filled = minX < width * 0.06 && minY < height * 0.06 && maxX > width * 0.94 && maxY > height * 0.94;
+    if (filled && Math.abs(frameAspect - CARD_ASPECT) < 0.08) {
+      return [{ id: "region-frame", x: 0, y: 0, width: 1, height: 1, score: quadRegion.score }];
+    }
+    // Una sola macchia su fondo uniforme: vince solo se contiene il
+    // quadrilatero ed e' nettamente piu' grande (il quadrilatero era una
+    // cornice interna). Una macchia dentro il quadrilatero e' un pezzo della
+    // carta (illustrazione, riquadro testo) e va ignorata.
+    const uniform = uniformRegions[0];
+    const uniformContainsQuad = uniform && overlapCoverage(uniform, quadRegion) > 0.85
+      && uniform.width * uniform.height > quadRegion.width * quadRegion.height * 1.15;
+    return [uniformContainsQuad ? uniform : quadRegion];
+  }
 
   const borderRegions = detectBorderRectangles(rgba, width, height);
   // Foto gia' ritagliata sulla carta (proporzioni carta, la carta riempie il
@@ -614,15 +668,13 @@ export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
   // aggancia un rettangolo INTERNO (es. la fascia weakness/retreat), lasciando
   // fuori il fondo carta col numero di collezione. Se il miglior riquadro e'
   // quasi tutta la larghezza e la foto ha proporzioni di carta, la carta e' l'intera foto.
-  const frameAspect = width / height;
   if (borderRegions.length && Math.abs(frameAspect - CARD_ASPECT) < 0.08) {
     const best = [...borderRegions].sort((a, b) => b.width * b.height - a.width * a.height)[0];
     if (best.width >= 0.9 && best.height >= 0.75) {
       return [{ id: "region-frame", x: 0, y: 0, width: 1, height: 1, score: Math.max(best.score, 0.5) }];
     }
   }
-  const uniformRegions = detectOnUniformBackground(rgba, width, height);
-  if (uniformRegions.length) return uniformRegions.sort((a, b) => a.y - b.y || a.x - b.x);
+  if (uniformRegions.length) return uniformRegions;
   if (borderRegions.length) return consolidateRegions(borderRegions).sort((a, b) => a.y - b.y || a.x - b.x);
 
   const componentRegions = detectConnectedComponents(rgba, width, height);
@@ -661,6 +713,15 @@ function expandRegionWithSafetyMargin(region: ScanRegion): ScanRegion {
 // va aggiunto qui, PRIMA del ritaglio, non nelle frazioni OCR - che restano
 // relative alla regione espansa.
 export function expandRegionForOcr(region: ScanRegion): ScanRegion {
+  // Con gli angoli veri della carta il bordo e' gia' preciso: basta un margine
+  // del 5% attorno, uguale su tutti i lati (il ritaglio viene raddrizzato). Il
+  // 5% copre anche il caso in cui il quadrilatero trovato e' la cornice interna
+  // delle carte Scarlatto e Violetto (bordo argentato su fondo chiaro), che ha
+  // le stesse proporzioni della carta: nome e numero stanno comunque dentro.
+  if (region.quad) {
+    const quad = expandQuad(region.quad as [Point, Point, Point, Point], 0.05);
+    return { ...region, quad };
+  }
   return expandRegionWithSafetyMargin(region);
 }
 
@@ -688,8 +749,44 @@ export function consolidateRegions(regions: ScanRegion[]): ScanRegion[] {
   return kept;
 }
 
+// Ritaglio raddrizzato: il quadrilatero della carta diventa un rettangolo con le
+// proporzioni della carta (63:88), largo al massimo 1000 px come gli altri
+// ritagli. I pixel si leggono da una copia della zona della carta ridotta a
+// 1800 px di lato, non dall'intera foto (che da telefono puo' avere 12 Mpx).
+function cropQuad(image: HTMLImageElement, quad: [number, number][]): string {
+  const W = image.naturalWidth;
+  const H = image.naturalHeight;
+  const corners = quad.map(([x, y]) => [x * W, y * H]) as [Point, Point, Point, Point];
+  const xs = corners.map(([x]) => x);
+  const ys = corners.map(([, y]) => y);
+  const sx = Math.max(0, Math.floor(Math.min(...xs)));
+  const sy = Math.max(0, Math.floor(Math.min(...ys)));
+  const sw = Math.max(1, Math.min(W, Math.ceil(Math.max(...xs))) - sx);
+  const sh = Math.max(1, Math.min(H, Math.ceil(Math.max(...ys))) - sy);
+  const scale = Math.min(1, 1800 / Math.max(sw, sh));
+  const work = document.createElement("canvas");
+  work.width = Math.max(1, Math.round(sw * scale));
+  work.height = Math.max(1, Math.round(sh * scale));
+  const workCtx = work.getContext("2d", { willReadFrequently: true });
+  if (!workCtx) throw new Error("Canvas non disponibile.");
+  workCtx.drawImage(image, sx, sy, sw, sh, 0, 0, work.width, work.height);
+  const local = corners.map(([x, y]) => [(x - sx) * scale, (y - sy) * scale]) as [Point, Point, Point, Point];
+  const quadWidth = (Math.hypot(local[1][0] - local[0][0], local[1][1] - local[0][1]) + Math.hypot(local[2][0] - local[3][0], local[2][1] - local[3][1])) / 2;
+  const outW = Math.max(1, Math.min(1000, Math.round(quadWidth)));
+  const outH = Math.max(1, Math.round(outW / CARD_ASPECT));
+  const pixels = warpQuad(workCtx.getImageData(0, 0, work.width, work.height).data, work.width, work.height, local, outW, outH);
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas non disponibile.");
+  ctx.putImageData(new ImageData(pixels, outW, outH), 0, 0);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
 export async function cropRegion(src: string, region: ScanRegion): Promise<string> {
   const image = await loadImage(src);
+  if (region.quad) return cropQuad(image, region.quad);
   const sx = Math.max(0, Math.round(region.x * image.naturalWidth));
   const sy = Math.max(0, Math.round(region.y * image.naturalHeight));
   const sw = Math.max(1, Math.min(image.naturalWidth - sx, Math.round(region.width * image.naturalWidth)));
