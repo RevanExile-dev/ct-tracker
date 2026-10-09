@@ -309,6 +309,7 @@ export default function LotsPage() {
     return (
       <main className="mx-auto w-full max-w-5xl px-4 sm:px-8 py-8 sm:py-10">
         <SiteHeader compact />
+        <h1 className="sr-only">I miei lotti</h1>
         <div className="rounded-card border border-base-border bg-base-surface/60 py-20 px-5 text-center text-ink-muted">
           <p className="mb-4">I lotti sono legati al tuo account: accedi per tracciare costo e provenienza dei tuoi acquisti.</p>
           <Link href="/login" className="btn-lift inline-flex text-sm px-4 py-2.5 rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60">Accedi</Link>

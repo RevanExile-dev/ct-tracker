@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArtistOption, ExpansionInfo, SortOption } from "@/lib/db";
+import { useEffect, useId, useState } from "react";
+import { ArtistOption, ExpansionInfo, fetchNameSuggestions, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
-import { formatDateLong, languageFlag, languageLabel } from "@/lib/format";
+import { formatDateLong, formatNumber, languageFlag, languageLabel } from "@/lib/format";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
 import ConditionBadge from "./ConditionBadge";
 import FilterDropdown from "./FilterDropdown";
@@ -29,6 +29,8 @@ export default function Toolbar({
   onToggleCondition,
   onlyZero,
   onToggleOnlyZero,
+  exactName,
+  onToggleExactName,
   sortBy,
   onSortChange,
   hasActiveFilters,
@@ -57,6 +59,9 @@ export default function Toolbar({
   onToggleCondition: (condition: string) => void;
   onlyZero: boolean;
   onToggleOnlyZero: () => void;
+  /** Il nome deve contenere le parole cercate come parole intere ("mew" non trova "Mewtwo"). */
+  exactName: boolean;
+  onToggleExactName: () => void;
   sortBy: SortOption;
   onSortChange: (v: SortOption) => void;
   hasActiveFilters: boolean;
@@ -81,6 +86,36 @@ export default function Toolbar({
   const [activeFilter, setActiveFilter] = useState<"rarity" | "artist" | "language" | "condition" | null>(null);
   const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
 
+  // Suggerimenti di nome mentre si digita (tipo Google): l'elenco si apre
+  // solo con il campo a fuoco; Invio sceglie quello evidenziato o, se non
+  // ce n'e' uno, il piu' vicino (il primo).
+  const listboxId = useId();
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  // Testo per cui sono stati calcolati: mentre arriva la risposta nuova si
+  // vede ancora l'elenco precedente (niente sfarfallio), ma Invio non deve
+  // scegliere da un elenco di un testo che non c'e' piu'.
+  const [suggestionsFor, setSuggestionsFor] = useState("");
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const trimmedSearch = search.trim();
+  useEffect(() => {
+    if (trimmedSearch.length < 2) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchNameSuggestions(trimmedSearch)
+        .then((names) => { if (!cancelled) { setSuggestions(names); setSuggestionsFor(trimmedSearch); setActiveSuggestion(-1); } })
+        .catch(() => { if (!cancelled) setSuggestions([]); });
+    }, 150);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [trimmedSearch]);
+  const shownSuggestions = suggestOpen && trimmedSearch.length >= 2 ? suggestions : [];
+  const suggestionsFresh = suggestionsFor === trimmedSearch;
+  function chooseSuggestion(name: string) {
+    onSearch(name);
+    setSuggestOpen(false);
+    setActiveSuggestion(-1);
+  }
+
   useEffect(() => {
     onAnyFilterOpenChange?.(activeFilter !== null || expansionFilterOpen);
   }, [activeFilter, expansionFilterOpen, onAnyFilterOpenChange]);
@@ -102,30 +137,98 @@ export default function Toolbar({
   for (const c of selectedConditions) {
     chips.push({ key: `c-${c}`, label: <ConditionBadge condition={c} />, onRemove: () => onToggleCondition(c) });
   }
+  if (exactName) chips.push({ key: "exact", label: "Nome esatto", onRemove: onToggleExactName });
   if (onlyZero) chips.push({ key: "zero", label: "⚡ Solo CardTrader Zero", onRemove: onToggleOnlyZero });
 
   return (
     <div className="flex flex-col gap-3">
       {resultCount !== undefined && (
         <div aria-live="polite" className="text-xs font-mono text-ink-faint">
-          {resultCount} {resultCount === 1 ? "carta trovata" : "carte trovate"}
+          {formatNumber(resultCount)} {resultCount === 1 ? "carta trovata" : "carte trovate"}
         </div>
       )}
       {/* Telefono: controlli impilati a larghezza piena. Tablet md: espansione
           e ordinamento condividono una riga senza essere compressi. Desktop lg:
           ricerca + controlli tornano nel layout orizzontale compatto. */}
       <div className="flex flex-col lg:flex-row lg:items-start gap-3">
-        <input
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Cerca per nome o numero (es. 12/98)…"
-          aria-label="Cerca una carta per nome o numero"
-          className="lg:flex-1 w-full bg-base-surface border border-base-border rounded-card px-4 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
-        />
+        {/* Interruttore "Nome esatto" dentro il campo: non aggiunge una riga
+            alla barra filtri (sul telefono ha un'altezza massima verificata
+            da tests/mobile-toolbar.spec.mjs). */}
+        <div className="relative lg:flex-1 w-full">
+          <input
+            value={search}
+            onChange={(e) => { onSearch(e.target.value); setSuggestOpen(true); }}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setSuggestOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setSuggestOpen(false); return; }
+              if (shownSuggestions.length === 0 || !suggestionsFresh) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActiveSuggestion((i) => (i + 1) % shownSuggestions.length);
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActiveSuggestion((i) => (i <= 0 ? shownSuggestions.length - 1 : i - 1));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                chooseSuggestion(shownSuggestions[Math.max(activeSuggestion, 0)]);
+              }
+            }}
+            placeholder="Cerca per nome o numero (es. 12/98)…"
+            aria-label="Cerca una carta per nome o numero"
+            role="combobox"
+            aria-expanded={shownSuggestions.length > 0}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeSuggestion >= 0 ? `${listboxId}-${activeSuggestion}` : undefined}
+            autoComplete="off"
+            className="w-full min-h-11 bg-base-surface border border-base-border rounded-card pl-4 pr-28 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint outline-none focus:border-accent/60 focus:shadow-glow transition-shadow"
+          />
+          {shownSuggestions.length > 0 && (
+            <ul
+              id={listboxId}
+              role="listbox"
+              aria-label="Suggerimenti"
+              className="absolute left-0 right-0 top-full mt-1 z-30 max-h-72 overflow-y-auto bg-base-surface border border-base-border rounded-card shadow-lg py-1"
+            >
+              {shownSuggestions.map((name, i) => (
+                <li
+                  key={name}
+                  id={`${listboxId}-${i}`}
+                  role="option"
+                  aria-selected={i === activeSuggestion}
+                  // mousedown (che il tap genera comunque) non deve togliere il
+                  // fuoco al campo, altrimenti l'elenco si chiude prima del click.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => chooseSuggestion(name)}
+                  className={`min-h-11 flex items-center px-4 text-sm cursor-pointer ${
+                    i === activeSuggestion ? "bg-accent/10 text-accent-bright" : "text-ink-primary hover:bg-base-surface2"
+                  }`}
+                >
+                  {name}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={onToggleExactName}
+            aria-pressed={exactName}
+            title="Cerca il nome come parola intera: «mew» non trova «Mewtwo»"
+            className={`absolute right-1.5 top-1/2 -translate-y-1/2 min-h-8 text-xs px-3 rounded-full border transition-colors active:scale-95 ${
+              exactName
+                ? "bg-accent/10 border-accent/60 text-accent-bright"
+                : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+            }`}
+          >
+            Nome esatto
+          </button>
+        </div>
 
         <div className="min-w-0 w-full grid grid-cols-1 md:grid-cols-2 gap-3 lg:w-auto lg:flex lg:flex-row">
           <div className="min-w-0 w-full lg:w-auto flex items-center gap-1">
             <FilterDropdown
+              reserveSpace
               label={selectedExpansion ? `${selectedExpansion.name} (${selectedExpansion.cardCount})` : "Tutte le espansioni"}
               options={expansions.map((e) => e.code)}
               selected={expansionCode ? [expansionCode] : []}
@@ -187,6 +290,7 @@ export default function Toolbar({
 
       <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
         <FilterDropdown
+          reserveSpace
           label="Rarità"
           options={rarities}
           selected={selectedRarities}
@@ -197,6 +301,7 @@ export default function Toolbar({
         {/* Pochi artisti scelti (non tutti gli illustratori): lista corta con
             ricerca, il numero di carte accanto al nome. */}
         <FilterDropdown
+          reserveSpace
           label="Artista"
           options={artists.map((a) => a.name)}
           selected={selectedArtists}
@@ -213,6 +318,7 @@ export default function Toolbar({
           onOpenChange={(open) => setActiveFilter(open ? "artist" : null)}
         />
         <FilterDropdown
+          reserveSpace
           label="Lingua"
           options={languages}
           selected={selectedLanguages}
@@ -222,6 +328,7 @@ export default function Toolbar({
           onOpenChange={(open) => setActiveFilter(open ? "language" : null)}
         />
         <FilterDropdown
+          reserveSpace
           label="Condizione"
           options={conditions}
           selected={selectedConditions}
@@ -260,6 +367,7 @@ export default function Toolbar({
             languages: selectedLanguages,
             conditions: selectedConditions,
             onlyZero,
+            exactName,
             sortBy,
           }}
           onApply={onApplyPreset}

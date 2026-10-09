@@ -15,7 +15,7 @@ export type {
   MoversSort, MoversPageOpts, MoversPageResult, CardDetail, PricePoint,
   Listing, ExpansionInfo, ArtistOption,
 } from "./types";
-export { MOVERS_PAGE_SIZE } from "./types";
+export { MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE } from "./types";
 export { normalizeRarity } from "./rarity";
 
 import type {
@@ -48,6 +48,7 @@ async function apiFetch<T>(path: string, params?: Record<string, unknown>): Prom
 function cardsFilterParams(opts: CardsFilterOpts): Record<string, unknown> {
   return {
     search: opts.search,
+    exactName: opts.exactName,
     expansionCode: opts.expansionCode,
     rarities: opts.rarities,
     artists: opts.artists,
@@ -83,6 +84,11 @@ export async function fetchCards(opts: CardsFilterOpts & {
 export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
   const { count } = await apiFetch<{ count: number }>("/api/cards/count", cardsFilterParams(opts));
   return count;
+}
+
+/** Nomi suggeriti mentre si digita nella barra di ricerca. */
+export async function fetchNameSuggestions(search: string): Promise<string[]> {
+  return apiFetch<string[]>("/api/cards/suggest", { search });
 }
 
 /** Media delle variazioni giorno-su-giorno delle carte che soddisfano i filtri correnti. */

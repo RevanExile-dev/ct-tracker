@@ -478,6 +478,12 @@ CREATE TABLE IF NOT EXISTS price_alerts (
     CHECK (target_type != 'percent_drop' OR baseline_price_cents IS NOT NULL)
 );
 
+-- Lingue accettate (scatta se il prezzo e' sotto soglia in UNA QUALSIASI):
+-- NULL = nessuna lista, vale la colonna singola `language` (righe create
+-- prima del multi-lingua, e compatibilita' con il valutatore durante un
+-- deploy). Colonna aggiunta, mai una conversione distruttiva dei dati.
+ALTER TABLE price_alerts ADD COLUMN IF NOT EXISTS languages TEXT[];
+
 CREATE INDEX IF NOT EXISTS idx_price_alerts_user ON price_alerts (user_id);
 -- Il worker di valutazione (sotto-parte 4c) legge tutti gli allarmi armati
 -- per carta ad ogni batch di sync - indice sullo stesso pattern di accesso,
@@ -528,3 +534,12 @@ CREATE INDEX IF NOT EXISTS idx_telegram_outbox_pending ON telegram_outbox (creat
 -- esistente (stesso motivo di sync_checkpoint.alert_count qui sotto) -
 -- necessario per i database creati prima di questa colonna.
 ALTER TABLE telegram_outbox ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Contatori del rate limiting condiviso tra istanze (web/lib/rateLimitShared.ts,
+-- che la crea comunque al primo uso): una riga per chiave e finestra fissa.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT NOT NULL,
+  window_start BIGINT NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (key, window_start)
+);

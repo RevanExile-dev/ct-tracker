@@ -2,8 +2,17 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ipAddress } from "@vercel/functions";
 import { isRateLimited } from "@/lib/rateLimit";
+import { isRateLimitedShared } from "@/lib/rateLimitShared";
 
-type RateLimitRule = { id: string; matches: (req: NextRequest) => boolean; limit: number; windowMs: number };
+type RateLimitRule = {
+  id: string;
+  matches: (req: NextRequest) => boolean;
+  limit: number;
+  windowMs: number;
+  // Contatore anche su Postgres, valido su tutte le istanze: solo per le
+  // azioni rare e sensibili (costa una scrittura per richiesta).
+  shared?: boolean;
+};
 
 const RATE_LIMIT_RULES: RateLimitRule[] = [
   // Invio diretto a /api/auth/signin/resend (bypassando la UI): la Server
@@ -16,6 +25,7 @@ const RATE_LIMIT_RULES: RateLimitRule[] = [
     matches: (req) => req.method === "POST" && req.nextUrl.pathname.startsWith("/api/auth/signin"),
     limit: 5,
     windowMs: 60_000,
+    shared: true,
   },
   // Resto delle API pubbliche (catalogo/prezzi/binder/wishlist/alert...):
   // limite alto apposta - misurato con Playwright che una singola apertura
@@ -31,7 +41,7 @@ const RATE_LIMIT_RULES: RateLimitRule[] = [
   { id: "api-general", matches: (req) => req.nextUrl.pathname.startsWith("/api/"), limit: 400, windowMs: 10_000 },
 ];
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const rule = RATE_LIMIT_RULES.find((r) => r.matches(request));
   if (!rule) return NextResponse.next();
 
@@ -42,10 +52,12 @@ export function proxy(request: NextRequest) {
   // @vercel/functions (legge solo l'header x-real-ip).
   const ip = ipAddress(request) ?? "unknown";
   const key = `${rule.id}:${ip}`;
-  if (isRateLimited(key, rule.limit, rule.windowMs)) {
+  if (isRateLimited(key, rule.limit, rule.windowMs) || (rule.shared && (await isRateLimitedShared(key, rule.limit, rule.windowMs)))) {
     return NextResponse.json(
       { error: "Troppe richieste, riprova tra poco." },
-      { status: 429, headers: { "Retry-After": String(Math.ceil(rule.windowMs / 1000)) } },
+      // no-store: un 429 non deve mai finire nella cache della CDN, altrimenti
+      // bloccherebbe anche chi non ha superato il limite.
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rule.windowMs / 1000)), "Cache-Control": "no-store" } },
     );
   }
   return NextResponse.next();

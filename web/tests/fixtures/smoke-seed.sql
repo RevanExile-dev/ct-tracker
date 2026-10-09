@@ -83,12 +83,15 @@ FROM generate_series(1, 26) AS n
 ON CONFLICT (id) DO NOTHING;
 
 -- n=1..13 in rialzo (prezzo attuale > precedente), n=14..26 in calo.
-INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents)
+-- it_nm_zero_listings_count = 6: la pagina Carte in movimento considera solo
+-- carte con almeno MIN_MOVER_LISTINGS (5) inserzioni IT NM Zero.
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents, it_nm_zero_listings_count)
 SELECT
   901000 + n, CURRENT_DATE, now(), 1000 + n, 'EUR', 1,
   CASE WHEN n <= 13 THEN 1000 + n ELSE 500 + n END,
   'EUR',
-  CASE WHEN n <= 13 THEN 500 + n ELSE 1000 + n END
+  CASE WHEN n <= 13 THEN 500 + n ELSE 1000 + n END,
+  6
 FROM generate_series(1, 26) AS n
 ON CONFLICT (blueprint_id) DO NOTHING;
 
@@ -103,3 +106,15 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- altre senza artista (come nel catalogo reale per le carte non abbinate).
 UPDATE blueprints SET artist = 'Akira Egawa' WHERE id BETWEEN 900101 AND 900140 AND (id - 900100) % 5 = 0;
 UPDATE blueprints SET artist = 'Mitsuhiro Arita' WHERE id BETWEEN 900101 AND 900140 AND (id - 900100) % 5 = 1;
+
+-- Ricerca per nome (tests/name-search.spec.mjs): "mew" deve trovare anche
+-- Mewtwo ma mettere per primi Mew/Mew ex; con "Nome esatto" solo i primi due; "char" per i suggerimenti.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, rarity, is_premium) VALUES
+  (910001, 'Mewtwo ex', '10/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910002, 'Mew', '11/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910003, 'Mew ex', '12/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910004, 'Mewtwo', '13/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910005, 'Charizard', '14/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910006, 'Charizard ex', '15/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910007, 'Charmeleon', '16/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0)
+ON CONFLICT (id) DO NOTHING;

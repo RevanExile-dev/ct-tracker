@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isRateLimitedShared } from "@/lib/rateLimitShared";
 import { parseLotImportMarkdown } from "@/lib/lotImport";
 import { applyLotImport } from "@/lib/lotImport.server";
 
@@ -27,6 +28,11 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  // Ogni import scrive fino a 150 righe su Neon: massimo 10 al minuto per
+  // utente, valido anche con piu' istanze in parallelo.
+  if (await isRateLimitedShared(`lots-import:${userId}`, 10, 60_000)) {
+    return NextResponse.json({ error: "Troppe importazioni, riprova tra un minuto." }, { status: 429, headers: { "Retry-After": "60" } });
+  }
 
   const body = await req.json().catch(() => null);
   const markdown = body && typeof body === "object" ? (body as Record<string, unknown>).markdown : undefined;

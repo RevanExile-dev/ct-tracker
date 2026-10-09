@@ -628,7 +628,9 @@ body::after {
   left: 50%;
   width: clamp(16px, 2.2vw, 26px);
   transform: translateX(-50%);
-  z-index: 5;
+  /* Dentro .stf__block (portale, vedi BinderBook): i fogli fermi del motore
+     hanno z-index 1, quello che si gira 3-5 - qui in mezzo. */
+  z-index: 2;
   pointer-events: none;
   background: linear-gradient(90deg, #0a0c0e, #1a1e23 45%, #0a0c0e);
   border-radius: 3px;
@@ -723,4 +725,12 @@ body::after {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #2dd8c9aa;
+}
+
+/* Rete di sicurezza per la navigazione da tastiera: i componenti con un
+   proprio stile di focus (ring Tailwind) lo mantengono, tutto il resto
+   (link nel testo, summary, controlli nativi) ottiene comunque un anello. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #2dd8c9;
+  outline-offset: 2px;
 }

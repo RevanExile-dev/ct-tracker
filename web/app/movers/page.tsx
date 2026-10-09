@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow,
+  MIN_MOVER_LISTINGS,
   MOVERS_PAGE_SIZE,
   MoversPageResult,
   MoversSort,
@@ -297,14 +298,16 @@ function MoversContent() {
         ← Torna al catalogo
       </Link>
 
-      <h2 className="font-display text-2xl font-bold text-ink-primary">Carte in movimento</h2>
+      <h1 className="font-display text-2xl font-bold text-ink-primary">Carte in movimento</h1>
       <p className="text-ink-muted mt-1 max-w-xl">
         Le variazioni di prezzo più marcate registrate nell&apos;ultimo sync rispetto al
-        precedente, sulla serie italiano · Near Mint · CardTrader Zero.
+        precedente, sulla serie italiano · Near Mint · CardTrader Zero. Contano solo le carte con
+        almeno {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che cambia prezzo.
       </p>
 
       <div className="filter-toolbar mt-5 flex flex-row flex-wrap items-center gap-x-5 gap-y-3 rounded-card border border-base-border bg-base-surface/55 px-4 py-3">
         <FilterDropdown
+          reserveSpace
           label="Rarità"
           options={rarities}
           selected={selectedRarities}
@@ -450,12 +453,12 @@ function MoversContent() {
 
           <div className="grid lg:grid-cols-2 gap-x-8 gap-y-12 mt-4 lg:mt-8">
             <section ref={riseSectionRef} className={activeTab === "rises" ? "" : "hidden lg:block"}>
-              <h3 className="font-display font-medium text-signal-up flex items-center gap-2 mb-4">
+              <h2 className="font-display font-medium text-signal-up flex items-center gap-2 mb-4">
                 ▲ Maggiori rialzi
                 {rises !== null && (
                   <span className="text-xs font-mono text-ink-faint">({rises.totalCount})</span>
                 )}
-              </h3>
+              </h2>
               {rises === null && <MoversSkeleton />}
               {rises !== null && rises.cards.length === 0 && (
                 <div className="text-ink-muted text-sm">Nessun rialzo di prezzo in questa combinazione di filtri.</div>
@@ -490,12 +493,12 @@ function MoversContent() {
             </section>
 
             <section ref={dropSectionRef} className={activeTab === "drops" ? "" : "hidden lg:block"}>
-              <h3 className="font-display font-medium text-signal-down flex items-center gap-2 mb-4">
+              <h2 className="font-display font-medium text-signal-down flex items-center gap-2 mb-4">
                 ▼ Maggiori cali
                 {drops !== null && (
                   <span className="text-xs font-mono text-ink-faint">({drops.totalCount})</span>
                 )}
-              </h3>
+              </h2>
               {drops === null && <MoversSkeleton />}
               {drops !== null && drops.cards.length === 0 && (
                 <div className="text-ink-muted text-sm">Nessun calo di prezzo in questa combinazione di filtri.</div>

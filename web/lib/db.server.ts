@@ -4,7 +4,7 @@ import { expandRarityFilters, normalizeRarity } from "./rarity";
 import { compareExpansions } from "./expansions";
 import topArtists from "@/config/top_artists.json";
 import {
-  MOVERS_PAGE_SIZE,
+  MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE,
   type ArtistOption, type CardRow, type CardsFilterOpts, type CardsSummary, type CardDetail, type ExpansionInfo,
   type Listing, type MoversPageOpts, type MoversPageResult, type PricePoint, type ScannerCatalogRow,
   type SortOption,
@@ -62,6 +62,39 @@ function mapCardRow(row: CardRow): CardRow {
   return row;
 }
 
+/** Parole cercate (separate da spazi), senza vuoti. */
+function searchTokens(search: string): string[] {
+  return search.trim().split(/\s+/).filter(Boolean);
+}
+
+/** "\\" e' l'ESCAPE di default di ILIKE: senza questo un "%" o "_" digitato
+ * dall'utente verrebbe trattato come jolly invece che come carattere. */
+function escapeLike(token: string): string {
+  return token.replace(/[\\%_]/g, "\\$&");
+}
+
+/** Parola intera nel nome: preceduta e seguita da inizio/fine o da un
+ * carattere non alfanumerico, cosi' "mew" trova "Mew", "Mew ex", "Mew-V"
+ * ma non "Mewtwo". Da usare con l'operatore ~* (senza distinzione
+ * maiuscole/minuscole). */
+function wholeWordRegex(token: string): string {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return `(^|[^[:alnum:]])${escaped}($|[^[:alnum:]])`;
+}
+
+/** Rilevanza della ricerca per nome, per mettere in cima i risultati
+ * migliori: 0 = tutte le parole compaiono come parola intera nel nome
+ * ("Mew", "Mew ex"), 1 = il nome inizia con la ricerca ("Mewtwo"), 2 = il
+ * resto (sottostringa nel nome o corrispondenza solo nel numero). */
+function buildSearchRank(search: string | undefined, p: Params): string | null {
+  if (!search) return null;
+  const tokens = searchTokens(search);
+  if (tokens.length === 0) return null;
+  const whole = tokens.map((t) => `b.name ~* ${p.add(wholeWordRegex(t))}`).join(" AND ");
+  const prefix = p.add(`${escapeLike(tokens.join(" "))}%`);
+  return `CASE WHEN ${whole} THEN 0 WHEN b.name ILIKE ${prefix} THEN 1 ELSE 2 END`;
+}
+
 /** WHERE condiviso tra fetchCards/fetchCardsCount/fetchCardsSummary, cosi'
  * "quante carte" e "che carte" restano sempre coerenti per costruzione
  * invece di dover mantenere due query separate allineate a mano. */
@@ -81,10 +114,19 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
     // insieme in una sola. Porta lo stesso fix della PR #31 (pre-migrazione
     // Postgres, dove viveva in buildCardsFilter lato client) qui, unico
     // punto che ora costruisce davvero la query.
-    const tokens = opts.search.trim().split(/\s+/).filter(Boolean);
+    const tokens = searchTokens(opts.search);
     for (const token of tokens) {
-      const placeholder = p.add(`%${token}%`);
-      where.push(`(b.name ILIKE ${placeholder} OR b.version ILIKE ${placeholder})`);
+      // Il numero/versione conta come corrispondenza solo per parole con una
+      // cifra (es. "12/98") quando "Nome esatto" e' attivo: una parola come
+      // "char" non deve trovare carte che la contengono solo nella versione.
+      // I segnaposto si aggiungono solo se usati (Postgres rifiuta quelli
+      // inutilizzati).
+      const matchVersion = !opts.exactName || /\d/.test(token);
+      const like = matchVersion ? p.add(`%${escapeLike(token)}%`) : null;
+      const nameMatch = opts.exactName
+        ? `b.name ~* ${p.add(wholeWordRegex(token))}`
+        : `b.name ILIKE ${like}`;
+      where.push(matchVersion ? `(${nameMatch} OR b.version ILIKE ${like})` : nameMatch);
     }
   }
   if (opts.expansionCode) {
@@ -196,10 +238,23 @@ export async function fetchCards(opts: CardsFilterOpts & {
   const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p);
   const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
 
+  // Una variazione calcolata su meno di MIN_MOVER_LISTINGS inserzioni IT NM
+  // Zero e' rumore (vedi types.ts): per "rialzi/ribassi prima" quelle carte
+  // restano nell'elenco ma vanno in fondo, come quelle senza prezzo precedente.
+  // COALESCE: conteggio assente (carta mai ripassata dal sync) = non affidabile.
+  const lowListings = `COALESCE(lp.it_nm_zero_listings_count, 0) < ${MIN_MOVER_LISTINGS}`;
+
   let orderBy = "b.expansion_id DESC, b.name ASC";
+  if (opts.sortBy === "name") orderBy = "b.name ASC";
+  // Con una ricerca per nome, a parita' di ordinamento "neutro" (espansione
+  // o nome) i nomi che combaciano meglio vengono prima ("mew" -> Mew, poi
+  // Mewtwo); con un ordinamento per prezzo/variazione resta quello scelto.
+  if (!opts.sortBy || opts.sortBy === "expansion" || opts.sortBy === "name") {
+    const rank = buildSearchRank(opts.search, p);
+    if (rank) orderBy = `${rank}, ${orderBy}`;
+  }
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
   if (opts.sortBy === "price_desc") orderBy = `${priceExpr} IS NULL, ${priceExpr} DESC`;
-  if (opts.sortBy === "name") orderBy = "b.name ASC";
   if (opts.sortBy === "drop_first") {
     // Piu' grande calo percentuale prima; le carte senza prezzo precedente
     // (o senza variazione) restano in fondo. La condizione qui DEVE restare
@@ -212,13 +267,13 @@ export async function fetchCards(opts: CardsFilterOpts & {
     // comunque valutata da Postgres su OGNI riga del risultato, quindi va
     // resa sicura a prescindere da dove finisce nell'ordinamento.
     orderBy = `
-      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 OR ${lowListings} THEN 1 ELSE 0 END,
       (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / NULLIF(${prevPriceExpr}, 0) ASC
     `;
   }
   if (opts.sortBy === "rise_first") {
     orderBy = `
-      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 THEN 1 ELSE 0 END,
+      CASE WHEN ${priceExpr} IS NULL OR ${priceExpr} = 0 OR ${prevPriceExpr} IS NULL OR ${prevPriceExpr} = 0 OR ${lowListings} THEN 1 ELSE 0 END,
       (CAST(${priceExpr} AS REAL) - ${prevPriceExpr}) / NULLIF(${prevPriceExpr}, 0) DESC
     `;
   }
@@ -244,6 +299,29 @@ export async function fetchCards(opts: CardsFilterOpts & {
 
   const { rows } = await pool.query(sql, p.values);
   return rows.map(mapCardRow);
+}
+
+/** Suggerimenti di nome per la barra di ricerca: nomi distinti (non una
+ * riga per ogni stampa) che contengono tutte le parole digitate, i piu'
+ * pertinenti prima (parola intera, poi inizio nome, poi il resto) e, a
+ * parita', i nomi piu' corti ("Charizard" prima di "Charizard ex"). Una
+ * sola scansione di blueprints, come la ricerca normale. */
+export async function fetchNameSuggestions(search: string, limit = 8): Promise<string[]> {
+  const tokens = searchTokens(search);
+  if (tokens.length === 0) return [];
+  const pool = getPgPool();
+  const p = new Params();
+  const where = tokens.map((t) => `b.name ILIKE ${p.add(`%${escapeLike(t)}%`)}`);
+  const rank = buildSearchRank(search, p);
+  const sql = `
+    SELECT b.name FROM blueprints b
+    WHERE ${where.join(" AND ")}
+    GROUP BY b.name
+    ORDER BY ${rank}, length(b.name), b.name
+    LIMIT ${p.add(Math.min(Math.max(limit, 1), 12))}
+  `;
+  const { rows } = await pool.query(sql, p.values);
+  return rows.map((r: { name: string }) => r.name);
 }
 
 /** Conteggio delle carte che soddisfano gli stessi filtri di fetchCards. */
@@ -298,6 +376,7 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     "lp.it_nm_zero_price_cents != 0",
     "lp.prev_it_nm_zero_price_cents IS NOT NULL",
     "lp.prev_it_nm_zero_price_cents != 0",
+    `lp.it_nm_zero_listings_count >= ${MIN_MOVER_LISTINGS}`,
     opts.direction === "rise"
       ? "lp.it_nm_zero_price_cents > lp.prev_it_nm_zero_price_cents"
       : "lp.it_nm_zero_price_cents < lp.prev_it_nm_zero_price_cents",

@@ -404,7 +404,7 @@ export default function PriceChart({
           Trascina sul grafico per scorrere lo storico
         </p>
       )}
-      <p className="mt-3 text-[10px] text-ink-faint/70">
+      <p className="mt-3 text-[10px] text-ink-faint">
         Un punto al giorno, non in tempo reale — il marketplace CardTrader può inoltre avere una breve cache lato loro tra un aggiornamento e l&apos;altro.
       </p>
     </div>

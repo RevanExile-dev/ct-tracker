@@ -9,6 +9,8 @@ export type FilterPreset = {
   languages: string[];
   conditions: string[];
   onlyZero: boolean;
+  // Opzionale: preset salvati prima del filtro "Nome esatto" non hanno il campo.
+  exactName?: boolean;
   sortBy?: SortOption;
 };
 
@@ -27,6 +29,7 @@ export function readFilterPreset(scope: string): FilterPreset | null {
       languages: Array.isArray(value.languages) ? value.languages.filter((v): v is string => typeof v === "string") : [],
       conditions: Array.isArray(value.conditions) ? value.conditions.filter((v): v is string => typeof v === "string") : [],
       onlyZero: value.onlyZero === true,
+      exactName: value.exactName === true,
       sortBy: typeof value.sortBy === "string" ? value.sortBy as SortOption : undefined,
     };
   } catch {

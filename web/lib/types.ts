@@ -59,6 +59,9 @@ export type SortOption =
 
 export type CardsFilterOpts = {
   search?: string;
+  // Il nome deve contenere ogni parola cercata come parola intera
+  // ("mew" non trova "Mewtwo").
+  exactName?: boolean;
   expansionCode?: string;
   rarities?: string[];
   // Nomi artista come in blueprints.artist (vedi web/config/top_artists.json).
@@ -82,6 +85,16 @@ export type MoversDirection = "rise" | "drop";
 export type MoversSort = "pct" | "abs";
 
 export const MOVERS_PAGE_SIZE = 12;
+
+/** Inserzioni italiane Near Mint + CardTrader Zero minime perche' la
+ * variazione di una carta conti come "movimento" (pagina Carte in movimento
+ * e righe "In tendenza"/rialzi-ribassi in cima al catalogo). Il prezzo e' il
+ * minimo tra quelle inserzioni: con 1-2 sole offerte un singolo venditore
+ * che esce o entra fa saltare il prezzo di 10-20 volte (es. Hard Charm
+ * 0,85 € -> 19,82 € con una sola inserzione: +2232%) e riempie la classifica
+ * di rumore. Soglia scelta sui dati reali: con 5 restano ~2.000 rialzi e
+ * ~2.700 ribassi e i primi sono variazioni plausibili. */
+export const MIN_MOVER_LISTINGS = 5;
 
 export type MoversPageOpts = {
   direction: MoversDirection;
@@ -203,7 +216,10 @@ export type PriceAlertState = "armed" | "fired" | "disabled";
 export type PriceAlert = {
   id: number;
   blueprintId: number;
-  language: string | null;
+  // Lingue accettate: l'allarme scatta se il prezzo e' sotto soglia in
+  // UNA QUALSIASI di queste. Lista vuota = "qualunque lingua" (scelta
+  // esplicita, non un default silenzioso).
+  languages: string[];
   condition: string | null;
   canSellViaHub: number | null;
   targetType: PriceAlertTargetType;
@@ -220,7 +236,7 @@ export type PriceAlert = {
 
 export type PriceAlertInput = {
   blueprintId: number;
-  language?: string | null;
+  languages?: string[];
   condition?: string | null;
   canSellViaHub?: number | null;
   targetType: PriceAlertTargetType;
