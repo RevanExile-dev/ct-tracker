@@ -39,8 +39,8 @@ import { useEffect, useRef, useState } from "react";
  * documento; se si e' vicini al fondo, il browser riporta scrollY indietro
  * ("clamp"), il hook lo legge come "l'utente sale", rimostra la barra, il
  * documento si riallunga, e cosi' via. Due difese complementari: (1) uno
- * scroll all'indietro che coincide con un documento diventato piu' corto non
- * e' un gesto dell'utente, solo un aggiustamento del layout: si aggiorna
+ * scroll all'indietro che finisce esattamente sul fondo scorrevole non e' un
+ * gesto dell'utente, solo un aggiustamento del layout (documento accorciato): si aggiorna
  * l'ancora e basta; (2) non si nasconde la barra quando la distanza dal fondo
  * e' minore dello spazio che la barra libererebbe (nessun clamp = nessun
  * salto di contenuto).
@@ -128,7 +128,6 @@ export function useHideOnScrollDown(
   useEffect(() => {
     anchorY.current = window.scrollY;
     let lastY = window.scrollY;
-    let lastDocHeight = document.documentElement.scrollHeight;
 
     function enterTouchManualMode() {
       if (window.matchMedia("(max-width: 639px)").matches) {
@@ -145,9 +144,7 @@ export function useHideOnScrollDown(
         const y = window.scrollY;
         const docHeight = document.documentElement.scrollHeight;
         const prevY = lastY;
-        const prevDocHeight = lastDocHeight;
         lastY = y;
-        lastDocHeight = docHeight;
         const mobile = window.matchMedia("(max-width: 639px)").matches;
 
         // Dopo il primo tocco su mobile, lo scroll non ha piu' autorita'
@@ -169,9 +166,13 @@ export function useHideOnScrollDown(
         }
         if (containerRef?.current?.contains(document.activeElement)) return;
 
-        // Documento accorciato e scrollY arretrato nello stesso passo: e' il
-        // browser che rientra nei nuovi limiti, non l'utente che sale.
-        if (docHeight < prevDocHeight && y < prevY) {
+        // scrollY arretrato e fermo esattamente sul fondo scorrevole: e' il
+        // browser che rientra nei nuovi limiti dopo che il documento si e'
+        // accorciato (o il rimbalzo di iOS oltre il fondo), non l'utente che
+        // sale - uno scroll verso l'alto vero si ferma sopra il fondo.
+        // Niente confronto con l'altezza precedente: il documento puo'
+        // accorciarsi senza alcun evento scroll in mezzo.
+        if (y < prevY && y >= docHeight - window.innerHeight - 1) {
           anchorY.current = y;
           return;
         }
