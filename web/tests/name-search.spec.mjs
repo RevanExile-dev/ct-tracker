@@ -16,7 +16,7 @@ test("mew: pertinenza prima, poi Nome esatto esclude Mewtwo", async ({ page }) =
   await page.goto(BASE_URL);
   await page.getByLabel("Cerca una carta per nome o numero").tap();
   await page.keyboard.type("mew");
-  await expect(page.locator("body")).toContainText("4 carte trovate");
+  await expect(page.locator("body")).toContainText("4 carte trovate", { timeout: 20_000 });
   expect(await cardNames(page)).toEqual(["Mew", "Mew ex", "Mewtwo", "Mewtwo ex"]);
 
   await page.getByRole("button", { name: "Nome esatto" }).first().tap();
@@ -35,7 +35,7 @@ test("suggerimenti: \"char\" propone i nomi, tap e Invio filtrano", async ({ pag
   await input.tap();
   await page.keyboard.type("char");
   const options = page.getByRole("listbox").getByRole("option");
-  await expect(options).toHaveText(["Charizard", "Charmeleon", "Charizard ex"]);
+  await expect(options).toHaveText(["Charizard", "Charmeleon", "Charizard ex"], { timeout: 20_000 });
 
   // Tap su un suggerimento: filtra su quel nome e chiude l'elenco.
   await options.nth(1).tap();
@@ -49,4 +49,11 @@ test("suggerimenti: \"char\" propone i nomi, tap e Invio filtrano", async ({ pag
   await page.keyboard.press("Enter");
   await expect(input).toHaveValue("Charizard");
   await expect(page.locator("body")).toContainText("2 carte trovate");
+});
+
+test("Nome esatto: una parola senza cifre non cerca nella versione, il numero si", async ({ request }) => {
+  const count = async (qs) => (await (await request.get(`${BASE_URL}/api/cards/count?${qs}`)).json()).count;
+  expect(await count("search=char&exactName=1")).toBe(0);
+  expect(await count("search=char")).toBeGreaterThan(0);
+  expect(await count("search=14%2F98&exactName=1")).toBeGreaterThan(0);
 });

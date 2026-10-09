@@ -91,6 +91,10 @@ export default function Toolbar({
   // ce n'e' uno, il piu' vicino (il primo).
   const listboxId = useId();
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  // Testo per cui sono stati calcolati: mentre arriva la risposta nuova si
+  // vede ancora l'elenco precedente (niente sfarfallio), ma Invio non deve
+  // scegliere da un elenco di un testo che non c'e' piu'.
+  const [suggestionsFor, setSuggestionsFor] = useState("");
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const trimmedSearch = search.trim();
@@ -99,12 +103,13 @@ export default function Toolbar({
     let cancelled = false;
     const timer = window.setTimeout(() => {
       fetchNameSuggestions(trimmedSearch)
-        .then((names) => { if (!cancelled) { setSuggestions(names); setActiveSuggestion(-1); } })
+        .then((names) => { if (!cancelled) { setSuggestions(names); setSuggestionsFor(trimmedSearch); setActiveSuggestion(-1); } })
         .catch(() => { if (!cancelled) setSuggestions([]); });
     }, 150);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [trimmedSearch]);
   const shownSuggestions = suggestOpen && trimmedSearch.length >= 2 ? suggestions : [];
+  const suggestionsFresh = suggestionsFor === trimmedSearch;
   function chooseSuggestion(name: string) {
     onSearch(name);
     setSuggestOpen(false);
@@ -157,7 +162,7 @@ export default function Toolbar({
             onBlur={() => setSuggestOpen(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") { setSuggestOpen(false); return; }
-              if (shownSuggestions.length === 0) return;
+              if (shownSuggestions.length === 0 || !suggestionsFresh) return;
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setActiveSuggestion((i) => (i + 1) % shownSuggestions.length);
