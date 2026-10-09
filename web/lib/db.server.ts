@@ -75,30 +75,86 @@ function escapeLike(token: string): string {
 
 /** Parola intera nel nome: preceduta e seguita da inizio/fine o da un
  * carattere non alfanumerico, cosi' "mew" trova "Mew", "Mew ex", "Mew-V"
- * ma non "Mewtwo". Da usare con l'operatore ~* (senza distinzione
- * maiuscole/minuscole). */
+ * ma non "Mewtwo". Da usare con ~* (senza distinzione maiuscole/minuscole),
+ * o con ~ se il testo e' gia' in minuscolo e senza accenti. */
 function wholeWordRegex(token: string): string {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return `(^|[^[:alnum:]])${escaped}($|[^[:alnum:]])`;
+}
+
+/** Minuscolo e senza accenti ("Pokémon" -> "pokemon"), come f_unaccent(lower()). */
+function normalizeToken(token: string): string {
+  return token.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+// Ricerca senza accenti e con refusi: usa le estensioni pg_trgm/unaccent e
+// l'indice di web/db/schema.sql. Se non ci sono (database non ancora
+// aggiornato dal sync, o estensioni non permesse) il sito continua a
+// cercare come prima: l'ordine di deploy tra codice e schema non conta.
+// Un si' resta per sempre in questo processo, un no si ricontrolla ogni minuto.
+let searchExtrasCache: { ok: boolean; checkedAt: number } | null = null;
+async function hasSearchExtras(): Promise<boolean> {
+  const now = Date.now();
+  if (searchExtrasCache && (searchExtrasCache.ok || now - searchExtrasCache.checkedAt < 60_000)) {
+    return searchExtrasCache.ok;
+  }
+  let ok = false;
+  try {
+    const { rows } = await getPgPool().query(
+      `SELECT (SELECT count(*) FROM pg_extension WHERE extname IN ('pg_trgm', 'unaccent')) = 2
+          AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'f_unaccent') AS ok`,
+    );
+    ok = rows[0]?.ok === true;
+  } catch {
+    ok = false;
+  }
+  searchExtrasCache = { ok, checkedAt: now };
+  return ok;
+}
+
+/** Confronti sul nome. Con le estensioni: testo normalizzato (minuscolo, senza
+ * accenti) e LIKE sull'indice trigramma; senza: ILIKE come prima. */
+function nameMatcher(norm: boolean) {
+  const col = "f_unaccent(lower(b.name))";
+  return {
+    /** Il nome contiene il testo. */
+    like(token: string, p: Params): string {
+      return norm
+        ? `${col} LIKE ${p.add(`%${escapeLike(normalizeToken(token))}%`)}`
+        : `b.name ILIKE ${p.add(`%${escapeLike(token)}%`)}`;
+    },
+    /** Il nome contiene il testo come parola intera. */
+    word(token: string, p: Params): string {
+      return norm
+        ? `${col} ~ ${p.add(wholeWordRegex(normalizeToken(token)))}`
+        : `b.name ~* ${p.add(wholeWordRegex(token))}`;
+    },
+    /** Il nome inizia con il testo. */
+    prefix(text: string, p: Params): string {
+      return norm
+        ? `${col} LIKE ${p.add(`${escapeLike(normalizeToken(text))}%`)}`
+        : `b.name ILIKE ${p.add(`${escapeLike(text)}%`)}`;
+    },
+  };
 }
 
 /** Rilevanza della ricerca per nome, per mettere in cima i risultati
  * migliori: 0 = tutte le parole compaiono come parola intera nel nome
  * ("Mew", "Mew ex"), 1 = il nome inizia con la ricerca ("Mewtwo"), 2 = il
  * resto (sottostringa nel nome o corrispondenza solo nel numero). */
-function buildSearchRank(search: string | undefined, p: Params): string | null {
+function buildSearchRank(search: string | undefined, p: Params, norm: boolean): string | null {
   if (!search) return null;
   const tokens = searchTokens(search);
   if (tokens.length === 0) return null;
-  const whole = tokens.map((t) => `b.name ~* ${p.add(wholeWordRegex(t))}`).join(" AND ");
-  const prefix = p.add(`${escapeLike(tokens.join(" "))}%`);
-  return `CASE WHEN ${whole} THEN 0 WHEN b.name ILIKE ${prefix} THEN 1 ELSE 2 END`;
+  const m = nameMatcher(norm);
+  const whole = tokens.map((t) => m.word(t, p)).join(" AND ");
+  return `CASE WHEN ${whole} THEN 0 WHEN ${m.prefix(tokens.join(" "), p)} THEN 1 ELSE 2 END`;
 }
 
 /** WHERE condiviso tra fetchCards/fetchCardsCount/fetchCardsSummary, cosi'
  * "quante carte" e "che carte" restano sempre coerenti per costruzione
  * invece di dover mantenere due query separate allineate a mano. */
-function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
+function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean): {
   where: string[];
   listingFilters: string[];
   hasListingFilter: boolean;
@@ -115,18 +171,21 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params): {
     // Postgres, dove viveva in buildCardsFilter lato client) qui, unico
     // punto che ora costruisce davvero la query.
     const tokens = searchTokens(opts.search);
+    const m = nameMatcher(norm);
     for (const token of tokens) {
       // Il numero/versione conta come corrispondenza solo per parole con una
       // cifra (es. "12/98") quando "Nome esatto" e' attivo: una parola come
       // "char" non deve trovare carte che la contengono solo nella versione.
       // I segnaposto si aggiungono solo se usati (Postgres rifiuta quelli
-      // inutilizzati).
-      const matchVersion = !opts.exactName || /\d/.test(token);
-      const like = matchVersion ? p.add(`%${escapeLike(token)}%`) : null;
+      // inutilizzati). Con "Nome esatto" il LIKE davanti alla regex serve a
+      // usare l'indice trigramma, la regex da sola scansionerebbe tutto.
       const nameMatch = opts.exactName
-        ? `b.name ~* ${p.add(wholeWordRegex(token))}`
-        : `b.name ILIKE ${like}`;
-      where.push(matchVersion ? `(${nameMatch} OR b.version ILIKE ${like})` : nameMatch);
+        ? (norm ? `(${m.like(token, p)} AND ${m.word(token, p)})` : m.word(token, p))
+        : m.like(token, p);
+      const matchVersion = !opts.exactName || /\d/.test(token);
+      where.push(
+        matchVersion ? `(${nameMatch} OR b.version ILIKE ${p.add(`%${escapeLike(token)}%`)})` : nameMatch,
+      );
     }
   }
   if (opts.expansionCode) {
@@ -235,7 +294,8 @@ export async function fetchCards(opts: CardsFilterOpts & {
 }): Promise<CardRow[]> {
   const pool = getPgPool();
   const p = new Params();
-  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p);
+  const norm = opts.search ? await hasSearchExtras() : false;
+  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p, norm);
   const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
 
   // Una variazione calcolata su meno di MIN_MOVER_LISTINGS inserzioni IT NM
@@ -250,7 +310,7 @@ export async function fetchCards(opts: CardsFilterOpts & {
   // o nome) i nomi che combaciano meglio vengono prima ("mew" -> Mew, poi
   // Mewtwo); con un ordinamento per prezzo/variazione resta quello scelto.
   if (!opts.sortBy || opts.sortBy === "expansion" || opts.sortBy === "name") {
-    const rank = buildSearchRank(opts.search, p);
+    const rank = buildSearchRank(opts.search, p, norm);
     if (rank) orderBy = `${rank}, ${orderBy}`;
   }
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
@@ -310,25 +370,46 @@ export async function fetchNameSuggestions(search: string, limit = 8): Promise<s
   const tokens = searchTokens(search);
   if (tokens.length === 0) return [];
   const pool = getPgPool();
+  const norm = await hasSearchExtras();
+  const max = Math.min(Math.max(limit, 1), 12);
   const p = new Params();
-  const where = tokens.map((t) => `b.name ILIKE ${p.add(`%${escapeLike(t)}%`)}`);
-  const rank = buildSearchRank(search, p);
+  const m = nameMatcher(norm);
+  const where = tokens.map((t) => m.like(t, p));
+  const rank = buildSearchRank(search, p, norm);
   const sql = `
     SELECT b.name FROM blueprints b
     WHERE ${where.join(" AND ")}
     GROUP BY b.name
     ORDER BY ${rank}, length(b.name), b.name
-    LIMIT ${p.add(Math.min(Math.max(limit, 1), 12))}
+    LIMIT ${p.add(max)}
   `;
   const { rows } = await pool.query(sql, p.values);
-  return rows.map((r: { name: string }) => r.name);
+  const names = rows.map((r: { name: string }) => r.name);
+
+  // Pochi risultati e un testo abbastanza lungo: aggiungi i nomi simili per
+  // gli errori di battitura ("charmilion" -> Charmeleon), i piu' vicini prima.
+  // Il confronto % usa la soglia predefinita di pg_trgm (0,3).
+  const normalized = tokens.map(normalizeToken).join(" ");
+  if (norm && names.length < max && normalized.length >= 4) {
+    const fuzzy = await pool.query(
+      `SELECT b.name FROM blueprints b
+       WHERE f_unaccent(lower(b.name)) % $1 AND NOT (b.name = ANY($2))
+       GROUP BY b.name
+       ORDER BY max(similarity(f_unaccent(lower(b.name)), $1)) DESC, length(b.name), b.name
+       LIMIT $3`,
+      [normalized, names, max - names.length],
+    );
+    for (const r of fuzzy.rows as { name: string }[]) names.push(r.name);
+  }
+  return names;
 }
 
 /** Conteggio delle carte che soddisfano gli stessi filtri di fetchCards. */
 export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
   const pool = getPgPool();
   const p = new Params();
-  const { where } = buildCardsFilter(opts, p);
+  const norm = opts.search ? await hasSearchExtras() : false;
+  const { where } = buildCardsFilter(opts, p, norm);
   const sql = `SELECT COUNT(*) AS c FROM blueprints b ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
   const { rows } = await pool.query(sql, p.values);
   return Number(rows[0].c);
@@ -341,7 +422,8 @@ export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
 export async function fetchCardsSummary(opts: CardsFilterOpts): Promise<CardsSummary | null> {
   const pool = getPgPool();
   const p = new Params();
-  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p);
+  const norm = opts.search ? await hasSearchExtras() : false;
+  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p, norm);
   const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
   const filteredJoin = buildFilteredJoinSql(hasListingFilter, listingFilters);
   const validExpr = `${priceExpr} IS NOT NULL AND ${priceExpr} != 0 AND ${prevPriceExpr} IS NOT NULL AND ${prevPriceExpr} != 0`;
