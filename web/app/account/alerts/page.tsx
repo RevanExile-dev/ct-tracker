@@ -7,6 +7,8 @@ import { CardRow, fetchCards, fetchConditions, fetchLanguages } from "@/lib/db";
 import { formatCents, formatDateLong } from "@/lib/format";
 import type { PriceAlert, PriceAlertFireMode, PriceAlertTargetType } from "@/lib/types";
 import SiteHeader from "@/components/SiteHeader";
+import QuickAlertModal from "@/components/QuickAlertModal";
+import AlertLanguagePicker from "@/components/AlertLanguagePicker";
 
 const ANY_OPTION = ""; // select vuoto = "qualunque" (profilo non vincolato su quel campo)
 
@@ -24,7 +26,7 @@ const STATE_CLASSES: Record<PriceAlert["state"], string> = {
 
 function profileLabel(alert: PriceAlert): string {
   const parts: string[] = [];
-  parts.push(alert.language ? `lingua ${alert.language}` : "qualunque lingua");
+  parts.push(alert.languages.length > 0 ? `lingua ${alert.languages.join(" o ")}` : "qualunque lingua");
   parts.push(alert.condition ? `condizione ${alert.condition}` : "qualunque condizione");
   if (alert.canSellViaHub === 1) parts.push("solo CardTrader Zero");
   else if (alert.canSellViaHub === 0) parts.push("mai CardTrader Zero");
@@ -55,10 +57,11 @@ type AlertListItemProps = {
   card: CardRow | undefined;
   highlighted?: boolean;
   onToggle: (alert: PriceAlert) => void;
+  onEdit: (alert: PriceAlert) => void;
   onRemove: (id: number) => void;
 };
 
-function AlertListItem({ alert, card, highlighted, onToggle, onRemove }: AlertListItemProps) {
+function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }: AlertListItemProps) {
   return (
     <li
       className={`rounded-card border px-5 py-4 ${
@@ -93,6 +96,11 @@ function AlertListItem({ alert, card, highlighted, onToggle, onRemove }: AlertLi
           >
             {toggleActionLabel(alert)}
           </button>
+          <button type="button" onClick={() => onEdit(alert)}
+            aria-label={`Modifica allarme ${card?.name ?? `carta #${alert.blueprintId}`}`}
+            className="text-xs text-ink-muted hover:text-accent-bright min-h-8 px-2 border border-base-border rounded-lg">
+            Modifica
+          </button>
           <button type="button" onClick={() => onRemove(alert.id)}
             className="text-xs text-ink-muted hover:text-signal-down min-h-8 px-2 border border-base-border rounded-lg">
             Elimina
@@ -110,6 +118,7 @@ export default function PriceAlertsPage() {
   const [error, setError] = useState<string | null>(null);
   const [languageOptions, setLanguageOptions] = useState<string[]>([]);
   const [conditionOptions, setConditionOptions] = useState<string[]>([]);
+  const [editingAlert, setEditingAlert] = useState<PriceAlert | null>(null);
 
   // --- Ricerca carta per il form "nuovo allarme" (stesso pattern di /lots) ---
   const [search, setSearch] = useState("");
@@ -132,7 +141,7 @@ export default function PriceAlertsPage() {
   const visibleSearchResults = !debouncedSearch || selectedCard ? [] : searchResults;
 
   // --- Resto del form ---
-  const [language, setLanguage] = useState(ANY_OPTION);
+  const [languages, setLanguages] = useState<string[]>([]);
   const [condition, setCondition] = useState(ANY_OPTION);
   const [canSellViaHub, setCanSellViaHub] = useState<"any" | "only" | "never">("any");
   const [targetType, setTargetType] = useState<PriceAlertTargetType>("absolute_cents");
@@ -143,7 +152,7 @@ export default function PriceAlertsPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   function resetForm() {
-    setSearch(""); setSelectedCard(null); setLanguage(ANY_OPTION); setCondition(ANY_OPTION);
+    setSearch(""); setSelectedCard(null); setLanguages([]); setCondition(ANY_OPTION);
     setCanSellViaHub("any"); setTargetType("absolute_cents"); setTargetInput("");
     setFireMode("once"); setRearmCooldownHours("24");
   }
@@ -208,7 +217,7 @@ export default function PriceAlertsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blueprintId: selectedCard.id,
-          language: language || null,
+          languages,
           condition: condition || null,
           canSellViaHub: canSellViaHub === "any" ? null : canSellViaHub === "only" ? 1 : 0,
           targetType,
@@ -332,13 +341,9 @@ export default function PriceAlertsPage() {
             )}
           </div>
 
-          <div>
-            <label className="block text-xs font-mono uppercase tracking-wider text-ink-faint mb-1.5" htmlFor="alert-language">Lingua</label>
-            <select id="alert-language" value={language} onChange={(e) => setLanguage(e.target.value)}
-              className="w-full min-h-11 rounded-lg border border-base-border bg-base-surface2 px-3 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
-              <option value={ANY_OPTION}>Qualunque lingua</option>
-              {languageOptions.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+          <div className="sm:col-span-2">
+            <AlertLanguagePicker idPrefix="alert-language" options={languageOptions} selected={languages} onChange={setLanguages}
+              labelClassName="block text-xs font-mono uppercase tracking-wider text-ink-faint mb-1.5" />
           </div>
 
           <div>
@@ -431,6 +436,7 @@ export default function PriceAlertsPage() {
                         card={cardsById.get(alert.blueprintId)}
                         highlighted
                         onToggle={toggleAlert}
+                        onEdit={setEditingAlert}
                         onRemove={removeAlert}
                       />
                     ))}
@@ -452,6 +458,7 @@ export default function PriceAlertsPage() {
                         alert={alert}
                         card={cardsById.get(alert.blueprintId)}
                         onToggle={toggleAlert}
+                        onEdit={setEditingAlert}
                         onRemove={removeAlert}
                       />
                     ))}
@@ -461,6 +468,14 @@ export default function PriceAlertsPage() {
             </div>
           );
         })()
+      )}
+      {editingAlert && (
+        <QuickAlertModal
+          alert={editingAlert}
+          card={cardsById.get(editingAlert.blueprintId)}
+          onClose={() => setEditingAlert(null)}
+          onSaved={(updated) => setAlerts((current) => current?.map((a) => (a.id === updated.id ? updated : a)) ?? current)}
+        />
       )}
     </main>
   );
