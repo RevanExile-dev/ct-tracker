@@ -212,8 +212,8 @@ def resolve_candidates(code: str, exp_name: str, snap: dict, en_sets: dict[str, 
     pokemon-tcg-data coincide spesso con quello TCGdex: svp, swshp, smp, xyp,
     bwp, cel25...) e, se non trovano nulla, ripiega sul nome del set
     CardTrader (set usciti dopo lo snapshot degli artisti)."""
-    if code in SET_OVERRIDES:
-        return list(SET_OVERRIDES[code])
+    if code.lower() in SET_OVERRIDES:
+        return list(SET_OVERRIDES[code.lower()])
     en_ids = en_ids or {}
     cands = sa.candidate_sets(code, exp_name, snap)
     out: list[tuple[str, str]] = []
@@ -256,7 +256,8 @@ def match_expansion(bps: list[dict], set_cards: dict[tuple[str, str], list[dict]
                 continue
             for c in set_cards.get((l, sid)) or []:
                 used = True
-                k = sa.number_keys(c.get("localId"), set())
+                local_id = c.get("localId")
+                k = sa.number_keys(str(local_id) if local_id is not None else None, set())
                 if not k:
                     continue
                 merged.setdefault(k[0], (c["id"], c.get("name") or ""))
