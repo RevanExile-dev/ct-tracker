@@ -33,6 +33,18 @@ import { useEffect, useRef, useState } from "react";
  * spariva a meta' consultazione. Passare qui lo stato "e' aperto un
  * filtro" gia' tracciato dal chiamante evita di dover indovinare dal DOM.
  *
+ * Anti-oscillazione (bug reale "il sito vibra in fondo", riprodotto in
+ * produzione con rotella reale: scrollY alternava ~6571/6610 all'infinito,
+ * senza input, 12 volte al secondo): nascondere la barra accorcia il
+ * documento; se si e' vicini al fondo, il browser riporta scrollY indietro
+ * ("clamp"), il hook lo legge come "l'utente sale", rimostra la barra, il
+ * documento si riallunga, e cosi' via. Due difese complementari: (1) uno
+ * scroll all'indietro che coincide con un documento diventato piu' corto non
+ * e' un gesto dell'utente, solo un aggiustamento del layout: si aggiorna
+ * l'ancora e basta; (2) non si nasconde la barra quando la distanza dal fondo
+ * e' minore dello spazio che la barra libererebbe (nessun clamp = nessun
+ * salto di contenuto).
+ *
  * Confronta lo scroll corrente con un "ancora" (l'ultima posizione in cui
  * la direzione e' stata confermata), non con l'evento immediatamente
  * precedente: un vero gesto di scroll desktop genera tanti eventi piccoli
@@ -115,6 +127,8 @@ export function useHideOnScrollDown(
 
   useEffect(() => {
     anchorY.current = window.scrollY;
+    let lastY = window.scrollY;
+    let lastDocHeight = document.documentElement.scrollHeight;
 
     function enterTouchManualMode() {
       if (window.matchMedia("(max-width: 639px)").matches) {
@@ -129,6 +143,11 @@ export function useHideOnScrollDown(
       requestAnimationFrame(() => {
         ticking.current = false;
         const y = window.scrollY;
+        const docHeight = document.documentElement.scrollHeight;
+        const prevY = lastY;
+        const prevDocHeight = lastDocHeight;
+        lastY = y;
+        lastDocHeight = docHeight;
         const mobile = window.matchMedia("(max-width: 639px)").matches;
 
         // Dopo il primo tocco su mobile, lo scroll non ha piu' autorita'
@@ -150,8 +169,20 @@ export function useHideOnScrollDown(
         }
         if (containerRef?.current?.contains(document.activeElement)) return;
 
+        // Documento accorciato e scrollY arretrato nello stesso passo: e' il
+        // browser che rientra nei nuovi limiti, non l'utente che sale.
+        if (docHeight < prevDocHeight && y < prevY) {
+          anchorY.current = y;
+          return;
+        }
+
         const delta = y - anchorY.current;
         if (delta > directionThresholdPx) {
+          // Vicino al fondo nascondere la barra accorcerebbe il documento
+          // sotto i piedi dell'utente: resta com'e'.
+          const barHeight = containerRef?.current?.getBoundingClientRect().height ?? 0;
+          const distanceToBottom = docHeight - (y + window.innerHeight);
+          if (distanceToBottom < barHeight) return;
           setVisible(false);
           anchorY.current = y;
         } else if (delta < -directionThresholdPx) {
