@@ -59,6 +59,9 @@ export type SortOption =
 
 export type CardsFilterOpts = {
   search?: string;
+  // Il nome deve contenere ogni parola cercata come parola intera
+  // ("mew" non trova "Mewtwo").
+  exactName?: boolean;
   expansionCode?: string;
   rarities?: string[];
   // Nomi artista come in blueprints.artist (vedi web/config/top_artists.json).

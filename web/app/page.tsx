@@ -86,6 +86,7 @@ function HomeContent() {
     splitCsv(searchParams.get("cond"))
   );
   const [onlyZero, setOnlyZero] = useState(() => searchParams.get("zero") === "1");
+  const [exactName, setExactName] = useState(() => searchParams.get("exact") === "1");
   const [sortBy, setSortBy] = useState<SortOption>(
     () => (searchParams.get("sort") as SortOption) || "expansion"
   );
@@ -96,7 +97,7 @@ function HomeContent() {
     const shown = Number(searchParams.get("shown"));
     return Number.isFinite(shown) && shown >= PAGE_SIZE ? shown : PAGE_SIZE;
   });
-  const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedArtists.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, sortBy].join("|");
+  const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedArtists.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, exactName, sortBy].join("|");
   const previousFilterKey = useRef(filterKey);
 
   // Barra filtri sticky: si nasconde scrollando verso il basso (piu' spazio
@@ -155,6 +156,7 @@ function HomeContent() {
     if (selectedLanguages.length) params.set("lang", selectedLanguages.join(","));
     if (selectedConditions.length) params.set("cond", selectedConditions.join(","));
     if (onlyZero) params.set("zero", "1");
+    if (exactName) params.set("exact", "1");
     if (sortBy !== "expansion") params.set("sort", sortBy);
     if (visibleCount > PAGE_SIZE) params.set("shown", String(visibleCount));
     // "three" non e' un filtro del catalogo ma un flag di visualizzazione
@@ -173,7 +175,7 @@ function HomeContent() {
     if (qs !== searchParams.toString()) {
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     }
-  }, [search, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, pathname, router, searchParams]);
+  }, [search, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, exactName, sortBy, visibleCount, pathname, router, searchParams]);
 
   useEffect(() => {
     fetchExpansions().then(setExpansions).catch(() => {});
@@ -201,7 +203,7 @@ function HomeContent() {
   useEffect(() => {
     let cancelled = false;
     fetchCards({
-      search: debouncedSearch, expansionCode, rarities: selectedRarities, artists: selectedArtists,
+      search: debouncedSearch, exactName, expansionCode, rarities: selectedRarities, artists: selectedArtists,
       languages: selectedLanguages, conditions: selectedConditions, onlyZero, sortBy, limit: visibleCount,
     })
       .then((nextCards) => {
@@ -209,7 +211,7 @@ function HomeContent() {
       })
       .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); });
     return () => { cancelled = true; };
-  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, sortBy, visibleCount, reloadTick]);
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, exactName, sortBy, visibleCount, reloadTick]);
 
   useEffect(() => {
     if (previousFilterKey.current !== filterKey) {
@@ -228,7 +230,7 @@ function HomeContent() {
     let cancelled = false;
     let frame: number | null = null;
     const filters = {
-      search: debouncedSearch, expansionCode, rarities: selectedRarities, artists: selectedArtists,
+      search: debouncedSearch, exactName, expansionCode, rarities: selectedRarities, artists: selectedArtists,
       languages: selectedLanguages, conditions: selectedConditions, onlyZero,
     };
     fetchCardsCount(filters).then((c) => { if (!cancelled) setResultCount(c); }).catch(() => {});
@@ -242,7 +244,7 @@ function HomeContent() {
       frame = requestAnimationFrame(() => { if (!cancelled) setExpansionSummaryData(null); });
     }
     return () => { cancelled = true; if (frame !== null) cancelAnimationFrame(frame); };
-  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero]);
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, exactName]);
 
   // Gia' limitato lato SQL a visibleCount (vedi fetchCards sopra): nessuno
   // slice() lato client necessario.
@@ -294,7 +296,7 @@ function HomeContent() {
 
   const hasActiveFilters = Boolean(
     search || expansionCode || selectedRarities.length || selectedArtists.length || selectedLanguages.length ||
-      selectedConditions.length || onlyZero || sortBy !== "expansion"
+      selectedConditions.length || onlyZero || exactName || sortBy !== "expansion"
   );
 
   function resetAllFilters() {
@@ -305,6 +307,7 @@ function HomeContent() {
     setSelectedLanguages([]);
     setSelectedConditions([]);
     setOnlyZero(false);
+    setExactName(false);
     setSortBy("expansion");
   }
 
@@ -316,6 +319,7 @@ function HomeContent() {
     setSelectedLanguages(preset.languages);
     setSelectedConditions(preset.conditions);
     setOnlyZero(preset.onlyZero);
+    setExactName(preset.exactName === true);
     setSortBy(preset.sortBy ?? "expansion");
   }
 
@@ -383,6 +387,8 @@ function HomeContent() {
                 onToggleCondition={handleToggleCondition}
                 onlyZero={onlyZero}
                 onToggleOnlyZero={() => setOnlyZero((v) => !v)}
+                exactName={exactName}
+                onToggleExactName={() => setExactName((v) => !v)}
                 sortBy={sortBy}
                 onSortChange={setSortBy}
                 hasActiveFilters={hasActiveFilters}

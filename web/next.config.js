@@ -82,7 +82,7 @@ const nextConfig = {
         source: "/api/:name(cards|movers)",
         headers: publicApiCache(120, 600),
       },
-      { source: "/api/cards/:name(count|summary|trend)", headers: publicApiCache(120, 600) },
+      { source: "/api/cards/:name(count|summary|trend|suggest)", headers: publicApiCache(120, 600) },
       { source: "/api/cards/:id(\\d+)", headers: publicApiCache(120, 600) },
     ];
   },

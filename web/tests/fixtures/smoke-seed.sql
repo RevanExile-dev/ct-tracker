@@ -106,3 +106,15 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- altre senza artista (come nel catalogo reale per le carte non abbinate).
 UPDATE blueprints SET artist = 'Akira Egawa' WHERE id BETWEEN 900101 AND 900140 AND (id - 900100) % 5 = 0;
 UPDATE blueprints SET artist = 'Mitsuhiro Arita' WHERE id BETWEEN 900101 AND 900140 AND (id - 900100) % 5 = 1;
+
+-- Ricerca per nome (tests/name-search.spec.mjs): "mew" deve trovare anche
+-- Mewtwo ma mettere per primi Mew/Mew ex; con "Nome esatto" solo i primi due; "char" per i suggerimenti.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, rarity, is_premium) VALUES
+  (910001, 'Mewtwo ex', '10/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910002, 'Mew', '11/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910003, 'Mew ex', '12/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910004, 'Mewtwo', '13/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910005, 'Charizard', '14/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910006, 'Charizard ex', '15/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (910007, 'Charmeleon', '16/98', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0)
+ON CONFLICT (id) DO NOTHING;
