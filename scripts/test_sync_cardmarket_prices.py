@@ -130,6 +130,16 @@ class MatchExpansion(unittest.TestCase):
         self.assertEqual(out, {1: "en:x-SWSH001", 2: "en:x-SWSH275"})
 
 
+class MatchWithFailedSet(unittest.TestCase):
+    def test_set_non_letto_non_e_set_vuoto(self):
+        # match_expansion tratta None come "nessuna carta": e' run_mapping a
+        # non scrivere nulla per l'espansione. Qui si verifica solo che None
+        # non rompa l'abbinamento delle altre lingue.
+        bps = [{"id": 1, "name": "Pikachu", "version": "1/10"}]
+        cards = {("en", "e"): None, ("ja", "J"): [sc("1", "ピカチュウ", "J-1")]}
+        self.assertEqual(m.match_expansion(bps, cards, [("en", "e"), ("ja", "J")]), {1: "ja:J-1"})
+
+
 class ExternalId(unittest.TestCase):
     def test_roundtrip_e_url(self):
         e = m.make_external_id("ja", "SM1+-001")

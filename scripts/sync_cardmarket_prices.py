@@ -473,17 +473,27 @@ def run_mapping(blueprints: list[dict], todo_ids: set[int], snap: dict) -> dict[
         lang, sid = key
         st, d = fetch_json(f"{TCGDEX}/{lang}/sets/{urllib.parse.quote(sid, safe='')}")
         time.sleep(REQUEST_DELAY_SECONDS)
-        return key, (d or {}).get("cards") or []
+        # None = lettura fallita (rete, 5xx): diverso da "set senza carte" ([]).
+        return key, ((d or {}).get("cards") or []) if st == 200 else None
 
     with ThreadPoolExecutor(THREADS) as ex:
         set_cards = dict(ex.map(get_set, needed))
 
     result: dict[int, str | None] = {}
     no_set = Counter()
+    skipped = 0
     for eid, bps in by_exp.items():
+        if any(set_cards.get(c) is None for c in exp_cands[eid]):
+            # Un set non letto non e' un set vuoto: non scrivo "non trovata"
+            # (che bloccherebbe il riprovare per RECHECK_UNMATCHED_DAYS), lascio
+            # le carte da abbinare al prossimo giro.
+            skipped += len(bps)
+            continue
         if not exp_cands[eid]:
             no_set[(bps[0]["expansion_code"], bps[0]["expansion_name"])] += len(bps)
         result.update(match_expansion(bps, set_cards, exp_cands[eid]))
+    if skipped:
+        print(f"  ! {skipped} carte lasciate da abbinare: lettura di un set TCGdex fallita (si riprova al prossimo giro).", file=sys.stderr)
     matched = sum(1 for v in result.values() if v)
     print(f"Abbinamento: {matched}/{len(result)} carte abbinate su {len(by_exp)} espansioni ({len(needed)} set TCGdex letti).")
     if no_set:
