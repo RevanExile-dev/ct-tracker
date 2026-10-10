@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: read
+  # Serve solo al passo "Avvia il catalogo notturno" (gh workflow run).
+  actions: write
 
 # Condiviso con sync_catalog.yml (e con sync_prices.yml/sync_prices_full.yml,
 # rimasti solo per un resync manuale completo - vedi li'): mai due sync in
@@ -50,6 +52,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # I cron di GitHub per il catalogo (sync_prices_catalog.yml) vengono
+      # spesso ritardati o saltati; questo workflow invece e' puntuale (ping
+      # esterno ogni 30 minuti): di notte, in ora di Roma, e' lui ad avviare
+      # il catalogo se non e' in corso e non ne sono gia' partiti 4. Prima del
+      # sync, cosi' parte anche se il sync poi fallisce; il catalogo resta in
+      # coda dietro questo giro (stesso gruppo di concorrenza).
+      - name: Avvia il catalogo notturno (se serve)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/dispatch_night_catalog.py
 
       - name: Installa dipendenze
         run: pip install -r requirements.txt
