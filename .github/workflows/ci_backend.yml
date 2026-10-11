@@ -45,3 +45,6 @@ jobs:
 
       - name: Test sync prezzi Cardmarket (sync_cardmarket_prices)
         run: python scripts/test_sync_cardmarket_prices.py
+
+      - name: Test avvio catalogo notturno (dispatch_night_catalog)
+        run: python scripts/test_dispatch_night_catalog.py
