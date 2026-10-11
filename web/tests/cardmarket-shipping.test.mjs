@@ -97,3 +97,12 @@ test('valore per la spedizione: anche solo con le medie a 7/30 giorni; zero non 
   const zeros = { ...prices(0), low_cents: 0, avg7_cents: 0 };
   assert.equal(cm.visibleCardmarketReference({ updated_at: '2026-10-11T00:00:00Z', base: zeros, holo: null }, NOW), null);
 });
+
+test('Zero verso l\'Italia: 8,50 fino a 44 carte, 10,50 fino a 10 kg, poi niente stima', () => {
+  assert.deepEqual({ ...ship.zeroHubShipping(1) }, { cents: 850, maxCards: 44 });
+  assert.equal(ship.zeroHubShipping(44).cents, 850);
+  assert.equal(ship.zeroHubShipping(45).cents, 1050);
+  assert.equal(ship.zeroHubShipping(4994).cents, 1050);
+  assert.equal(ship.zeroHubShipping(4995), null);
+  for (const n of [0, -1, NaN]) assert.equal(ship.zeroHubShipping(n), null, String(n));
+});

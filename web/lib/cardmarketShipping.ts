@@ -68,3 +68,27 @@ export function bundleExample(): { cards: number; totalCents: number; perCardCen
   const totalCents = 825;
   return { cards, totalCents, perCardCents: Math.round(totalCents / cards) };
 }
+
+// Confronto con CardTrader Zero: UNA sola spedizione dall'hub per tutto
+// l'ordine, qualunque sia il numero di venditori. Tabella del calcolatore
+// ufficiale con destinazione Italia
+// (https://www.cardtrader.com/en-EU/shipping_methods/zero?shipping_country=IT,
+// letta il 2026-10-11; copia in docs/ e nei rapporti di ricerca). Senza
+// paese la pagina mostra quella del paese di chi la apre (USA: non vale per
+// l'Italia). Da ricontrollare ogni mese insieme alle tariffe Cardmarket.
+export const ZERO_HUB_CHECKED_AT = "2026-10-11";
+export const ZERO_HUB_SOURCE_URL = "https://www.cardtrader.com/en-EU/shipping_methods/zero?shipping_country=IT";
+
+/** Scaglioni per numero di carte (circa, dal peso): costo in centesimi. */
+export const ZERO_HUB_ITALY_TIERS: ReadonlyArray<readonly [maxCards: number, cents: number]> = [
+  [44, 850],     // fino a 100 g, Amazon Shipping
+  [4_994, 1_050], // fino a 10 kg, punto di ritiro UPS
+];
+
+/** Costo (centesimi) della spedizione unica Zero verso l'Italia per `cards`
+ * carte (singole); null oltre la tabella o se `cards` non e' valido. */
+export function zeroHubShipping(cards: number): { cents: number; maxCards: number } | null {
+  if (!Number.isFinite(cards) || cards < 1) return null;
+  const tier = ZERO_HUB_ITALY_TIERS.find(([maxCards]) => cards <= maxCards);
+  return tier ? { cents: tier[1], maxCards: tier[0] } : null;
+}
