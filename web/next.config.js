@@ -84,6 +84,8 @@ const nextConfig = {
       },
       { source: "/api/cards/:name(count|summary|trend|suggest)", headers: publicApiCache(120, 600) },
       { source: "/api/cards/:id(\\d+)", headers: publicApiCache(120, 600) },
+      // Riferimento Cardmarket: TCGdex lo aggiorna una volta al giorno.
+      { source: "/api/cards/:id(\\d+)/cardmarket", headers: publicApiCache(600, 3600) },
     ];
   },
   images: {
