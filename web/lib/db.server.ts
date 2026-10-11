@@ -2,6 +2,7 @@ import "server-only";
 import { getPgPool } from "./pgPool";
 import { expandRarityFilters, normalizeRarity } from "./rarity";
 import { compareExpansions } from "./expansions";
+import type { CardmarketPrices, CardmarketReference } from "./cardmarket";
 import topArtists from "@/config/top_artists.json";
 import {
   MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE,
@@ -656,6 +657,51 @@ export async function fetchBestListings(blueprintId: number): Promise<Listing[]>
     [blueprintId],
   );
   return rows;
+}
+
+/** Riferimento Cardmarket (euro, via TCGdex) per una carta: medie per carta,
+ * NON offerte - vedi lib/cardmarket.ts. Legge external_prices (mai
+ * latest_prices). Null se la carta non ha dati, o se la tabella non esiste
+ * ancora (viene creata dal primo sync Cardmarket: nel frattempo il riquadro
+ * semplicemente non compare, la pagina non si rompe). */
+export async function fetchCardmarketReference(blueprintId: number): Promise<CardmarketReference | null> {
+  const pool = getPgPool();
+  let rows: Array<Record<string, unknown>>;
+  try {
+    ({ rows } = await pool.query(
+      `
+      SELECT variant, price_cents AS trend_cents, low_cents, mid_cents AS avg_cents,
+             avg1_cents, avg7_cents, avg30_cents,
+             COALESCE(source_updated_at, fetched_at) AS updated_at
+      FROM external_prices
+      WHERE blueprint_id = $1 AND source = 'cardmarket' AND currency = 'EUR'
+      `,
+      [blueprintId],
+    ));
+  } catch (err) {
+    // 42P01 = undefined_table: schema non ancora aggiornato dal sync.
+    if ((err as { code?: string }).code === "42P01") return null;
+    throw err;
+  }
+  if (rows.length === 0) return null;
+  const pick = (variant: string): CardmarketPrices | null => {
+    const r = rows.find((row) => row.variant === variant);
+    if (!r) return null;
+    return {
+      trend_cents: r.trend_cents as number | null,
+      low_cents: r.low_cents as number | null,
+      avg_cents: r.avg_cents as number | null,
+      avg1_cents: r.avg1_cents as number | null,
+      avg7_cents: r.avg7_cents as number | null,
+      avg30_cents: r.avg30_cents as number | null,
+    };
+  };
+  // Il dato mostrato e' vecchio quanto la riga piu' vecchia: due varianti
+  // aggiornate in momenti diversi non si presentano come tutte recenti.
+  const oldest = rows
+    .map((r) => new Date(r.updated_at as string | Date).getTime())
+    .reduce((a, b) => Math.min(a, b));
+  return { updated_at: new Date(oldest).toISOString(), base: pick(""), holo: pick("holo") };
 }
 
 export async function fetchExpansions(): Promise<ExpansionInfo[]> {

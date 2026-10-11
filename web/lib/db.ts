@@ -15,9 +15,11 @@ export type {
   MoversSort, MoversPageOpts, MoversPageResult, CardDetail, PricePoint,
   Listing, ExpansionInfo, ArtistOption,
 } from "./types";
+export type { CardmarketPrices, CardmarketReference } from "./cardmarket";
 export { MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE } from "./types";
 export { normalizeRarity } from "./rarity";
 
+import type { CardmarketReference } from "./cardmarket";
 import type {
   CardRow, CardsFilterOpts, CardsSummary, MoversPageOpts, MoversPageResult,
   CardDetail, PricePoint, Listing, ExpansionInfo, ArtistOption, SortOption,
@@ -119,6 +121,12 @@ export async function fetchPriceHistory(blueprintId: number): Promise<PricePoint
 /** Le migliori (piu' economiche) inserzioni live per una carta. */
 export async function fetchBestListings(blueprintId: number): Promise<Listing[]> {
   return apiFetch<Listing[]>(`/api/cards/${blueprintId}/listings`);
+}
+
+/** Riferimento Cardmarket (medie per carta in euro, NON offerte): null se la
+ * carta non ha dati. Il chiamante applica visibleCardmarketReference. */
+export async function fetchCardmarketReference(blueprintId: number): Promise<CardmarketReference | null> {
+  return apiFetch<CardmarketReference | null>(`/api/cards/${blueprintId}/cardmarket`);
 }
 
 /** Media mobile degli ultimi `days` giorni per piu' carte in una sola

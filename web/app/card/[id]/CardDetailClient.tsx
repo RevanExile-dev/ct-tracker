@@ -19,6 +19,7 @@ import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
 import ConditionBadge from "@/components/ConditionBadge";
 import FilterDropdown from "@/components/FilterDropdown";
+import CardmarketReferenceBox from "@/components/CardmarketReferenceBox";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import LoginToTrackToast from "@/components/LoginToTrackToast";
 import { countryFlag, formatCents, formatPercent, languageFlag, trendVsMovingAverage } from "@/lib/format";
@@ -480,6 +481,9 @@ function CardDetailContent() {
               )}
             </div>
           )}
+
+          {/* Riferimento (media Cardmarket): box a parte, mai unito alle offerte sopra. */}
+          <CardmarketReferenceBox blueprintId={card.id} />
 
           <a
             href={`https://www.cardtrader.com/cards/${card.id}`}
