@@ -48,3 +48,6 @@ jobs:
 
       - name: Test avvio catalogo notturno (dispatch_night_catalog)
         run: python scripts/test_dispatch_night_catalog.py
+
+      - name: Test avvio sync Cardmarket (dispatch_cardmarket_sync)
+        run: python scripts/test_dispatch_cardmarket_sync.py

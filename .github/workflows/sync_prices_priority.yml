@@ -64,6 +64,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/dispatch_night_catalog.py
 
+      # Stesso motivo per i prezzi di riferimento Cardmarket (TCGdex li rinnova
+      # verso le 22:54 UTC): il cron del loro workflow puo' saltare, questo
+      # giro no. Non deve mai fermare il sync CardTrader: continue-on-error.
+      - name: Avvia il sync Cardmarket (se serve)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/dispatch_cardmarket_sync.py
+
       - name: Installa dipendenze
         run: pip install -r requirements.txt
 

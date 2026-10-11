@@ -4,7 +4,9 @@ on:
   schedule:
     # Una volta al giorno, dopo l'aggiornamento di TCGdex (verso le 22:54 UTC).
     # Minuto "dispari" per non cadere sull'ora di punta dei cron di GitHub.
-    # Se GitHub salta un giorno non succede nulla di grave: i prezzi di
+    # GitHub salta spesso i cron: se non parte, lo avvia di notte il giro delle
+    # tracciate (sync_prices_priority.yml, scripts/dispatch_cardmarket_sync.py).
+    # Se salta comunque un giorno non succede nulla di grave: i prezzi di
     # riferimento restano quelli del giorno prima e il sito mostra la data.
     - cron: "17 23 * * *"
   workflow_dispatch:
