@@ -88,3 +88,12 @@ test('valore per la spedizione: trend normale, altrimenti holo', () => {
   assert.equal(cm.referenceValueCents({ updated_at: 'x', base: null, holo: prices(900) }), 900);
   assert.equal(cm.referenceValueCents({ updated_at: 'x', base: prices(null), holo: null }), null);
 });
+
+test('valore per la spedizione: anche solo con le medie a 7/30 giorni; zero non conta come prezzo', () => {
+  const only7 = { ...prices(null), avg7_cents: 700 };
+  assert.equal(cm.referenceValueCents({ updated_at: 'x', base: only7, holo: null }), 700);
+  const only30 = { ...prices(null), avg30_cents: 650 };
+  assert.equal(cm.referenceValueCents({ updated_at: 'x', base: only30, holo: null }), 650);
+  const zeros = { ...prices(0), low_cents: 0, avg7_cents: 0 };
+  assert.equal(cm.visibleCardmarketReference({ updated_at: '2026-10-11T00:00:00Z', base: zeros, holo: null }, NOW), null);
+});

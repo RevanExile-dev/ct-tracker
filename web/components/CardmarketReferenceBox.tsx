@@ -31,7 +31,7 @@ function PriceRows({ prices }: { prices: CardmarketPrices }) {
   ];
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-      {rows.filter(([, v]) => typeof v === "number").map(([label, v]) => (
+      {rows.filter(([, v]) => typeof v === "number" && v > 0).map(([label, v]) => (
         <div key={label} className="contents">
           <dt className="text-ink-muted">{label}</dt>
           <dd className="font-mono text-ink-primary text-right">{formatCents(v, "EUR")}</dd>

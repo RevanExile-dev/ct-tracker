@@ -30,7 +30,7 @@ export function isCardmarketFresh(updatedAt: string, nowMs: number = Date.now())
 }
 
 function hasAnyPrice(p: CardmarketPrices | null): p is CardmarketPrices {
-  return !!p && Object.values(p).some((v) => typeof v === "number");
+  return !!p && Object.values(p).some((v) => typeof v === "number" && v > 0);
 }
 
 /** Il riferimento da mostrare, o null se non c'e' nulla di utilizzabile o e' vecchio. */
@@ -50,7 +50,7 @@ export function visibleCardmarketReference(
 export function referenceValueCents(ref: CardmarketReference): number | null {
   for (const p of [ref.base, ref.holo]) {
     if (!p) continue;
-    const v = p.trend_cents ?? p.avg_cents ?? p.low_cents;
+    const v = p.trend_cents ?? p.avg_cents ?? p.low_cents ?? p.avg7_cents ?? p.avg30_cents ?? p.avg1_cents;
     if (typeof v === "number" && v > 0) return v;
   }
   return null;
