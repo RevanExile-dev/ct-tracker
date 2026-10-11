@@ -7,8 +7,9 @@ import {
   type CardmarketPrices, type CardmarketReference,
 } from "@/lib/cardmarket";
 import {
-  estimateShipping, bundleExample,
+  estimateShipping, bundleExample, zeroHubShipping,
   CARDMARKET_SHIPPING_CHECKED_AT, CARDMARKET_SHIPPING_SOURCE_URL,
+  ZERO_HUB_CHECKED_AT, ZERO_HUB_SOURCE_URL,
 } from "@/lib/cardmarketShipping";
 import { formatCents, formatDate, formatNumber } from "@/lib/format";
 
@@ -45,6 +46,7 @@ function ShippingNote({ valueCents }: { valueCents: number }) {
   const est = estimateShipping(valueCents, 1);
   if (!est) return null;
   const bundle = bundleExample();
+  const zero = zeroHubShipping(1);
   const over25 = valueCents > 2_500;
   return (
     <div className="mt-3 pt-3 border-t border-dashed border-base-border text-xs text-ink-muted space-y-1" data-testid="cardmarket-shipping">
@@ -74,9 +76,18 @@ function ShippingNote({ valueCents }: { valueCents: number }) {
         Più carte dallo stesso venditore dividono la stessa spedizione (esempio: {bundle.cards} carte in
         una busta, {formatCents(bundle.totalCents, "EUR")}, circa {formatCents(bundle.perCardCents, "EUR")} a carta).
       </p>
+      {zero && (
+        <p data-testid="zero-comparison">
+          Per confronto, con CardTrader Zero la spedizione è una sola per tutto l&apos;ordine, anche se compri da più
+          venditori: <span className="font-mono text-ink-primary">{formatCents(zero.cents, "EUR")}</span> fino a circa{" "}
+          {zero.maxCards} carte (stima). Conviene soprattutto quando le carte vengono da molti venditori diversi.
+        </p>
+      )}
       <p className="text-ink-faint">
-        Tariffe ufficiali controllate il {formatDate(CARDMARKET_SHIPPING_CHECKED_AT)} su{" "}
-        <a href={CARDMARKET_SHIPPING_SOURCE_URL} target="_blank" rel="noreferrer" className="underline">Cardmarket</a>.
+        Tariffe controllate il {formatDate(CARDMARKET_SHIPPING_CHECKED_AT)} su{" "}
+        <a href={CARDMARKET_SHIPPING_SOURCE_URL} target="_blank" rel="noreferrer" className="underline">Cardmarket</a>
+        {" "}e l&apos;{formatDate(ZERO_HUB_CHECKED_AT)} su{" "}
+        <a href={ZERO_HUB_SOURCE_URL} target="_blank" rel="noreferrer" className="underline">CardTrader Zero</a>.
       </p>
     </div>
   );

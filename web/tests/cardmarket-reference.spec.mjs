@@ -33,6 +33,12 @@ test("dati recenti sotto i 25 euro: media, holo, fonte, data e spedizione stimat
   await expect(ship).toContainText("stima");
   await expect(ship).toContainText("1,60");
   await expect(ship).toContainText("per ordine, non per carta");
+  // confronto con CardTrader Zero: una sola spedizione dall'hub, 8,50 euro fino a 44 carte
+  const zero = page.getByTestId("zero-comparison");
+  await expect(zero).toContainText("CardTrader Zero");
+  await expect(zero).toContainText("8,50");
+  await expect(zero).toContainText("stima");
+  await expect(ship.getByRole("link", { name: "CardTrader Zero" })).toHaveAttribute("href", /cardtrader\.com.*shipping_country=IT/);
 });
 
 test("sopra i 25 euro: raccomandata obbligatoria e tetto estero", async ({ page }) => {
@@ -48,7 +54,7 @@ test("non si confonde con CardTrader: nessun pulsante, nessuna etichetta, prezzo
   await expect(box(page)).toBeVisible();
   // niente azioni dentro il riquadro, tranne il link alla pagina delle tariffe
   await expect(box(page).getByRole("button")).toHaveCount(0);
-  await expect(box(page)).not.toContainText(/miglior prezzo|Zero|acquista|compra/i);
+  await expect(box(page)).not.toContainText(/miglior prezzo|acquista|compra\b|aggiungi al carrello/i);
   // il prezzo in evidenza resta quello CardTrader (101 + 1 = 1,01 nel seed)
   const main = await page.locator("main").innerText();
   const outside = main.replace(await box(page).innerText(), "");
