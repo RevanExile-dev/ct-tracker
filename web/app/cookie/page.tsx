@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import LegalPage, { Fill } from "@/components/LegalPage";
 import { LEGAL_CONTACT_EMAIL } from "@/lib/legal";
 
@@ -45,7 +46,7 @@ export default function CookiePage() {
       </ul>
       <p>
         Se accedi, binder, lista desideri e filtri vengono uniti con quelli del tuo account (vedi{" "}
-        <a href="/privacy">Privacy</a>). Puoi cancellare questi dati dalle impostazioni del browser,
+        <Link href="/privacy">Privacy</Link>). Puoi cancellare questi dati dalle impostazioni del browser,
         alla voce &quot;dati dei siti&quot;.
       </p>
 
@@ -54,7 +55,7 @@ export default function CookiePage() {
         Il sito non incorpora widget, video o script di terzi che impostano cookie. Le immagini delle
         carte arrivano dai server di CardTrader/CloudFront e lo scanner scarica il lettore di testo da
         jsDelivr: sono richieste di file, che non usiamo per tracciarti, ma quei server vedono il tuo
-        indirizzo IP (vedi <a href="/privacy">Privacy</a>).
+        indirizzo IP (vedi <Link href="/privacy">Privacy</Link>).
       </p>
 
       <h2>Se un giorno cambia</h2>

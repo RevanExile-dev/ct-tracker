@@ -33,6 +33,12 @@ export default function PrivacyPage() {
         &quot;Protezione dagli abusi&quot;).
       </p>
 
+      <p>
+        Il sito conserva anche i registri tecnici normali di un servizio online (per esempio indirizzo
+        IP, pagina richiesta, tipo di browser), tenuti dal fornitore di hosting per sicurezza e
+        funzionamento, per il tempo previsto dal fornitore stesso.
+      </p>
+
       <h2>Se crei un account</h2>
       <p>Puoi accedere con Google oppure con un link inviato per email. I dati trattati sono:</p>
       <ul>
@@ -94,7 +100,8 @@ export default function PrivacyPage() {
           Google viene poi caricata dai server di Google (googleusercontent.com).
         </li>
         <li>
-          <strong>Telegram</strong>: solo se colleghi il bot.
+          <strong>Telegram</strong>: solo se colleghi il bot. I messaggi degli allarmi passano dai
+          server di Telegram, che ha una propria informativa.
         </li>
         <li>
           <strong>CardTrader e la sua rete di distribuzione (CloudFront)</strong>: le immagini delle
@@ -130,12 +137,13 @@ export default function PrivacyPage() {
         l&apos;uso, riceverne una copia in formato leggibile (portabilità) oppure opporti al
         trattamento. Per la cancellazione dell&apos;account scrivi a <Fill value={LEGAL_CONTACT_EMAIL} />{" "}
         dall&apos;indirizzo con cui ti sei registrato: eliminiamo account, binder, lotti, lista
-        desideri, filtri, allarmi e collegamento Telegram. Puoi anche scollegare Telegram da solo e
-        svuotare il binder dal sito.
+        desideri, filtri, allarmi e collegamento Telegram. Puoi anche scollegare Telegram da solo, e
+        togliere carte e lotti dal sito quando vuoi. Rispondiamo entro un mese. Se ci hai dato un
+        consenso (per esempio al collegamento Telegram) puoi ritirarlo in qualsiasi momento.
       </p>
       <p>
         Se ritieni che i tuoi dati siano trattati male puoi presentare reclamo al Garante per la
-        protezione dei dati personali (<a href="https://www.garanteprivacy.it" rel="noopener noreferrer">garanteprivacy.it</a>).
+        protezione dei dati personali (<a href="https://www.garanteprivacy.it" target="_blank" rel="noopener noreferrer">garanteprivacy.it</a>).
       </p>
 
       <h2>Età minima</h2>

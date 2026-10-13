@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import LegalPage, { Fill } from "@/components/LegalPage";
 import { LEGAL_CONTACT_EMAIL, LEGAL_OWNER_ADDRESS, LEGAL_OWNER_NAME } from "@/lib/legal";
 
@@ -30,7 +31,7 @@ export default function NoteLegaliPage() {
       <ul>
         <li>I prezzi e il catalogo vengono da CardTrader, tramite la loro interfaccia per sviluppatori.</li>
         <li>I prezzi di riferimento Cardmarket arrivano da TCGdex e sono solo indicativi.</li>
-        <li>I prezzi sono ritardati e non vincolanti (vedi i <a href="/termini">Termini d&apos;uso</a>).</li>
+        <li>I prezzi sono ritardati e non vincolanti (vedi i <Link href="/termini">Termini d&apos;uso</Link>).</li>
       </ul>
 
       <h2>Titolare e contatti</h2>

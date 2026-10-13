@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import LegalPage, { Fill } from "@/components/LegalPage";
 import { LEGAL_CONTACT_EMAIL, LEGAL_OWNER_NAME } from "@/lib/legal";
 
@@ -46,12 +47,20 @@ export default function TerminiPage() {
         essi per decisioni importanti.
       </p>
 
+      <h2>Gratis, oggi</h2>
+      <p>
+        Oggi il servizio è gratuito e non ci sono pagamenti né pubblicità. Se in futuro introdurremo
+        funzioni a pagamento le presenteremo con condizioni di vendita separate, chiare e prima
+        dell&apos;acquisto, e te lo diremo su questa pagina.
+      </p>
+
       <h2>Il tuo account</h2>
       <ul>
         <li>Devi avere almeno 14 anni, o il permesso di un genitore.</li>
+        <li>I contenuti che inserisci (binder, note, filtri) restano tuoi: ci autorizzi solo a conservarli e mostrarteli per far funzionare il servizio.</li>
         <li>Inserisci dati tuoi e veritieri; sei responsabile di ciò che inserisci e dell&apos;accesso alla tua email.</li>
         <li>Per tenere il servizio sostenibile ci sono limiti per account (per esempio sul numero di carte, lotti e allarmi); il sito te lo segnala quando li raggiungi.</li>
-        <li>Puoi chiedere la cancellazione dell&apos;account in qualsiasi momento (vedi <a href="/privacy">Privacy</a>).</li>
+        <li>Puoi chiedere la cancellazione dell&apos;account in qualsiasi momento (vedi <Link href="/privacy">Privacy</Link>).</li>
       </ul>
 
       <h2>Cosa non puoi fare</h2>
@@ -77,7 +86,7 @@ export default function TerminiPage() {
       <h2>Marchi, immagini e contenuti di terzi</h2>
       <p>
         Nomi, immagini e marchi delle carte appartengono ai rispettivi titolari. Vedi la pagina{" "}
-        <a href="/note-legali">Note legali e non affiliazione</a>.
+        <Link href="/note-legali">Note legali e non affiliazione</Link>.
       </p>
 
       <h2>Modifiche, legge applicabile</h2>
