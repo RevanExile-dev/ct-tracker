@@ -22,6 +22,7 @@ export default function TelegramSettingsPage() {
   const [linkCode, setLinkCode] = useState<LinkCode | null>(null);
   const [loadingCode, setLoadingCode] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
+  const [savingDeals, setSavingDeals] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -84,12 +85,30 @@ export default function TelegramSettingsPage() {
     try {
       const res = await fetch("/api/account/telegram", { method: "DELETE" });
       if (!res.ok) throw new Error("Impossibile scollegare, riprova.");
-      setLinkStatus({ linked: false, linkedAt: null });
+      setLinkStatus({ linked: false, linkedAt: null, dealAlerts: false });
       setLinkCode(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore imprevisto");
     } finally {
       setUnlinking(false);
+    }
+  }
+
+  async function toggleDealAlerts(enabled: boolean) {
+    setSavingDeals(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account/telegram", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealAlerts: enabled }),
+      });
+      if (!res.ok) throw new Error("Impossibile salvare la scelta, riprova.");
+      setLinkStatus(await res.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore imprevisto");
+    } finally {
+      setSavingDeals(false);
     }
   }
 
@@ -134,6 +153,22 @@ export default function TelegramSettingsPage() {
           {linkStatus.linkedAt && (
             <p className="text-xs font-mono text-ink-faint mb-4">dal {formatDateLong(linkStatus.linkedAt)}</p>
           )}
+          <label className="mb-4 flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={linkStatus.dealAlerts}
+              disabled={savingDeals}
+              onChange={(e) => toggleDealAlerts(e.target.checked)}
+              className="mt-1 h-4 w-4 accent-[var(--color-accent,#34d399)]"
+            />
+            <span>
+              <span className="block text-ink-primary">🔥 Affari veri</span>
+              <span className="block text-sm text-ink-muted">
+                Ti avviso quando una carta della tua lista desideri costa almeno il 25% meno del solito
+                (italiano, Near Mint, CardTrader Zero). Non devi impostare niente carta per carta.
+              </span>
+            </span>
+          </label>
           <button
             type="button"
             onClick={unlink}

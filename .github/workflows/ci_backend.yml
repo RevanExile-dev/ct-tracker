@@ -51,3 +51,11 @@ jobs:
 
       - name: Test avvio sync Cardmarket (dispatch_cardmarket_sync)
         run: python scripts/test_dispatch_cardmarket_sync.py
+
+      # deals.py importa db.py, che importa psycopg2: serve solo il driver,
+      # i test non aprono nessuna connessione.
+      - name: Installa psycopg2 per i test che importano db.py
+        run: pip install "$(grep '^psycopg2-binary' requirements.txt)"
+
+      - name: Test Affari veri (deals)
+        run: python scripts/test_deals.py

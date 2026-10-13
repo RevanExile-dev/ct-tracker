@@ -66,6 +66,7 @@ import requests
 
 from api_client import CardTraderClient
 import db
+import deals
 
 # ~50 minuti di richieste per run (~3000 carte a 1 richiesta/secondo), con
 # cron ogni 3 ore: il vecchio budget di 4 minuti con cron a 15 minuti
@@ -242,6 +243,7 @@ def main():
 
     ok, errors, consecutive_errors = 0, 0, 0
     alerts_fired = 0
+    deals_queued = 0
     tier_counts: dict[int, int] = {}
     circuit_breaker_triggered = False
     processed = 0
@@ -305,6 +307,9 @@ def main():
             # stati confermati - vedi il commento di modulo in cima al file.
             fired = db.evaluate_price_alerts_for_blueprint(conn, bp_id, name, expansion_name)
             alerts_fired += fired
+            # "Affari veri" (scripts/deals.py): stesso principio, stessa
+            # transazione - solo per chi ha la carta nei desideri.
+            deals_queued += deals.evaluate_deals_for_blueprint(conn, bp_id, name, expansion_name)
 
             if products:
                 props = products[0].get("properties_hash", {}) or {}
@@ -365,9 +370,9 @@ def main():
         sent, failed = drain_telegram_outbox(conn, telegram_token)
         if sent or failed:
             print(f"Coda Telegram allarmi: {sent} messaggi inviati, {failed} falliti (ritentati al prossimo giro).")
-    elif alerts_fired:
+    elif alerts_fired or deals_queued:
         print(
-            "TELEGRAM_BOT_TOKEN non configurato: gli allarmi scattati in questo batch "
+            "TELEGRAM_BOT_TOKEN non configurato: gli allarmi/affari di questo batch "
             "restano in coda (telegram_outbox) finche' non verra' impostato.",
             file=sys.stderr,
         )
@@ -407,7 +412,7 @@ def main():
           f"desideri={tier_counts.get(db.PRIORITY_WISHLIST, 0)}, "
           f"binder={tier_counts.get(db.PRIORITY_BINDER, 0)}, "
           f"catalogo={tier_counts.get(db.PRIORITY_CATALOG, 0)}); "
-          f"{alerts_fired} allarmi prezzo scattati.")
+          f"{alerts_fired} allarmi prezzo scattati, {deals_queued} avvisi affari accodati.")
 
     if circuit_breaker_triggered:
         print(

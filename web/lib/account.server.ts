@@ -574,10 +574,25 @@ const LINK_CODE_MAX_ATTEMPTS = 5; // ritenta solo su collisione di codice (rara,
 
 export async function getTelegramLinkStatus(userId: string): Promise<TelegramLinkStatus> {
   const pool = getPgPool();
-  const { rows } = await pool.query("SELECT linked_at FROM telegram_links WHERE user_id = $1", [userId]);
-  if (rows.length === 0) return { linked: false, linkedAt: null };
+  const { rows } = await pool.query("SELECT linked_at, deal_alerts FROM telegram_links WHERE user_id = $1", [userId]);
+  if (rows.length === 0) return { linked: false, linkedAt: null, dealAlerts: false };
   const linkedAt = rows[0].linked_at;
-  return { linked: true, linkedAt: linkedAt instanceof Date ? linkedAt.toISOString() : linkedAt };
+  return {
+    linked: true,
+    linkedAt: linkedAt instanceof Date ? linkedAt.toISOString() : linkedAt,
+    dealAlerts: rows[0].deal_alerts === 1,
+  };
+}
+
+/** Accende/spegne gli avvisi "Affari veri" per la chat collegata. Ritorna
+ * false se l'utente non ha nessuna chat collegata (niente da aggiornare). */
+export async function setTelegramDealAlerts(userId: string, enabled: boolean): Promise<boolean> {
+  const pool = getPgPool();
+  const { rowCount } = await pool.query(
+    "UPDATE telegram_links SET deal_alerts = $2 WHERE user_id = $1",
+    [userId, enabled ? 1 : 0]
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function unlinkTelegram(userId: string): Promise<void> {

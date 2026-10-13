@@ -201,7 +201,9 @@ export type Listing = {
 
 export type ExpansionInfo = { code: string; name: string; cardCount: number };
 
-export type TelegramLinkStatus = { linked: boolean; linkedAt: string | null };
+/** dealAlerts: avvisi "Affari veri" (scripts/deals.py) attivi per questa
+ * chat; false quando non collegata. */
+export type TelegramLinkStatus = { linked: boolean; linkedAt: string | null; dealAlerts: boolean };
 
 export type PriceAlertTargetType = "absolute_cents" | "percent_drop";
 export type PriceAlertFireMode = "once" | "rearm";

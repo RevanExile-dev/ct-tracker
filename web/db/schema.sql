@@ -638,3 +638,22 @@ CREATE TABLE IF NOT EXISTS user_plans (
   valid_until TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- "Affari veri" (scripts/deals.py, 2026-10-13): avviso Telegram quando una
+-- carta dei desideri e' molto sotto il suo prezzo abituale. deal_alerts sul
+-- collegamento Telegram: 1 = attivo (default, chi collega Telegram lo vuole
+-- per ricevere avvisi), 0 = spento dalla pagina Notifiche Telegram. INTEGER
+-- 0/1 come gli altri flag dello schema.
+ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS deal_alerts INTEGER NOT NULL DEFAULT 1;
+
+-- Ultimo avviso "affare" per (utente, carta): serve solo a non ripeterlo a
+-- ogni giro mentre il prezzo resta basso (nuovo avviso dopo 7 giorni o se
+-- scende ancora del 10%, vedi deals.should_notify).
+CREATE TABLE IF NOT EXISTS deal_notices (
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  blueprint_id INTEGER NOT NULL REFERENCES blueprints (id) ON DELETE CASCADE,
+  price_cents INTEGER NOT NULL,
+  usual_price_cents INTEGER NOT NULL,
+  notified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, blueprint_id)
+);
