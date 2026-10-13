@@ -61,6 +61,21 @@ rilanci.
    sul tuo PC scaricala dal menu di Cloud Shell (Download -> `.ssh/ct_runner`)
    oppure continua a collegarti da Cloud Shell stesso.
 
+### Creazione automatica (senza lasciare Cloud Shell aperto)
+Il workflow `oracle_vm_retry.yml` prova a creare la VM ogni ~10 minuti da
+GitHub, finche' Oracle ha posto; quando ci riesce avvisa su Telegram e si
+disattiva. Non fa nulla finche' non esistono questi 6 Secrets del repo
+(Settings -> Secrets and variables -> Actions -> New repository secret):
+- `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_TENANCY_OCID`, `OCI_REGION`
+  (es. `eu-turin-1`): da Oracle -> profilo -> il tuo utente -> API keys ->
+  Add API key, che mostra questi valori.
+- `OCI_API_PRIVATE_KEY`: il contenuto del file `.pem` scaricato in quella
+  stessa schermata.
+- `OCI_SSH_PUBLIC_KEY`: l'output di `cat ~/.ssh/ct_runner.pub` in Cloud Shell
+  (chiave pubblica, non segreta). La privata resta in Cloud Shell.
+Attenzione: la chiave API da' accesso al tuo account Oracle. Resta nei
+Secrets (mai in chat, mai nel codice). A VM creata, revocala da Oracle.
+
 ## 3. Prepara la VM (incolla in ordine)
 ```bash
 sudo apt-get update && sudo apt-get -y upgrade
