@@ -91,6 +91,13 @@ test("dato vecchio di 10 giorni: il riquadro non compare", async ({ page }) => {
   await expect(box(page)).toHaveCount(0);
 });
 
+test("dato di 6 giorni (carta a rotazione settimanale): il riquadro compare con la sua data", async ({ page }) => {
+  await open(page, 900105);
+  await expect(box(page)).toBeVisible();
+  await expect(box(page)).toContainText("2,50");
+  await expect(page.getByTestId("cardmarket-source")).toContainText("aggiornato il");
+});
+
 test("carta senza dati: il riquadro non compare", async ({ page }) => {
   const resp = page.waitForResponse((r) => r.url().includes("/api/cards/900104/cardmarket"));
   await open(page, 900104);

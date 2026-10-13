@@ -63,11 +63,14 @@ test('esempio busta da 17 carte: 8,25 diviso 17', () => {
 const NOW = Date.parse('2026-10-11T12:00:00Z');
 const prices = (trend) => ({ trend_cents: trend, low_cents: null, avg_cents: null, avg1_cents: null, avg7_cents: null, avg30_cents: null });
 
-test('il riferimento si mostra fino a 3 giorni, poi sparisce', () => {
+test('il riferimento si mostra fino a 9 giorni (piu\' del giro di rotazione di 7 giorni), poi sparisce', () => {
+  assert.equal(cm.CARDMARKET_MAX_AGE_DAYS, 9);
   const mk = (iso) => ({ updated_at: iso, base: prices(402), holo: null });
   assert.ok(cm.visibleCardmarketReference(mk('2026-10-11T00:00:00Z'), NOW));
-  assert.ok(cm.visibleCardmarketReference(mk('2026-10-08T12:00:00Z'), NOW), 'esattamente 3 giorni');
-  assert.equal(cm.visibleCardmarketReference(mk('2026-10-08T11:59:00Z'), NOW), null);
+  // caso peggiore del sync a rotazione: 7 giorni + ritardo dello scarico + un giro saltato
+  assert.ok(cm.visibleCardmarketReference(mk('2026-10-03T07:00:00Z'), NOW), 'circa 8,2 giorni');
+  assert.ok(cm.visibleCardmarketReference(mk('2026-10-02T12:00:00Z'), NOW), 'esattamente 9 giorni');
+  assert.equal(cm.visibleCardmarketReference(mk('2026-10-02T11:59:00Z'), NOW), null);
 });
 
 test('niente da mostrare: null, data illeggibile, prezzi tutti vuoti', () => {
