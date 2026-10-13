@@ -1,0 +1,111 @@
+name: Crea VM Oracle (riprova finche' c'e' posto)
+
+# Prova a creare la VM Oracle Always Free "ct-runner" ogni ~10 minuti finche'
+# Oracle ha posto (Arm gratuito spesso esaurito: "Out of host capacity").
+# La crea da sola; quando ci riesce avvisa su Telegram (se i secret ci sono) e
+# si disattiva. Senza i secret OCI_* non fa nulla (esce subito, senza errori).
+# Richiesto esplicitamente da Cri il 2026-10-13. Guida: docs/oracle_runner_setup.md.
+# Gira SEMPRE su ubuntu-latest, mai sul runner proprio (la VM non esiste ancora).
+on:
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write   # serve solo per disattivare questo workflow a VM creata
+
+concurrency:
+  group: oracle-vm-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Controlla i secret
+        id: guard
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_API_PRIVATE_KEY: ${{ secrets.OCI_API_PRIVATE_KEY }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+        run: |
+          if [ -n "$OCI_USER_OCID" ] && [ -n "$OCI_FINGERPRINT" ] && [ -n "$OCI_TENANCY_OCID" ] \
+             && [ -n "$OCI_REGION" ] && [ -n "$OCI_API_PRIVATE_KEY" ] && [ -n "$OCI_SSH_PUBLIC_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Secret OCI_* non impostati: niente da fare."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Installa la CLI Oracle
+        if: steps.guard.outputs.enabled == 'true'
+        run: pip install --quiet oci-cli
+
+      - name: Prova a creare la VM
+        id: vm
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_API_PRIVATE_KEY: ${{ secrets.OCI_API_PRIVATE_KEY }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+        run: |
+          set -u
+          umask 077
+          mkdir -p "$HOME/.oci"
+          printf '%s\n' "$OCI_API_PRIVATE_KEY" > "$HOME/.oci/key.pem"
+          printf '%s\n' "$OCI_SSH_PUBLIC_KEY" > "$HOME/.oci/ssh.pub"
+          {
+            echo "[DEFAULT]"
+            echo "user=$OCI_USER_OCID"
+            echo "fingerprint=$OCI_FINGERPRINT"
+            echo "tenancy=$OCI_TENANCY_OCID"
+            echo "region=$OCI_REGION"
+            echo "key_file=$HOME/.oci/key.pem"
+          } > "$HOME/.oci/config"
+          export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
+          export OCI_TENANCY="$OCI_TENANCY_OCID"
+          export OCI_SSH_PUBLIC_KEY_FILE="$HOME/.oci/ssh.pub"
+          export CT_RESULT_FILE="$RUNNER_TEMP/vm_ip.txt"
+          export ONCE=1
+          set +e
+          bash scripts/oracle/oracle_retry.sh
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            echo "ip=$(cat "$CT_RESULT_FILE" 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" -eq 2 ]; then
+            echo "Nessun posto in questo giro, riprovo al prossimo."
+          else
+            echo "Errore inatteso dallo script (codice $rc)." >&2
+            exit "$rc"
+          fi
+
+      - name: Avvisa su Telegram
+        if: steps.vm.outputs.created == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          VM_IP: ${{ steps.vm.outputs.ip }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -sS -o /dev/null "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=VM Oracle ct-runner creata. IP pubblico: ${VM_IP:-vedi log del workflow}" || true
+          fi
+
+      - name: Disattiva questo workflow (VM creata)
+        if: steps.vm.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow disable oracle_vm_retry.yml --repo "$GITHUB_REPOSITORY"

@@ -18,6 +18,12 @@ MEMORIES=(6 4 2)                     # GB, provati in quest'ordine a ogni giro
 BOOT_GB=50
 SLEEP_S=150
 KEY="$HOME/.ssh/ct_runner"
+# In GitHub Actions la chiave pubblica arriva da fuori (OCI_SSH_PUBLIC_KEY_FILE):
+# non se ne genera una nuova, perche' la privata andrebbe persa a fine job.
+PUBKEY="${OCI_SSH_PUBLIC_KEY_FILE:-$KEY.pub}"
+# ONCE=1: un solo giro di tentativi, poi esce (codice 2 = nessun posto, riprova
+# al prossimo giro). Usato dal workflow; in Cloud Shell il loop resta infinito.
+ONCE="${ONCE:-0}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 die() { echo "ERRORE: $*" >&2; exit 1; }
@@ -38,6 +44,7 @@ show_instance() {  # $1 = instance id
   echo " Collegati da Cloud Shell:  ssh -i $KEY ubuntu@${ip:-IP}"
   echo " Per la chiave sul tuo PC: vedi la guida (scarica $KEY dal menu di Cloud Shell)."
   echo "=============================================="
+  [ -n "${CT_RESULT_FILE:-}" ] && echo "${ip:-}" > "$CT_RESULT_FILE"
 }
 
 existing_instance() {
@@ -56,7 +63,7 @@ fi
 
 # 1) Chiave SSH (si crea una volta sola, resta nella home di Cloud Shell)
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
-if [ ! -f "$KEY" ]; then
+if [ -z "${OCI_SSH_PUBLIC_KEY_FILE:-}" ] && [ ! -f "$KEY" ]; then
   ssh-keygen -t rsa -b 4096 -N "" -C "ct-runner" -f "$KEY" >/dev/null || die "ssh-keygen fallito"
   log "Chiave SSH creata: $KEY (privata) e $KEY.pub"
 fi
@@ -122,7 +129,7 @@ while true; do
         --shape "$SHAPE" --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEM}" \
         --image-id "$IMG" --subnet-id "$SUBNET" --assign-public-ip true \
         --display-name "$NAME" --boot-volume-size-in-gbs "$BOOT_GB" \
-        --ssh-authorized-keys-file "$KEY.pub" --query 'data.id' --raw-output 2>&1)
+        --ssh-authorized-keys-file "$PUBKEY" --query 'data.id' --raw-output 2>&1)
       RC=$?
       if [ $RC -eq 0 ] && [ -n "$OUT" ]; then
         log "CREATA! Attendo che parta..."
@@ -144,6 +151,7 @@ while true; do
       sleep 3
     done
   done
+  if [ "$ONCE" = "1" ]; then log "Nessun posto in questo giro."; exit 2; fi
   # attesa con segnale di vita ogni 30 s, cosi' la scheda resta attiva
   for _ in $(seq 1 $((SLEEP_S/30))); do sleep 30; echo -n "."; done; echo
 done
