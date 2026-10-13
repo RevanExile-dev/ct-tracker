@@ -15,6 +15,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/`, changeFrequency: "daily", priority: 1 },
     { url: `${base}/movers`, changeFrequency: "daily", priority: 0.7 },
     { url: `${base}/scan`, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${base}/privacy`, changeFrequency: "yearly", priority: 0.2 },
+    { url: `${base}/cookie`, changeFrequency: "yearly", priority: 0.2 },
+    { url: `${base}/termini`, changeFrequency: "yearly", priority: 0.2 },
+    { url: `${base}/note-legali`, changeFrequency: "yearly", priority: 0.2 },
   ];
   try {
     const { rows } = await getPgPool().query<{ id: number }>(

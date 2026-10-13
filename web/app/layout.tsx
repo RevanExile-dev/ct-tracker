@@ -4,6 +4,7 @@ import "./globals.css";
 import BackToTop from "@/components/BackToTop";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
 import AccountSync from "@/components/AccountSync";
+import SiteFooter from "@/components/SiteFooter";
 import { getSiteUrl } from "@/lib/siteUrl";
 
 const display = Space_Grotesk({
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthSessionProvider>
           <AccountSync />
           {children}
+          <SiteFooter />
           <BackToTop />
         </AuthSessionProvider>
       </body>

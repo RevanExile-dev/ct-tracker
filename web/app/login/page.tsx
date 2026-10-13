@@ -122,6 +122,12 @@ export default async function LoginPage({
           Invia link di accesso
         </button>
       </form>
+
+      <p className="mt-6 text-xs text-ink-faint leading-relaxed">
+        Accedendo accetti i <Link href="/termini" className="underline hover:text-accent-bright">Termini d&apos;uso</Link>{" "}
+        e confermi di aver letto l&apos;<Link href="/privacy" className="underline hover:text-accent-bright">informativa sulla privacy</Link>.
+        Devi avere almeno 14 anni.
+      </p>
     </main>
   );
 }
