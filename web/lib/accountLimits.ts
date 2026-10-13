@@ -10,6 +10,11 @@
 // ricaricare righe che l'utente ha gia' non e' mai limitato, quindi chi e'
 // gia' oltre (oggi nessuno) non perde nulla.
 //
+// Dal 2026-10-13 questi sono anche i limiti del piano Plus (web/lib/plans.ts):
+// account.server.ts applica i tetti del piano dell'utente, qui restano i
+// massimi tecnici assoluti (usati anche per validare i PUT di binder e
+// desideri). Il test controlla che i due file restino allineati.
+//
 // Modulo senza import apposta: lo caricano anche i test unitari
 // (web/tests/account-limits.test.mjs).
 
