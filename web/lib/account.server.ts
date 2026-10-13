@@ -136,11 +136,14 @@ export async function deleteBinderEntry(userId: string, blueprintId: number): Pr
 export async function mergeBinderEntries(userId: string, entries: BinderEntry[]): Promise<void> {
   if (!entries.length) return;
   const pool = getPgPool();
+  // Letto prima di prendere il client: a interruttore spento e' una query
+  // sul pool, che non deve occupare una seconda connessione dentro BEGIN.
+  const { binderCards } = await getAccountLimits(userId);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await assertRoomForNew(
-      "binder_cards", "blueprint_id", userId, entries.map((e) => e.blueprintId), (await getAccountLimits(userId)).binderCards, "carte nel binder", client,
+      "binder_cards", "blueprint_id", userId, entries.map((e) => e.blueprintId), binderCards, "carte nel binder", client,
     );
     for (const entry of entries) {
       const data = { language: entry.language, quantity: entry.quantity, condition: entry.condition, finish: entry.finish };
