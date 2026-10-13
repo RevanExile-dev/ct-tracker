@@ -621,3 +621,20 @@ CREATE TABLE IF NOT EXISTS external_card_map (
   checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (blueprint_id, source)
 );
+
+-- Piano dell'account (Gratis / Plus), preparato il 2026-10-13 per un futuro
+-- abbonamento facoltativo. Oggi non incassa nulla e non toglie nulla a
+-- nessuno: finche' PLUS_FOR_EVERYONE in web/lib/plans.ts e' true tutti hanno
+-- i limiti del Plus (= i tetti attuali di accountLimits.ts) e questa tabella
+-- non viene nemmeno letta. Nessuna riga = piano Gratis. Quando ci sara' un
+-- fornitore di pagamenti, il suo webhook scrivera' qui (source = nome del
+-- fornitore, valid_until = fine del periodo pagato); 'manuale' per gli
+-- account dati a mano. Tabella separata da users perche' quella e'
+-- dell'adapter di Auth.js (nomi e colonne dettati da lui).
+CREATE TABLE IF NOT EXISTS user_plans (
+  user_id UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'plus')),
+  source TEXT,
+  valid_until TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

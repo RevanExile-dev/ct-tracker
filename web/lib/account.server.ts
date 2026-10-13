@@ -1,10 +1,8 @@
 import "server-only";
 import { randomBytes } from "crypto";
 import { getPgPool } from "./pgPool";
-import {
-  AccountLimitError, MAX_BINDER_CARDS, MAX_FILTER_PRESETS, MAX_LOTS, MAX_PRICE_ALERTS, MAX_WISHLIST_CARDS,
-  exceedsLimit, limitMessage,
-} from "./accountLimits";
+import { AccountLimitError, exceedsLimit, limitMessage } from "./accountLimits";
+import { PLAN_LIMITS, PLUS_FOR_EVERYONE, effectivePlan, type PlanLimits } from "./plans";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
 import type {
@@ -44,6 +42,19 @@ async function countRows(
     keyColumn ? [userId, keys] : [userId],
   );
   return { total: rows[0].total as number, overlap: rows[0].overlap as number };
+}
+
+/** I tetti del piano dell'utente (web/lib/plans.ts). Nella fase gratuita
+ * (PLUS_FOR_EVERYONE) sono i tetti attuali per tutti e non si fa nessuna
+ * query: user_plans si legge solo quando ci sara' un abbonamento vero. */
+export async function getAccountLimits(userId: string): Promise<PlanLimits> {
+  if (PLUS_FOR_EVERYONE) return PLAN_LIMITS.plus;
+  const { rows } = await getPgPool().query<{ plan: string; valid_until: Date | null }>(
+    "SELECT plan, valid_until FROM user_plans WHERE user_id = $1",
+    [userId],
+  );
+  const row = rows[0];
+  return PLAN_LIMITS[effectivePlan(row ? { plan: row.plan, validUntil: row.valid_until } : null)];
 }
 
 async function assertRoomForNew(
@@ -97,7 +108,7 @@ export async function upsertBinderEntry(
   patch: Partial<Omit<BinderEntry, "blueprintId" | "addedAt">>
 ): Promise<BinderEntry> {
   const pool = getPgPool();
-  await assertRoomForNew("binder_cards", "blueprint_id", userId, [blueprintId], MAX_BINDER_CARDS, "carte nel binder");
+  await assertRoomForNew("binder_cards", "blueprint_id", userId, [blueprintId], (await getAccountLimits(userId)).binderCards, "carte nel binder");
   const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
   const insertData = { language: null, quantity: 1, finish: "unknown", ...cleanPatch };
   const { rows } = await pool.query(
@@ -125,11 +136,14 @@ export async function deleteBinderEntry(userId: string, blueprintId: number): Pr
 export async function mergeBinderEntries(userId: string, entries: BinderEntry[]): Promise<void> {
   if (!entries.length) return;
   const pool = getPgPool();
+  // Letto prima di prendere il client: a interruttore spento e' una query
+  // sul pool, che non deve occupare una seconda connessione dentro BEGIN.
+  const { binderCards } = await getAccountLimits(userId);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await assertRoomForNew(
-      "binder_cards", "blueprint_id", userId, entries.map((e) => e.blueprintId), MAX_BINDER_CARDS, "carte nel binder", client,
+      "binder_cards", "blueprint_id", userId, entries.map((e) => e.blueprintId), binderCards, "carte nel binder", client,
     );
     for (const entry of entries) {
       const data = { language: entry.language, quantity: entry.quantity, condition: entry.condition, finish: entry.finish };
@@ -177,7 +191,7 @@ export async function getWishlistIds(userId: string): Promise<number[]> {
 
 export async function addWishlistId(userId: string, blueprintId: number): Promise<void> {
   const pool = getPgPool();
-  await assertRoomForNew("wishlist_cards", "blueprint_id", userId, [blueprintId], MAX_WISHLIST_CARDS, "carte nella lista desideri");
+  await assertRoomForNew("wishlist_cards", "blueprint_id", userId, [blueprintId], (await getAccountLimits(userId)).wishlistCards, "carte nella lista desideri");
   await pool.query(
     "INSERT INTO wishlist_cards (user_id, blueprint_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
     [userId, blueprintId]
@@ -192,7 +206,7 @@ export async function removeWishlistId(userId: string, blueprintId: number): Pro
 export async function mergeWishlistIds(userId: string, ids: number[]): Promise<void> {
   if (!ids.length) return;
   const pool = getPgPool();
-  await assertRoomForNew("wishlist_cards", "blueprint_id", userId, ids, MAX_WISHLIST_CARDS, "carte nella lista desideri");
+  await assertRoomForNew("wishlist_cards", "blueprint_id", userId, ids, (await getAccountLimits(userId)).wishlistCards, "carte nella lista desideri");
   await pool.query(
     "INSERT INTO wishlist_cards (user_id, blueprint_id) SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING",
     [userId, ids]
@@ -211,7 +225,7 @@ export async function getFilterPreset(userId: string, scope: string): Promise<{ 
 
 export async function setFilterPreset(userId: string, scope: string, data: FilterPreset): Promise<{ data: FilterPreset; updatedAt: string }> {
   const pool = getPgPool();
-  await assertRoomForNew("filter_presets", "scope", userId, [scope], MAX_FILTER_PRESETS, "filtri salvati");
+  await assertRoomForNew("filter_presets", "scope", userId, [scope], (await getAccountLimits(userId)).filterPresets, "filtri salvati");
   const { rows } = await pool.query(
     `INSERT INTO filter_presets (user_id, scope, data)
      VALUES ($1, $2, $3::jsonb)
@@ -320,7 +334,7 @@ async function recordLotEvent(
 
 export async function createLot(userId: string, input: LotInput): Promise<Lot> {
   const pool = getPgPool();
-  await assertRoomForNew("binder_lots", null, userId, [], MAX_LOTS, "lotti");
+  await assertRoomForNew("binder_lots", null, userId, [], (await getAccountLimits(userId)).lots, "lotti");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -861,7 +875,7 @@ export async function getPriceAlerts(userId: string): Promise<PriceAlert[]> {
  * calcolare un calo percentuale) - per "absolute_cents" e' invece
  * consentito, la soglia resta valida anche senza un baseline. */
 export async function createPriceAlert(userId: string, input: PriceAlertInput): Promise<PriceAlert> {
-  await assertRoomForNew("price_alerts", null, userId, [], MAX_PRICE_ALERTS, "allarmi prezzo");
+  await assertRoomForNew("price_alerts", null, userId, [], (await getAccountLimits(userId)).priceAlerts, "allarmi prezzo");
   const languages = input.languages ?? [];
   const condition = input.condition ?? null;
   const canSellViaHub = input.canSellViaHub ?? null;
