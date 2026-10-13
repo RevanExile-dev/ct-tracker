@@ -19,7 +19,7 @@ import { formatCents, formatDate, formatNumber } from "@/lib/format";
 // per carta (tutte le lingue e condizioni), non inserzioni reali. Mai nella
 // griglia, nei filtri, nell'ordinamento, nello storico, negli allarmi o nel
 // valore del Binder. Niente da mostrare (caricamento, errore, nessun dato,
-// dato piu' vecchio di 3 giorni) = il riquadro non compare.
+// dato piu' vecchio di CARDMARKET_MAX_AGE_DAYS) = il riquadro non compare.
 
 type Loaded = { id: number; ref: CardmarketReference | null };
 

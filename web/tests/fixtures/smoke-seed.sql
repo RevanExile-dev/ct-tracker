@@ -127,9 +127,11 @@ ON CONFLICT (id) DO NOTHING;
 --   900102: dati recenti, tendenza 30,00 euro (raccomandata obbligatoria)
 --   900103: dati vecchi di 10 giorni (il riquadro non deve comparire)
 --   900104: nessuna riga (il riquadro non deve comparire)
+--   900105: dati vecchi di 6 giorni (carta a rotazione settimanale: il riquadro deve comparire)
 INSERT INTO external_prices (blueprint_id, source, variant, currency, price_cents, low_cents, mid_cents, avg1_cents, avg7_cents, avg30_cents, source_updated_at, fetched_at) VALUES
   (900101, 'cardmarket', '',     'EUR',  402,  150,  380,  400,  410,  395, now() - interval '3 hours', now() - interval '2 hours'),
   (900101, 'cardmarket', 'holo', 'EUR',  990,  700,  950,  980,  990,  960, now() - interval '3 hours', now() - interval '2 hours'),
   (900102, 'cardmarket', '',     'EUR', 3000, 2500, 2900, 3000, 3100, 3050, now() - interval '3 hours', now() - interval '2 hours'),
-  (900103, 'cardmarket', '',     'EUR',  555,  300,  500,  550,  560,  540, now() - interval '10 days', now() - interval '10 days')
+  (900103, 'cardmarket', '',     'EUR',  555,  300,  500,  550,  560,  540, now() - interval '10 days', now() - interval '10 days'),
+  (900105, 'cardmarket', '',     'EUR',  250,  100,  240,  250,  255,  245, now() - interval '6 days', now() - interval '5 days')
 ON CONFLICT (blueprint_id, source, variant) DO NOTHING;

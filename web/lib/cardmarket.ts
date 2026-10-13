@@ -20,8 +20,15 @@ export type CardmarketReference = {
   holo: CardmarketPrices | null;
 };
 
-/** Oltre questa eta' il dato non si mostra: meglio niente che un riferimento vecchio. */
-export const CARDMARKET_MAX_AGE_DAYS = 3;
+/** Oltre questa eta' il dato non si mostra: meglio niente che un riferimento
+ * vecchio. Deve restare PIU' LUNGA del giro piu' lento del sync: le carte
+ * sotto i 10 euro si riscaricano a rotazione ogni 7 giorni
+ * (ROTATION_DAYS in scripts/sync_cardmarket_prices.py) e il prezzo ha gia' un
+ * giorno di ritardo rispetto allo scarico (TCGdex aggiorna alle ~22:54 UTC),
+ * quindi il caso normale arriva a ~7,2 giorni e un giro saltato a ~8,2.
+ * Con 3 giorni (valore iniziale) piu' della meta' delle carte sarebbe sparita
+ * a rotazione. La data di aggiornamento e' sempre scritta nel riquadro. */
+export const CARDMARKET_MAX_AGE_DAYS = 9;
 
 export function isCardmarketFresh(updatedAt: string, nowMs: number = Date.now()): boolean {
   const ts = Date.parse(updatedAt);
