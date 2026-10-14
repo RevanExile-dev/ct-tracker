@@ -107,6 +107,7 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     sort: opts.sort,
     minDeltaCents: opts.minDeltaCents,
     page: opts.page,
+    maxAgeDays: opts.maxAgeDays,
   });
 }
 

@@ -85,14 +85,35 @@ ON CONFLICT (id) DO NOTHING;
 -- n=1..13 in rialzo (prezzo attuale > precedente), n=14..26 in calo.
 -- it_nm_zero_listings_count = 6: la pagina Carte in movimento considera solo
 -- carte con almeno MIN_MOVER_LISTINGS (5) inserzioni IT NM Zero.
-INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents, it_nm_zero_listings_count)
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents, it_nm_zero_listings_count, prev_it_nm_zero_captured_at)
 SELECT
   901000 + n, CURRENT_DATE, now(), 1000 + n, 'EUR', 1,
   CASE WHEN n <= 13 THEN 1000 + n ELSE 500 + n END,
   'EUR',
   CASE WHEN n <= 13 THEN 500 + n ELSE 1000 + n END,
-  6
+  6,
+  CURRENT_DATE - 5
 FROM generate_series(1, 26) AS n
+ON CONFLICT (blueprint_id) DO NOTHING;
+
+-- Due cali il cui prezzo di confronto e' di 45 giorni fa: compaiono solo con il
+-- periodo "Tutto" in /movers, mai con quello predefinito (30 giorni).
+-- tests/movers-period.spec.mjs.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium)
+SELECT
+  902000 + n,
+  'Vecchio Confronto ' || n,
+  n || '/2',
+  1, 73, 900001, 'smoketest', 'Smoke Test Set',
+  'https://cardtrader.com/uploads/blueprints/image/900000/vecchio-confronto-' || n || '-smoke-test-set.jpg',
+  'Common',
+  0
+FROM generate_series(1, 2) AS n
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents, it_nm_zero_listings_count, prev_it_nm_zero_captured_at)
+SELECT 902000 + n, CURRENT_DATE, now(), 300, 'EUR', 1, 300, 'EUR', 1000, 6, CURRENT_DATE - 45
+FROM generate_series(1, 2) AS n
 ON CONFLICT (blueprint_id) DO NOTHING;
 
 INSERT INTO meta (key, value) VALUES

@@ -54,7 +54,9 @@ function cardRowSelect(): string {
   lp.it_nm_zero_price_cents AS it_nm_zero_price_cents,
   lp.it_nm_zero_price_currency AS it_nm_zero_price_currency,
   lp.it_nm_zero_listings_count AS it_nm_zero_listings_count,
-  lp.prev_it_nm_zero_price_cents AS prev_it_nm_zero_price_cents
+  lp.prev_it_nm_zero_price_cents AS prev_it_nm_zero_price_cents,
+  (CURRENT_DATE - lp.prev_it_nm_zero_captured_at) AS prev_it_nm_zero_age_days,
+  (CURRENT_DATE - lp.prev_captured_at) AS prev_age_days
 `;
 }
 
@@ -481,6 +483,11 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     where.push(
       `ABS(lp.it_nm_zero_price_cents - lp.prev_it_nm_zero_price_cents) >= ${p.add(opts.minDeltaCents)}`,
     );
+  }
+  if (opts.maxAgeDays != null && Number.isFinite(opts.maxAgeDays)) {
+    // Data ignota (riga non ancora ricalcolata dal sync) = fuori da ogni
+    // finestra: meglio non mostrarla che mostrarla senza sapere da quando.
+    where.push(`lp.prev_it_nm_zero_captured_at >= CURRENT_DATE - ${p.add(Math.max(1, Math.floor(opts.maxAgeDays)))}::int`);
   }
   if (opts.minCents != null) {
     where.push(`lp.it_nm_zero_price_cents >= ${p.add(opts.minCents)}`);

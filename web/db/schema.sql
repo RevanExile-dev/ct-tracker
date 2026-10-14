@@ -232,6 +232,15 @@ CREATE TABLE IF NOT EXISTS latest_prices (
 -- ritentata periodicamente invece di essere ignorata per sempre.
 ALTER TABLE latest_prices ADD COLUMN IF NOT EXISTS last_attempted_at TIMESTAMPTZ;
 
+-- Giorno dello snapshot da cui viene prev_it_nm_zero_price_cents. Distinto da
+-- prev_captured_at (che data prev_price_cents, il prezzo generico): "Carte in
+-- movimento" confronta solo la serie italiano+Near Mint+Zero, e il suo
+-- precedente puo' essere di un giorno diverso. Senza questa data una "variazione"
+-- tra un prezzo di oggi e uno di un mese fa si presentava come un ribasso
+-- recente (visto in produzione il 2026-10-14: ~2.000 dei ~3.500 ribassi erano
+-- confronti tra 2 e 4 settimane).
+ALTER TABLE latest_prices ADD COLUMN IF NOT EXISTS prev_it_nm_zero_captured_at DATE;
+
 -- Le migliori inserzioni live per ogni carta (non storico: ad ogni sync le
 -- righe della carta vengono sostituite con le inserzioni piu' economiche
 -- del momento, vedi replace_price_listings in scripts/db.py).

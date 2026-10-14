@@ -15,6 +15,7 @@ import {
   normalizeRarity,
 } from "@/lib/db";
 import { MOVERS_TIERS, findMoversTier } from "@/lib/moversTiers";
+import { DEFAULT_MOVERS_PERIOD, MOVERS_PERIODS, findMoversPeriod } from "@/lib/moversPeriods";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
@@ -149,6 +150,7 @@ function MoversContent() {
   const [customMax, setCustomMax] = useState<string>(() =>
     searchParams.get("tier") ? "" : searchParams.get("max") ?? ""
   );
+  const [periodKey, setPeriodKey] = useState<string>(() => findMoversPeriod(searchParams.get("period")).key);
   const [sort, setSort] = useState<MoversSort>(() => (searchParams.get("sort") === "abs" ? "abs" : "pct"));
   const [showSmall, setShowSmall] = useState<boolean>(() => searchParams.get("piccole") === "1");
   const [risePage, setRisePage] = useState(() => parsePage(searchParams.get("risePage")));
@@ -179,12 +181,13 @@ function MoversContent() {
     }
     if (sort !== "pct") params.set("sort", sort);
     if (showSmall) params.set("piccole", "1");
+    if (periodKey !== DEFAULT_MOVERS_PERIOD) params.set("period", periodKey);
     if (risePage > 1) params.set("risePage", String(risePage));
     if (dropPage > 1) params.set("dropPage", String(dropPage));
     if (activeTab !== "rises") params.set("tab", activeTab);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [selectedRarities, tierKey, customMin, customMax, sort, showSmall, risePage, dropPage, activeTab, pathname, router]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, risePage, dropPage, activeTab, pathname, router]);
 
   useEffect(() => {
     fetchRarities().then(setRarities).catch(() => {});
@@ -198,6 +201,7 @@ function MoversContent() {
       minCents,
       maxCents,
       sort,
+      maxAgeDays: findMoversPeriod(periodKey).days,
       minDeltaCents: showSmall ? null : MOVERS_MIN_DELTA_CENTS,
     };
     Promise.all([
@@ -216,7 +220,7 @@ function MoversContent() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRarities, tierKey, customMin, customMax, sort, showSmall, risePage, dropPage]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, risePage, dropPage]);
 
   // useCallback: CardTile e' memo (vedi components/CardTile.tsx), un
   // riferimento stabile qui evita di ri-renderizzare tutte le tile di
@@ -266,6 +270,11 @@ function MoversContent() {
     resetPages();
   }
 
+  function handlePeriodChange(key: string) {
+    setPeriodKey(key);
+    resetPages();
+  }
+
   function handleToggleSmall() {
     setShowSmall((v) => !v);
     resetPages();
@@ -277,7 +286,8 @@ function MoversContent() {
   }
 
   const hasActiveFilters = Boolean(
-    selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct" || showSmall
+    selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct" || showSmall ||
+      periodKey !== DEFAULT_MOVERS_PERIOD
   );
   const currentQuery = searchParams.toString();
   const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
@@ -290,6 +300,7 @@ function MoversContent() {
     setCustomMax("");
     setSort("pct");
     setShowSmall(false);
+    setPeriodKey(DEFAULT_MOVERS_PERIOD);
     resetPages();
   }
 
@@ -315,9 +326,9 @@ function MoversContent() {
 
       <h1 className="font-display text-2xl font-bold text-ink-primary">Carte in movimento</h1>
       <p className="text-ink-muted mt-1 max-w-xl">
-        Le variazioni di prezzo più marcate registrate nell&apos;ultimo sync rispetto al
-        precedente, sulla serie italiano · Near Mint · CardTrader Zero. Contano solo le carte con
-        almeno {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che cambia prezzo.
+        Le variazioni di prezzo più marcate sulla serie italiano · Near Mint · CardTrader Zero, con
+        il periodo di confronto che scegli qui sotto. Contano solo le carte con almeno{" "}
+        {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che cambia prezzo.
       </p>
 
       <div className="filter-toolbar mt-5 flex flex-row flex-wrap items-center gap-x-5 gap-y-3 rounded-card border border-base-border bg-base-surface/55 px-4 py-3">
@@ -330,6 +341,25 @@ function MoversContent() {
           open={activeFilter === "rarity"}
           onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
         />
+
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Periodo di confronto">
+          <span className="text-xs font-mono uppercase tracking-wider text-ink-faint mr-0.5">Periodo</span>
+          {MOVERS_PERIODS.map((period) => (
+            <button
+              key={period.key}
+              type="button"
+              aria-pressed={periodKey === period.key}
+              onClick={() => handlePeriodChange(period.key)}
+              className={`min-h-9 text-xs px-2.5 py-1.5 rounded-full border transition-colors active:scale-95 ${
+                periodKey === period.key
+                  ? "bg-accent/10 border-accent/60 text-accent-bright"
+                  : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              }`}
+            >
+              {period.label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs font-mono uppercase tracking-wider text-ink-faint mr-0.5">Fascia</span>
