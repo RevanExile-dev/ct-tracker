@@ -27,5 +27,5 @@ export function formatCompareAge(days: number | null | undefined): string | null
   if (days == null || !Number.isFinite(days) || days < 0) return null;
   if (days === 0) return "da oggi";
   if (days === 1) return "da ieri";
-  return `in ${days} giorni`;
+  return `in ${days} gg`;
 }

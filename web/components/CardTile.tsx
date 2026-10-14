@@ -39,7 +39,6 @@ function CardTile({
   onLogPurchase,
   hasPurchaseInfo,
   horizontalScroll,
-  deltaAgeDays,
 }: {
   card: CardRow;
   index?: number;
@@ -93,10 +92,6 @@ function CardTile({
    * non lo spazio vuoto intorno. Assente ovunque la tile stia in una
    * griglia normale, dove pan-y resta il default. */
   horizontalScroll?: boolean;
-  /** Eta' in giorni del prezzo di confronto: se presente la variazione mostra
-   * "▼ 18% in 3 giorni" invece della sola percentuale. Usata dalle "Carte in
-   * movimento", dove il confronto puo' non essere "da ieri". */
-  deltaAgeDays?: number | null;
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -157,6 +152,12 @@ function CardTile({
         : priceCents != null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
+  // Il catalogo si aggiorna a rotazione: il prezzo "precedente" puo' essere di
+  // settimane fa, quindi la variazione dice sempre di quanti giorni e' (stessa
+  // serie del prezzo precedente scelto sopra).
+  const deltaAgeDays = isBest
+    ? card.prev_age_days
+    : card.prev_it_nm_zero_age_days;
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);

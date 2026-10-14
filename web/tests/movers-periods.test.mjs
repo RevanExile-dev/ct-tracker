@@ -19,7 +19,7 @@ test("le finestre note e 'Tutto' (nessun limite)", () => {
 test("etichetta dell'eta' del confronto", () => {
   assert.equal(formatCompareAge(0), "da oggi");
   assert.equal(formatCompareAge(1), "da ieri");
-  assert.equal(formatCompareAge(12), "in 12 giorni");
+  assert.equal(formatCompareAge(12), "in 12 gg");
   assert.equal(formatCompareAge(null), null);
   assert.equal(formatCompareAge(-3), null);
 });

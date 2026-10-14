@@ -55,7 +55,8 @@ function cardRowSelect(): string {
   lp.it_nm_zero_price_currency AS it_nm_zero_price_currency,
   lp.it_nm_zero_listings_count AS it_nm_zero_listings_count,
   lp.prev_it_nm_zero_price_cents AS prev_it_nm_zero_price_cents,
-  (CURRENT_DATE - lp.prev_it_nm_zero_captured_at) AS prev_it_nm_zero_age_days
+  (CURRENT_DATE - lp.prev_it_nm_zero_captured_at) AS prev_it_nm_zero_age_days,
+  (CURRENT_DATE - lp.prev_captured_at) AS prev_age_days
 `;
 }
 

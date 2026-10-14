@@ -42,6 +42,8 @@ export type CardRow = {
   // ignoto). Letto solo dalle "Carte in movimento": un confronto con un
   // prezzo di un mese fa non va spacciato per un ribasso recente.
   prev_it_nm_zero_age_days?: number | null;
+  // Idem per prev_price_cents / prev_best_price_cents (prev_captured_at).
+  prev_age_days?: number | null;
   // Presenti SOLO quando fetchCards() ha almeno un filtro lingua/condizione/
   // Zero attivo (vedi hasListingFilter): la piu' economica tra le inserzioni
   // che rispettano TUTTI quei filtri insieme, cosi' il prezzo mostrato non

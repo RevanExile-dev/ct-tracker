@@ -501,7 +501,6 @@ function MoversContent() {
                         card={card}
                         index={i}
                         priceProfile="exact"
-                        deltaAgeDays={card.prev_it_nm_zero_age_days}
                         inBinder={binderIds.has(card.id)}
                         onToggleBinder={handleToggleBinderCard}
                         inWishlist={wishlistIds.has(card.id)}
@@ -542,7 +541,6 @@ function MoversContent() {
                         card={card}
                         index={i}
                         priceProfile="exact"
-                        deltaAgeDays={card.prev_it_nm_zero_age_days}
                         inBinder={binderIds.has(card.id)}
                         onToggleBinder={handleToggleBinderCard}
                         inWishlist={wishlistIds.has(card.id)}
