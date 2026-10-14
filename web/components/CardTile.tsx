@@ -232,7 +232,7 @@ function CardTile({
               </div>
             )}
             {card.is_premium === 1 && (
-              <span className="absolute top-2 left-2 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 backdrop-blur border border-white/10 text-accent-bright">
+              <span className="absolute top-2 left-2 text-[11px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 backdrop-blur border border-white/10 text-accent-bright">
                 premium
               </span>
             )}
@@ -265,7 +265,7 @@ function CardTile({
               )}
               {isNmZero && (
                 <span
-                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
+                  className="text-[11px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
                   title="Near Mint, CardTrader Zero"
                 >
                   NM Zero
@@ -273,7 +273,7 @@ function CardTile({
               )}
               {hasOwnedMatch && (
                 <span
-                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
+                  className="text-[11px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/15 border border-accent/40 text-accent-bright whitespace-nowrap"
                   title="Prezzo trovato nella lingua della copia posseduta"
                 >
                   tua lingua
@@ -281,7 +281,7 @@ function CardTile({
               )}
             </div>
             {ownedLanguageMatch && ownedLanguageMatch.cents == null && (
-              <div className="text-[10px] text-ink-faint mt-0.5">
+              <div className="text-[11px] text-ink-faint mt-0.5">
                 Nessuna inserzione in {languageFlag(ownedLanguageMatch.language)} {ownedLanguageMatch.language.toUpperCase()}: prezzo generale
               </div>
             )}
@@ -293,7 +293,7 @@ function CardTile({
               >
                 {delta >= 0 ? "▲" : "▼"} {formatPercent(Math.abs(delta), 1)}
                 {formatCompareAge(deltaAgeDays) && (
-                  <span className="block text-[10px] leading-tight text-ink-faint">{formatCompareAge(deltaAgeDays)}</span>
+                  <span className="block text-[11px] leading-tight text-ink-faint">{formatCompareAge(deltaAgeDays)}</span>
                 )}
               </div>
             )}
