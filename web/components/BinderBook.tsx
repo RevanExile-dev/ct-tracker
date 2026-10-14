@@ -77,7 +77,7 @@ function ScreenView({ screen, returnTo }: { screen: Screen; returnTo: string }) 
         <div className="binder-cover-shine" />
         <div className="relative z-10 flex flex-col h-full justify-between p-[clamp(0.85rem,4vw,3rem)]">
           <div>
-            <div className="font-mono text-[clamp(8px,1vw,12px)] uppercase tracking-[0.2em] text-white/75">Carta Viva</div>
+            <div className="font-mono text-[clamp(8px,1vw,12px)] uppercase tracking-[0.2em] text-white/75">CartaViva</div>
             {/* min piu' basso di prima: la copertina e' sempre meta' di uno
                 spread a due pagine (anche su telefono, vedi usePortrait
                 su HTMLFlipBook), quindi molto piu' stretta di quanto

@@ -81,7 +81,7 @@ function WishlistContent() {
         ♡ Lista desideri
       </h1>
       <p className="text-ink-muted mt-1 max-w-xl">
-        Carte che non hai ancora ma vuoi tenere d&apos;occhio, ordinate dal calo di prezzo più
+        Carte che non hai ancora ma vuoi tenere d&apos;occhio, ordinate dal ribasso di prezzo più
         marcato — il momento migliore per comprarle. Aggiungile dalla scheda di una carta.
       </p>
 
@@ -93,7 +93,7 @@ function WishlistContent() {
           </div>
           {dropsCount > 0 && (
             <div>
-              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">In calo</div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">In ribasso</div>
               <div className="font-display text-xl font-bold text-signal-down">▼ {dropsCount}</div>
             </div>
           )}

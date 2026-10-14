@@ -38,7 +38,7 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical: `/card/${cardId}` },
-    openGraph: { type: "website", locale: "it_IT", siteName: "Carta Viva", title, description, ...(images ? { images } : {}) },
+    openGraph: { type: "website", locale: "it_IT", siteName: "CartaViva", title, description, ...(images ? { images } : {}) },
     twitter: { card: images ? "summary_large_image" : "summary", title, description, ...(images ? { images: [card.image_url as string] } : {}) },
   };
 }
