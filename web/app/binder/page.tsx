@@ -15,6 +15,7 @@ import BinderTable from "@/components/BinderTable";
 import CardTile from "@/components/CardTile";
 import CollectionValueChart from "@/components/CollectionValueChart";
 import LogPurchaseModal from "@/components/LogPurchaseModal";
+import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 
 function BinderContent() {
@@ -32,6 +33,7 @@ function BinderContent() {
   // in piu' senza motivo).
   const [entries, setEntries] = useState<BinderEntry[]>(() => getBinderEntries());
   const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
   const { data: session } = useSession();
   const [historyAttempt, setHistoryAttempt] = useState(0);
   const historyKey = `${session?.user?.email ?? "anonymous"}:${historyAttempt}`;
@@ -65,7 +67,7 @@ function BinderContent() {
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reloadTick]);
 
   // blueprintId -> quantita' posseduta: usata sia per "Valore stimato" sotto
   // sia per il badge/stepper mostrato su ogni carta (CardTile/BinderTable).
@@ -367,7 +369,14 @@ function BinderContent() {
       )}
 
       {cards === null && !error && <div className="py-20 text-center text-sm font-mono text-ink-muted animate-pulse">Carico la collezione…</div>}
-      {error && <div className="rounded-card border border-signal-down/30 bg-signal-down/5 p-5 text-signal-down">{error}</div>}
+      {error && (
+        <LoadError
+          title="Non riesco a caricare la collezione."
+          detail={error}
+          className=""
+          onRetry={() => { setError(null); setCards(null); setReloadTick((t) => t + 1); }}
+        />
+      )}
       {cards && cards.length === 0 && <div className="rounded-card border border-base-border bg-base-surface/60 py-20 px-5 text-center text-ink-muted">Il Binder è ancora vuoto. Dal catalogo usa la stella su una carta per aggiungerla.</div>}
 
       {cards && cards.length > 0 && view === "collection" && (

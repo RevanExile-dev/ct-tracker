@@ -21,6 +21,7 @@ import {
 import { MOVERS_TIERS, findMoversTier } from "@/lib/moversTiers";
 import { DEFAULT_MOVERS_PERIOD, MOVERS_PERIODS, findMoversPeriod } from "@/lib/moversPeriods";
 import CardTile from "@/components/CardTile";
+import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 import FilterDropdown from "@/components/FilterDropdown";
 import { splitCsv } from "@/lib/queryParams";
@@ -140,6 +141,7 @@ function MoversContent() {
   const [rises, setRises] = useState<MoversPageResult | null>(null);
   const [drops, setDrops] = useState<MoversPageResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
   const { binderIds, setBinderIds, wishlistIds, setWishlistIds } = useBinderWishlistIds();
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
@@ -228,7 +230,7 @@ function MoversContent() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, occasioni, risePage, dropPage]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, occasioni, risePage, dropPage, reloadTick]);
 
   // useCallback: CardTile e' memo (vedi components/CardTile.tsx), un
   // riferimento stabile qui evita di ri-renderizzare tutte le tile di
@@ -536,9 +538,11 @@ function MoversContent() {
       </p>
 
       {error && (
-        <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 text-signal-down p-5 font-mono text-sm">
-          {error}
-        </div>
+        <LoadError
+          title="Non riesco a caricare le carte in movimento."
+          detail={error}
+          onRetry={() => { setError(null); setReloadTick((t) => t + 1); }}
+        />
       )}
 
       {!error && notYetAvailable && (

@@ -18,6 +18,7 @@ import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 import CardTile from "@/components/CardTile";
 import Toolbar from "@/components/Toolbar";
+import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
 import HomeHighlights from "@/components/HomeHighlights";
@@ -471,25 +472,11 @@ function HomeContent() {
       )}
 
       {error && (
-        <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 p-5">
-          <div className="text-signal-down font-display font-medium">
-            Non riesco a caricare il catalogo al momento.
-          </div>
-          <p className="text-ink-muted mt-1.5 text-sm">
-            Può essere un problema di connessione temporaneo — riprova tra qualche secondo.
-          </p>
-          <button
-            type="button"
-            onClick={() => setReloadTick((t) => t + 1)}
-            className="btn-lift mt-4 text-sm px-4 py-2 rounded-card border border-signal-down/40 text-signal-down hover:bg-signal-down/10 transition-colors active:scale-95"
-          >
-            Riprova
-          </button>
-          <details className="mt-3 text-xs text-ink-faint">
-            <summary className="cursor-pointer select-none">Dettagli tecnici</summary>
-            <div className="mt-1 font-mono">{error}</div>
-          </details>
-        </div>
+        <LoadError
+          title="Non riesco a caricare il catalogo al momento."
+          detail={error}
+          onRetry={() => setReloadTick((t) => t + 1)}
+        />
       )}
 
       {!cards && !error && (
