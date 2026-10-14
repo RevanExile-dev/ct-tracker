@@ -276,13 +276,14 @@ def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
         # appartengano alla stessa serie omogenea, non un valore preso da un
         # giorno con un profilo diverso.
         cur.execute(
-            "SELECT it_nm_zero_price_cents FROM price_snapshots "
+            "SELECT it_nm_zero_price_cents, captured_at FROM price_snapshots "
             "WHERE blueprint_id = %s AND captured_at < %s AND it_nm_zero_price_cents IS NOT NULL "
             "ORDER BY captured_at DESC LIMIT 1",
             (blueprint_id, captured_at),
         )
         prev_exact_row = cur.fetchone()
         prev_it_nm_zero_price_cents = prev_exact_row[0] if prev_exact_row else None
+        prev_it_nm_zero_captured_at = prev_exact_row[1] if prev_exact_row else None
 
         summary = _summarize_products(products) or {
             "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
@@ -304,7 +305,8 @@ def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
                  best_price_cents, best_price_currency, best_condition,
                  best_language, best_can_sell_via_hub, prev_best_price_cents,
                  it_nm_zero_price_cents, it_nm_zero_price_currency,
-                 it_nm_zero_listings_count, prev_it_nm_zero_price_cents)
+                 it_nm_zero_listings_count, prev_it_nm_zero_price_cents,
+                 prev_it_nm_zero_captured_at)
             VALUES (%(blueprint_id)s, %(captured_at)s, %(captured_at_ts)s, %(min_price_cents)s,
                     %(min_price_currency)s, %(avg_price_cents)s, %(listings_count)s,
                     %(cheapest_condition)s, %(cheapest_language)s, %(cheapest_foil)s,
@@ -312,7 +314,8 @@ def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
                     %(best_price_cents)s, %(best_price_currency)s, %(best_condition)s,
                     %(best_language)s, %(best_can_sell_via_hub)s, %(prev_best_price_cents)s,
                     %(it_nm_zero_price_cents)s, %(it_nm_zero_price_currency)s,
-                    %(it_nm_zero_listings_count)s, %(prev_it_nm_zero_price_cents)s)
+                    %(it_nm_zero_listings_count)s, %(prev_it_nm_zero_price_cents)s,
+                    %(prev_it_nm_zero_captured_at)s)
             ON CONFLICT (blueprint_id) DO UPDATE SET
                 captured_at = EXCLUDED.captured_at, captured_at_ts = EXCLUDED.captured_at_ts,
                 min_price_cents = EXCLUDED.min_price_cents,
@@ -334,7 +337,8 @@ def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
                 it_nm_zero_price_cents = EXCLUDED.it_nm_zero_price_cents,
                 it_nm_zero_price_currency = EXCLUDED.it_nm_zero_price_currency,
                 it_nm_zero_listings_count = EXCLUDED.it_nm_zero_listings_count,
-                prev_it_nm_zero_price_cents = EXCLUDED.prev_it_nm_zero_price_cents
+                prev_it_nm_zero_price_cents = EXCLUDED.prev_it_nm_zero_price_cents,
+                prev_it_nm_zero_captured_at = EXCLUDED.prev_it_nm_zero_captured_at
             """,
             {
                 "blueprint_id": blueprint_id,
@@ -344,6 +348,7 @@ def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
                 "prev_captured_at": prev_captured_at,
                 "prev_best_price_cents": prev_best_price_cents,
                 "prev_it_nm_zero_price_cents": prev_it_nm_zero_price_cents,
+                "prev_it_nm_zero_captured_at": prev_it_nm_zero_captured_at,
                 **summary,
             },
         )

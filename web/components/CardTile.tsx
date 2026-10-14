@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
+import { formatCompareAge } from "@/lib/moversPeriods";
 import { formatCents, formatPercent, languageFlag, priceDeltaPct } from "@/lib/format";
 
 const STAGGER_MS = 25;
@@ -151,6 +152,12 @@ function CardTile({
         : priceCents != null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
   const delta = priceDeltaPct(priceCents, prevPriceCents);
+  // Il catalogo si aggiorna a rotazione: il prezzo "precedente" puo' essere di
+  // settimane fa, quindi la variazione dice sempre di quanti giorni e' (stessa
+  // serie del prezzo precedente scelto sopra).
+  const deltaAgeDays = isBest
+    ? card.prev_age_days
+    : card.prev_it_nm_zero_age_days;
   const [popping, setPopping] = useState(false);
   const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -267,6 +274,9 @@ function CardTile({
                 }`}
               >
                 {delta >= 0 ? "▲" : "▼"} {formatPercent(Math.abs(delta), 1)}
+                {formatCompareAge(deltaAgeDays) && (
+                  <span className="block text-[10px] leading-tight text-ink-faint">{formatCompareAge(deltaAgeDays)}</span>
+                )}
               </div>
             )}
           </div>

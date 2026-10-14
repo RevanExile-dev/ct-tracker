@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const maxCentsParam = sp.get("maxCents");
   const sort = (sp.get("sort") as MoversSort | null) ?? undefined;
   const pageParam = sp.get("page");
+  const maxAgeParam = sp.get("maxAgeDays");
 
   const result = await fetchMoversPage({
     direction,
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
     maxCents: maxCentsParam ? Number(maxCentsParam) : null,
     sort,
     page: pageParam ? Number(pageParam) : undefined,
+    maxAgeDays: maxAgeParam ? Number(maxAgeParam) : null,
   });
   return NextResponse.json(result);
 }
