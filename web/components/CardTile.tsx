@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
+import { formatCompareAge } from "@/lib/moversPeriods";
 import { formatCents, formatPercent, languageFlag, priceDeltaPct } from "@/lib/format";
 
 const STAGGER_MS = 25;
@@ -38,6 +39,7 @@ function CardTile({
   onLogPurchase,
   hasPurchaseInfo,
   horizontalScroll,
+  deltaAgeDays,
 }: {
   card: CardRow;
   index?: number;
@@ -91,6 +93,10 @@ function CardTile({
    * non lo spazio vuoto intorno. Assente ovunque la tile stia in una
    * griglia normale, dove pan-y resta il default. */
   horizontalScroll?: boolean;
+  /** Eta' in giorni del prezzo di confronto: se presente la variazione mostra
+   * "▼ 18% in 3 giorni" invece della sola percentuale. Usata dalle "Carte in
+   * movimento", dove il confronto puo' non essere "da ieri". */
+  deltaAgeDays?: number | null;
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -267,6 +273,9 @@ function CardTile({
                 }`}
               >
                 {delta >= 0 ? "▲" : "▼"} {formatPercent(Math.abs(delta), 1)}
+                {formatCompareAge(deltaAgeDays) && (
+                  <span className="text-ink-faint"> {formatCompareAge(deltaAgeDays)}</span>
+                )}
               </div>
             )}
           </div>
