@@ -1,50 +1,61 @@
-"""Diagnostica 4: con language=XX l'espansione e' completa? (l'unione dei
-linguaggi ricostruisce esattamente il singolo blueprint?)"""
+"""Diagnostica 5: che cosa distingue le offerte che l'espansione include da quelle che omette?"""
+import collections
+import json
 import random
 import sys
-import time
 
 from api_client import CardTraderClient
 
 URL = "https://api.cardtrader.com/api/v2/marketplace/products"
-LANGS = ["it", "en", "de", "fr", "es", "jp", "kr", "pt", "zh-CN", "zh-TW", "ru", "id", "th", "nl", "pl"]
 
 
-def lang_of(p):
-    ph = p.get("properties_hash") or {}
-    return ph.get("pokemon_language") or ph.get("mtg_language")
+def flat(p):
+    f = {}
+    for k, v in (p.get("properties_hash") or {}).items():
+        f["ph." + k] = v
+    for k, v in (p.get("user") or {}).items():
+        if k not in ("username", "id"):
+            f["user." + k] = v
+    f["quantity"] = p.get("quantity")
+    f["graded"] = p.get("graded")
+    f["on_vacation"] = p.get("on_vacation")
+    f["has_desc"] = bool(p.get("description"))
+    return f
 
 
 def main():
     c = CardTraderClient()
-    random.seed(3)
+    random.seed(5)
     exp_id = int(sys.argv[1])
-    per_lang = {}
-    for lg in LANGS:
-        t = time.time()
-        r = c.session.get(URL, params={"expansion_id": exp_id, "language": lg}, timeout=120)
-        dt = time.time() - t
-        if r.status_code != 200:
-            print(f"lang {lg}: HTTP {r.status_code} {r.text[:120]}")
-            continue
-        d = r.json()
-        per_lang[lg] = d
-        print(f"lang {lg}: {dt:.1f}s {len(r.content)/1048576:.1f} MB, bp {len(d)}, offerte {sum(len(v) for v in d.values())}")
-        time.sleep(1)
-    bids = random.sample(list(per_lang["it"]), 6) + random.sample(list(per_lang["en"]), 4)
-    tot_single = tot_union = tot_common = 0
+    e = c.session.get(URL, params={"expansion_id": exp_id}, timeout=120).json()
+    bids = random.sample([b for b in e if len(e[b]) > 150], 5)
+    present = collections.defaultdict(collections.Counter)
+    absent = collections.defaultdict(collections.Counter)
+    users_exp = users_single = n_exp = n_single = 0
+    ex = None
     for b in bids:
-        single = c.get_marketplace_products(int(b))
-        sid = {p["id"] for p in single}
-        union = {}
-        for lg, d in per_lang.items():
-            for p in d.get(b, []):
-                union[p["id"]] = p
-        common = len(sid & set(union))
-        wrong_lang = [p["id"] for lg, d in per_lang.items() for p in d.get(b, []) if (lang_of(p) or "").lower() != lg.lower()]
-        print(f"  bp {b}: singolo {len(sid)}, unione lingue {len(union)}, in comune {common}, offerte con lingua diversa dal filtro {len(wrong_lang)}")
-        tot_single += len(sid); tot_union += len(union); tot_common += common
-    print(f"TOTALE singolo {tot_single}, unione {tot_union}, in comune {tot_common} ({tot_common/max(1,tot_single):.0%})")
+        s = c.get_marketplace_products(int(b))
+        eid = {p["id"] for p in e[b]}
+        users_exp += len({(p.get("user") or {}).get("id") for p in e[b]})
+        users_single += len({(p.get("user") or {}).get("id") for p in s})
+        n_exp += len(e[b]); n_single += len(s)
+        for p in s:
+            tgt = present if p["id"] in eid else absent
+            for k, v in flat(p).items():
+                tgt[k][str(v)] += 1
+            if ex is None and p["id"] not in eid:
+                ex = p
+        ids_s = [p["id"] for p in s]
+        print(f"  bp {b}: exp {len(e[b])} sing {len(s)}; id min/max exp {min(eid)}-{max(eid)} ; ids mancanti ordinati (primi 8): {sorted(set(ids_s)-eid)[:8]}")
+    print(f"offerte exp {n_exp}, utenti distinti in exp {users_exp}; offerte singolo {n_single}, utenti distinti {users_single}")
+    keys = sorted(set(present) | set(absent))
+    for k in keys:
+        vals = set(present[k]) | set(absent[k])
+        if len(vals) > 12:
+            continue
+        row = ", ".join(f"{v}: {present[k][v]}/{absent[k][v]}" for v in sorted(vals))
+        print(f"  {k}  (incluse/omesse)  {row}")
+    print("esempio offerta omessa:", json.dumps(ex)[:700])
     print("fine")
 
 
