@@ -20,7 +20,7 @@ test("periodo sconosciuto o assente = predefinito (30 giorni)", () => {
 });
 
 test("le finestre note e 'Tutto' (nessun limite)", () => {
-  assert.deepEqual(MOVERS_PERIODS.map((p) => p.days), [3, 7, 30, null]);
+  assert.equal(JSON.stringify(MOVERS_PERIODS.map((p) => p.days)), "[3,7,30,null]");
   assert.equal(findMoversPeriod("all").days, null);
 });
 
