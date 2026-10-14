@@ -421,13 +421,18 @@ function HomeContent() {
           onClick={() => setToolbarVisible((v) => !v)}
           aria-expanded={toolbarVisible}
           aria-label={toolbarVisible ? "Nascondi filtri" : "Mostra filtri"}
-          className="w-full min-h-10 flex items-center justify-center text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
+          className="w-full min-h-9 sm:min-h-10 flex items-center justify-center gap-2 text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
         >
           <span
             aria-hidden
-            className={`text-[10px] transition-transform duration-300 ${toolbarVisible ? "rotate-180" : ""}`}
+            className={`text-[10px] transition-transform duration-300 ${toolbarVisible ? "" : "rotate-180"}`}
           >
             ▲
+          </span>
+          {/* Su telefono la freccia da sola sembrava un pannello vuoto: serve
+              un'etichetta. Il nome accessibile resta quello dell'aria-label. */}
+          <span aria-hidden className="sm:hidden text-xs">
+            {toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
           </span>
         </button>
       </div>

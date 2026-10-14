@@ -1,11 +1,20 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatDateLong } from "@/lib/format";
 import CountUp from "./CountUp";
 import BrandLogo from "./BrandLogo";
 import UserMenu from "./UserMenu";
+
+// Dissolvenza sul bordo destro della riga scorrevole dei link (solo su
+// telefono, solo se c'e' altro da scoprire scorrendo): un taglio netto a meta'
+// pillola ("Bi") non fa capire che la riga scorre.
+const FADE_END = {
+  maskImage: "linear-gradient(to right, #000 calc(100% - 28px), transparent)",
+  WebkitMaskImage: "linear-gradient(to right, #000 calc(100% - 28px), transparent)",
+} as const;
 
 /** compact: usato nelle pagine secondarie (carte in movimento, dettaglio
  * carta) dove il sottotitolo lungo e' solo rumore ripetuto — qui si vede
@@ -32,6 +41,21 @@ export default function SiteHeader({
   const onWishlist = pathname === "/wishlist";
   const onScanner = pathname === "/scan";
   const onLots = pathname.startsWith("/lots");
+  const navScrollRef = useRef<HTMLDivElement>(null);
+  const [moreToRight, setMoreToRight] = useState(false);
+
+  useEffect(() => {
+    const el = navScrollRef.current;
+    if (!el) return;
+    const update = () => setMoreToRight(el.scrollWidth - el.scrollLeft - el.clientWidth > 2);
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [pathname]);
 
   return (
     <header className={compact ? "mb-6" : "mb-6 sm:mb-10"}>
@@ -105,7 +129,11 @@ export default function SiteHeader({
           {/* Su telefono i link stanno su una sola riga scorrevole (il menu utente
               resta fuori: il suo popup verrebbe tagliato dallo scorrimento); da sm in su
               il contenitore sparisce (contents) e il layout e' quello di prima. */}
-          <div className="flex gap-2 min-w-0 flex-1 overflow-x-auto sm:contents [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={navScrollRef}
+            style={moreToRight ? FADE_END : undefined}
+            className="flex gap-2 min-w-0 flex-1 overflow-x-auto sm:contents [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
           {!onScanner && (
             <Link
               href="/scan"
