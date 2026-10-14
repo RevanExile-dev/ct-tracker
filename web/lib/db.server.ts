@@ -143,6 +143,26 @@ function nameMatcher(norm: boolean) {
   };
 }
 
+/** Elenco (id, nome) dei set, in cache: serve alla ricerca per nome del set. */
+type ExpansionNameEntry = { id: number; name: string };
+let expansionIndexCache: { entries: ExpansionNameEntry[]; at: number } | null = null;
+async function getExpansionIndex(): Promise<ExpansionNameEntry[]> {
+  const now = Date.now();
+  if (expansionIndexCache && now - expansionIndexCache.at < 10 * 60_000) return expansionIndexCache.entries;
+  const { rows } = await getPgPool().query(
+    "SELECT DISTINCT expansion_id AS id, expansion_name AS name FROM blueprints WHERE expansion_id IS NOT NULL AND expansion_name IS NOT NULL",
+  );
+  const entries = rows.map((r) => ({ id: Number(r.id), name: String(r.name) }));
+  expansionIndexCache = { entries, at: now };
+  return entries;
+}
+
+/** Id dei set il cui nome contiene la parola come parola intera. */
+function expansionIdsMatching(index: ExpansionNameEntry[], token: string): number[] {
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu");
+  return index.filter((e) => re.test(e.name)).map((e) => e.id);
+}
+
 /** Rilevanza della ricerca per nome, per mettere in cima i risultati
  * migliori: 0 = tutte le parole compaiono come parola intera nel nome
  * ("Mew", "Mew ex"), 1 = il nome inizia con la ricerca ("Mewtwo"), 2 = il
@@ -159,7 +179,7 @@ function buildSearchRank(search: string | undefined, p: Params, norm: boolean): 
 /** WHERE condiviso tra fetchCards/fetchCardsCount/fetchCardsSummary, cosi'
  * "quante carte" e "che carte" restano sempre coerenti per costruzione
  * invece di dover mantenere due query separate allineate a mano. */
-function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean): {
+function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean, expansionIndex: ExpansionNameEntry[] = []): {
   where: string[];
   listingFilters: string[];
   hasListingFilter: boolean;
@@ -198,6 +218,20 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean): {
       const versionMatch = norm
         ? `f_unaccent(lower(b.version)) LIKE ${p.add(`%${escapeLike(normalizeToken(token))}%`)}`
         : `b.version ILIKE ${p.add(`%${escapeLike(token)}%`)}`;
+      // Il nome dell'espansione conta come corrispondenza per parole di almeno 3
+      // lettere/cifre, come parola intera ("charizard obsidian", "charizard 151"
+      // = il set 151): senza, ogni ricerca col nome del set dava 0 risultati
+      // anche con le carte presenti. Niente per parole di 1-2 caratteri ("ex",
+      // "v"), che comparirebbero in troppi nomi di set, e niente con "Nome
+      // esatto", che cerca solo nel nome. I set si risolvono prima per nome
+      // (pochi, in cache) e si confrontano per id: un confronto di testo sul
+      // nome del set in OR con gli indici trigramma costringerebbe a scansionare
+      // tutta la tabella (misurato su Neon: 150 ms invece di 0,15).
+      const setIds = !opts.exactName && token.length >= 3 ? expansionIdsMatching(expansionIndex, token) : [];
+      if (setIds.length > 0) {
+        where.push(`(${nameMatch} OR ${versionMatch} OR b.expansion_id = ANY(${p.add(setIds)}::int[]))`);
+        continue;
+      }
       where.push(`(${nameMatch} OR ${versionMatch})`);
     }
   }
@@ -315,7 +349,8 @@ export async function fetchCards(opts: CardsFilterOpts & {
   const pool = getPgPool();
   const p = new Params();
   const norm = opts.search ? await hasSearchExtras() : false;
-  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p, norm);
+  const expansionIndex = opts.search && !opts.exactName ? await getExpansionIndex() : [];
+  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p, norm, expansionIndex);
   const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
 
   // Una variazione calcolata su meno di MIN_MOVER_LISTINGS inserzioni IT NM
@@ -429,7 +464,8 @@ export async function fetchCardsCount(opts: CardsFilterOpts): Promise<number> {
   const pool = getPgPool();
   const p = new Params();
   const norm = opts.search ? await hasSearchExtras() : false;
-  const { where } = buildCardsFilter(opts, p, norm);
+  const expansionIndex = opts.search && !opts.exactName ? await getExpansionIndex() : [];
+  const { where } = buildCardsFilter(opts, p, norm, expansionIndex);
   const sql = `SELECT COUNT(*) AS c FROM blueprints b ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
   const { rows } = await pool.query(sql, p.values);
   return Number(rows[0].c);
@@ -443,7 +479,8 @@ export async function fetchCardsSummary(opts: CardsFilterOpts): Promise<CardsSum
   const pool = getPgPool();
   const p = new Params();
   const norm = opts.search ? await hasSearchExtras() : false;
-  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p, norm);
+  const expansionIndex = opts.search && !opts.exactName ? await getExpansionIndex() : [];
+  const { where, listingFilters, hasListingFilter } = buildCardsFilter(opts, p, norm, expansionIndex);
   const { priceExpr, prevPriceExpr } = buildPriceExprs(hasListingFilter);
   const filteredJoin = buildFilteredJoinSql(hasListingFilter, listingFilters);
   const validExpr = `${priceExpr} IS NOT NULL AND ${priceExpr} != 0 AND ${prevPriceExpr} IS NOT NULL AND ${prevPriceExpr} != 0`;
