@@ -153,6 +153,7 @@ function MoversContent() {
   const [periodKey, setPeriodKey] = useState<string>(() => findMoversPeriod(searchParams.get("period")).key);
   const [sort, setSort] = useState<MoversSort>(() => (searchParams.get("sort") === "abs" ? "abs" : "pct"));
   const [showSmall, setShowSmall] = useState<boolean>(() => searchParams.get("piccole") === "1");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [risePage, setRisePage] = useState(() => parsePage(searchParams.get("risePage")));
   const [dropPage, setDropPage] = useState(() => parsePage(searchParams.get("dropPage")));
   const [activeFilter, setActiveFilter] = useState<"rarity" | null>(null);
@@ -289,6 +290,12 @@ function MoversContent() {
     selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct" || showSmall ||
       periodKey !== DEFAULT_MOVERS_PERIOD
   );
+  const activeFilterCount =
+    selectedRarities.length +
+    (tierKey || customMin.trim() || customMax.trim() ? 1 : 0) +
+    (sort !== "pct" ? 1 : 0) +
+    (showSmall ? 1 : 0) +
+    (periodKey !== DEFAULT_MOVERS_PERIOD ? 1 : 0);
   const currentQuery = searchParams.toString();
   const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
   useScrollRestoration("movers", (rises !== null && drops !== null) || error !== null, returnTo);
@@ -325,13 +332,43 @@ function MoversContent() {
       </Link>
 
       <h1 className="font-display text-2xl font-bold text-ink-primary">Carte in movimento</h1>
-      <p className="text-ink-muted mt-1 max-w-xl">
+      <div className="text-ink-muted mt-1 max-w-xl lg:hidden">
+        <p>Le variazioni di prezzo più marcate, per chi cerca affari.</p>
+        <details className="text-xs mt-1">
+          <summary className="inline cursor-pointer text-accent-bright">Come si legge</summary>
+          <span className="block mt-1">
+            Serie italiano · Near Mint · CardTrader Zero, con il periodo di confronto scelto nei filtri. Contano
+            solo le carte con almeno {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che
+            cambia prezzo.
+          </span>
+        </details>
+      </div>
+      <p className="text-ink-muted mt-1 max-w-xl hidden lg:block">
         Le variazioni di prezzo più marcate sulla serie italiano · Near Mint · CardTrader Zero, con
         il periodo di confronto che scegli qui sotto. Contano solo le carte con almeno{" "}
         {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che cambia prezzo.
       </p>
 
-      <div className="filter-toolbar mt-5 flex flex-row flex-wrap items-center gap-x-5 gap-y-3 rounded-card border border-base-border bg-base-surface/55 px-4 py-3">
+      <button
+        type="button"
+        aria-expanded={filtersOpen}
+        aria-controls="movers-filters"
+        onClick={() => setFiltersOpen((v) => !v)}
+        className="lg:hidden mt-4 min-h-11 w-full text-sm rounded-card border border-base-border bg-base-surface/55 px-4 flex items-center justify-between text-ink-muted active:scale-[0.99] transition-colors"
+      >
+        <span>
+          Filtri
+          {activeFilterCount > 0 && (
+            <span className="ml-2 font-mono text-xs text-accent-bright">{activeFilterCount} attivi</span>
+          )}
+        </span>
+        <span aria-hidden>{filtersOpen ? "▲" : "▼"}</span>
+      </button>
+
+      <div
+        id="movers-filters"
+        className={`filter-toolbar mt-3 lg:mt-5 ${filtersOpen ? "flex" : "hidden"} lg:flex flex-row flex-wrap items-center gap-x-5 gap-y-3 rounded-card border border-base-border bg-base-surface/55 px-4 py-3`}
+      >
         <FilterDropdown
           reserveSpace
           label="Rarità"
@@ -459,7 +496,7 @@ function MoversContent() {
         )}
       </div>
 
-      <p className="mt-3 text-xs text-ink-muted" aria-live="polite">
+      <p className="mt-3 text-xs text-ink-muted hidden lg:block" aria-live="polite">
         {sort === "abs"
           ? "Ordine per differenza in euro dalla rilevazione precedente: prima i maggiori aumenti o ribassi. Esempio: −10 € precede −2 €."
           : "Ordine per variazione percentuale dalla rilevazione precedente: prima i maggiori aumenti o ribassi in proporzione al prezzo."}
