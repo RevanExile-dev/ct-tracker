@@ -54,11 +54,18 @@ watchlist (config/watchlist.json) resta com'era, sul suo cron separato
 (.github/workflows/notify_telegram.yml): i price_alerts sono un sistema
 nuovo e distinto, non una sua sostituzione.
 
+Le carte si lavorano a gruppi di CHUNK_SIZE: tentativo registrato per tutto il
+gruppo, chiamate API una per una (limite 1 req/s invariato), poi UNA scrittura
+sul database per l'intero gruppo (db.write_price_batch) invece di ~12 viaggi
+verso Neon per ogni carta. A fine run il log dice quanto tempo e' andato in
+chiamate CardTrader e quanto in scritture.
+
 Uso:
   python scripts/sync_prices_priority.py
 """
 import os
 import sys
+import time
 from collections import deque
 from datetime import datetime, timezone
 
@@ -112,6 +119,19 @@ MAX_NON_CATALOG_PER_RUN = 300
 # qui il danno di un giro sprecato e' comunque limitato al budget del run (50 minuti),
 # non a ore, ma il segnale resta lo stesso.
 MAX_CONSECUTIVE_ERRORS = 15
+
+# Carte per gruppo: una sola scrittura sul database ogni CHUNK_SIZE chiamate API
+# (~5 s). Piu' grande = meno viaggi verso Neon, ma un errore di scrittura costringe
+# a riprovare carta per carta un gruppo piu' grosso e gli allarmi scattano con
+# qualche secondo di ritardo in piu'.
+CHUNK_SIZE = 5
+
+
+def _rarity_of(products: list):
+    if not products:
+        return None
+    props = products[0].get("properties_hash", {}) or {}
+    return props.get("pokemon_rarity") or props.get("rarity")
 
 
 def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
@@ -209,7 +229,6 @@ def main():
     db.init_db()
     client = CardTraderClient()
     conn = db.get_connection()
-    cur = conn.cursor()
 
     start = datetime.now(timezone.utc)
     today = start.strftime("%Y-%m-%d")
@@ -253,6 +272,9 @@ def main():
     next_tracked_pass = start.timestamp() if mode == "catalog" else None
     tracked_passes = 0
 
+    api_seconds = 0.0
+    db_seconds = 0.0
+
     while True:
         now_ts = datetime.now(timezone.utc).timestamp()
         if now_ts >= deadline:
@@ -266,66 +288,80 @@ def main():
             print(f"  Passaggio tracciate #{tracked_passes}: {len(due)} carte scadute messe in testa alla coda.")
         if not queue:
             break
-        bp_id, name, expansion_name, priority = queue.popleft()
-        processed += 1
-        tier_counts[priority] = tier_counts.get(priority, 0) + 1
 
-        # Registrato e COMMITTATO subito, PRIMA della chiamata a CardTrader
-        # che puo' fallire: altrimenti una carta che fallisce sempre (es. un
+        # Un gruppo di CHUNK_SIZE carte alla volta: tentativo registrato per tutto il
+        # gruppo, poi le chiamate API una per una (1 req/s, invariato), poi UNA
+        # scrittura per l'intero gruppo (db.write_price_batch). Prima ogni carta
+        # faceva ~12 viaggi verso Neon in serie e costava ~2,4 s contro 1 s di
+        # limite API; vedi il commento di write_price_batch.
+        chunk = [queue.popleft() for _ in range(min(CHUNK_SIZE, len(queue)))]
+        for _bp, _name, _exp, priority in chunk:
+            processed += 1
+            tier_counts[priority] = tier_counts.get(priority, 0) + 1
+
+        # Registrato e COMMITTATO subito, PRIMA delle chiamate a CardTrader che
+        # possono fallire: altrimenti una carta che fallisce sempre (es. un
         # blueprint rimosso da CardTrader) resterebbe per sempre in cima alla
         # sua fascia di priorita' (captured_at_ts non si aggiorna mai sui
         # fallimenti), bloccando l'intero batch ad ogni run - bug di
-        # starvation reale, trovato in review su questa PR (vedi
-        # fetch_priority_batch in scripts/db.py).
+        # starvation reale, trovato in review (vedi fetch_priority_batch in
+        # scripts/db.py). Il gruppo e' deciso PRIMA del controllo del budget,
+        # quindi tutte le sue carte vengono davvero tentate.
+        t0 = time.perf_counter()
         try:
-            db.mark_attempted(conn, bp_id, now_iso)
+            db.mark_attempted_many(conn, [c[0] for c in chunk], now_iso)
             conn.commit()
         except Exception as exc:
-            print(f"  [ERRORE] impossibile registrare il tentativo per {name} id={bp_id}: {exc}", file=sys.stderr)
+            print(f"  [ERRORE] impossibile registrare il tentativo per {len(chunk)} carte: {exc}", file=sys.stderr)
             conn.rollback()
-            errors += 1
-            consecutive_errors += 1
+            errors += len(chunk)
+            consecutive_errors += len(chunk)
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                 circuit_breaker_triggered = True
                 break
             continue
+        db_seconds += time.perf_counter() - t0
 
-        try:
-            products = client.get_marketplace_products(bp_id)
-
-            db.insert_price_snapshot(conn, bp_id, today, now_iso, products)
-            db.upsert_latest_price(conn, bp_id, today, now_iso, products)
-            db.replace_price_listings(conn, bp_id, today, products)
-
-            # Subito dopo aver riscritto price_listings per QUESTA carta:
-            # legge i prezzi appena scritti, nessuna chiamata API in piu'.
-            # Nella stessa transazione per-carta cosi' un ROLLBACK su
-            # questa carta (es. l'update rarity sotto fallisse) annulla
-            # anche uno scatto di allarme basato su dati che non sono mai
-            # stati confermati - vedi il commento di modulo in cima al file.
-            fired = db.evaluate_price_alerts_for_blueprint(conn, bp_id, name, expansion_name)
-            alerts_fired += fired
-
-            if products:
-                props = products[0].get("properties_hash", {}) or {}
-                rarity = props.get("pokemon_rarity") or props.get("rarity")
-                if rarity:
-                    cur.execute(
-                        "UPDATE blueprints SET rarity = %s WHERE id = %s",
-                        (rarity, bp_id),
-                    )
-
-            # Commit per carta, non a fine batch: stesso motivo di
-            # sync_prices.py, un ROLLBACK su un errore non deve scartare
-            # anche il lavoro delle carte riuscite prima nello stesso giro.
-            conn.commit()
-            ok += 1
+        fetched = []
+        for bp_id, name, expansion_name, _priority in chunk:
+            t0 = time.perf_counter()
+            try:
+                products = client.get_marketplace_products(bp_id)
+            except Exception as exc:  # non bloccare l'intero batch per una carta problematica
+                print(f"  [ERRORE] {name} ({expansion_name}) id={bp_id}: {exc}", file=sys.stderr)
+                errors += 1
+                consecutive_errors += 1
+                api_seconds += time.perf_counter() - t0
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    break
+                continue
+            api_seconds += time.perf_counter() - t0
             consecutive_errors = 0
-        except Exception as exc:  # non bloccare l'intero batch per una carta problematica
-            print(f"  [ERRORE] {name} ({expansion_name}) id={bp_id}: {exc}", file=sys.stderr)
-            conn.rollback()
-            errors += 1
-            consecutive_errors += 1
+            fetched.append((bp_id, name, expansion_name, products, _rarity_of(products)))
+
+        t0 = time.perf_counter()
+        if fetched:
+            try:
+                alerts_fired += db.write_price_batch(conn, today, now_iso, fetched)
+                conn.commit()
+                ok += len(fetched)
+            except Exception as exc:
+                # Un errore annulla l'intero gruppo: si riprova carta per carta
+                # per isolare quella colpevole senza perdere il lavoro delle altre.
+                print(f"  [ATTENZIONE] scrittura a blocchi fallita ({exc}): riprovo carta per carta.", file=sys.stderr)
+                conn.rollback()
+                for item in fetched:
+                    try:
+                        alerts_fired += db.write_price_batch(conn, today, now_iso, [item])
+                        conn.commit()
+                        ok += 1
+                        consecutive_errors = 0
+                    except Exception as exc_item:
+                        print(f"  [ERRORE] {item[1]} ({item[2]}) id={item[0]}: {exc_item}", file=sys.stderr)
+                        conn.rollback()
+                        errors += 1
+                        consecutive_errors += 1
+        db_seconds += time.perf_counter() - t0
 
         if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
             circuit_breaker_triggered = True
@@ -336,6 +372,9 @@ def main():
                 file=sys.stderr,
             )
             break
+
+    print(f"Tempo speso: {api_seconds:.0f}s in chiamate CardTrader, {db_seconds:.0f}s in scritture sul database "
+          f"({processed} carte tentate).")
 
     # Snapshot del valore Binder: economico e idempotente (upsert per
     # (user_id, oggi)), va bene rilanciarlo ad ogni batch invece che una
@@ -398,7 +437,6 @@ def main():
     )
     db.set_meta(conn, "last_price_sync", finished.isoformat())
     conn.commit()
-    cur.close()
     conn.close()
 
     print(f"\nCompletato in {(finished - start).total_seconds():.0f}s: "
