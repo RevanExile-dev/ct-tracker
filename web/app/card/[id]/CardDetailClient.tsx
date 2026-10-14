@@ -15,6 +15,7 @@ import { getWishlistIds } from "@/lib/wishlist";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 import InteractiveCard from "@/components/InteractiveCard";
+import CardImageLightbox from "@/components/CardImageLightbox";
 import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
@@ -44,6 +45,7 @@ function CardDetailContent() {
   // Errore di rete/server: diverso da "carta inesistente" (card === null).
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const { data: session } = useSession();
@@ -226,6 +228,10 @@ function CardDetailContent() {
       {/* Su telefono: immagine piccola a sinistra e titolo a destra (prezzo e azioni
           restano nel primo schermo, prima stavano oltre i 900 px), da md in su la
           disposizione a due colonne di sempre. */}
+      {lightboxOpen && card.image_url && !imgError && (
+        <CardImageLightbox src={card.image_url} alt={card.name} onClose={() => setLightboxOpen(false)} />
+      )}
+
       <div className="grid grid-cols-[34%_minmax(0,1fr)] gap-x-4 gap-y-0 md:grid-cols-[minmax(300px,400px)_1fr] md:gap-8 lg:gap-12 card-enter">
         {threeMode === "on" && card.image_url && !imgError ? (
           <div className="w-full max-w-[400px] mx-auto md:mx-0 rounded-card border border-base-border bg-base-surface overflow-hidden self-start shadow-card">
@@ -260,6 +266,17 @@ function CardDetailContent() {
                 <div className="w-full h-full flex items-center justify-center text-ink-faint text-xs font-mono text-center px-4">
                   {imgError ? "immagine non disponibile" : "nessuna immagine"}
                 </div>
+              )}
+              {/* Solo telefono: la miniatura e' piccola, un tap la ingrandisce
+                  (un trascinamento resta il tilt di InteractiveCard, che
+                  sopprime il click). Da md in su l'immagine e' gia' grande. */}
+              {card.image_url && !imgError && (
+                <button
+                  type="button"
+                  onClick={() => setLightboxOpen(true)}
+                  aria-label="Ingrandisci immagine"
+                  className="md:hidden absolute inset-0 z-10"
+                />
               )}
             </div>
           </InteractiveCard>
