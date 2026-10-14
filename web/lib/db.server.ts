@@ -486,6 +486,11 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     const rarityFilters = expandRarityFilters(opts.rarities);
     where.push(`b.rarity = ANY(${p.add(rarityFilters)})`);
   }
+  if (opts.minDeltaCents != null && opts.minDeltaCents > 0) {
+    where.push(
+      `ABS(lp.it_nm_zero_price_cents - lp.prev_it_nm_zero_price_cents) >= ${p.add(opts.minDeltaCents)}`,
+    );
+  }
   if (opts.maxAgeDays != null && Number.isFinite(opts.maxAgeDays)) {
     // Data ignota (riga non ancora ricalcolata dal sync) = fuori da ogni
     // finestra: meglio non mostrarla che mostrarla senza sapere da quando.

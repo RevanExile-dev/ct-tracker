@@ -102,12 +102,18 @@ export const MOVERS_PAGE_SIZE = 12;
  * ~2.700 ribassi e i primi sono variazioni plausibili. */
 export const MIN_MOVER_LISTINGS = 5;
 
+/** Soglia di default della pagina /movers: sotto 1€ di differenza un
+ * "ribasso" e' rumore (es. 0,60€ -> 0,11€) e copre le carte che contano. */
+export const MOVERS_MIN_DELTA_CENTS = 100;
+
 export type MoversPageOpts = {
   direction: MoversDirection;
   rarities?: string[];
   minCents?: number | null;
   maxCents?: number | null;
   sort?: MoversSort;
+  /** Scarta le variazioni (in valore assoluto) sotto questa soglia in centesimi. */
+  minDeltaCents?: number | null;
   page?: number;
   /** Solo confronti con un prezzo non piu' vecchio di N giorni (null/assente = tutti). */
   maxAgeDays?: number | null;
