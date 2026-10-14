@@ -74,3 +74,14 @@ test("accenti e refusi: \"pokemon\" trova Pokémon, \"charmilion\" suggerisce Ch
   const sugg = await (await request.get(`${BASE_URL}/api/cards/suggest?search=charmilion`)).json();
   expect(sugg).toContain("Charmeleon");
 });
+
+test("il nome del set conta come parola della ricerca (almeno 3 lettere, parola intera, non con Nome esatto)", async ({ request }) => {
+  const count = async (qs) => (await (await request.get(`${BASE_URL}/api/cards/count?${qs}`)).json()).count;
+  // Seed: le carte Mew/Mewtwo stanno nel set "Smoke Test Set".
+  expect(await count("search=mew%20smoke")).toBe(4);
+  expect(await count("search=mew%20test")).toBe(4);
+  expect(await count("search=mew%20smok")).toBe(0); // solo parola intera
+  expect(await count("search=mew%20se")).toBe(0); // 2 caratteri: troppo corto
+  expect(await count("search=mew%20smoke&exactName=1")).toBe(0); // Nome esatto cerca solo nel nome
+  expect(await count("search=mew%20zzzz")).toBe(0);
+});
