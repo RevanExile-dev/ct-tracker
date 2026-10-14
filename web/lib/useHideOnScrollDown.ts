@@ -75,56 +75,6 @@ export function useHideOnScrollDown(
     return () => cancelAnimationFrame(raf);
   }, [keepVisible]);
 
-  // La maniglia originale e' volutamente minimale su desktop. Su mobile
-  // aumentiamo area touch e contrasto senza introdurre un secondo controllo:
-  // resta lo stesso button/aria-label gia' usato dalla pagina.
-  useEffect(() => {
-    const root = containerRef?.current;
-    if (!root || root.dataset.testid !== "toolbar-collapse") return;
-    const handle = root.querySelector<HTMLButtonElement>(":scope > button[aria-expanded]");
-    const arrow = handle?.querySelector<HTMLElement>("span[aria-hidden]");
-    if (!handle) return;
-
-    const media = window.matchMedia("(max-width: 639px)");
-    const apply = () => {
-      if (media.matches) {
-        handle.style.minHeight = "38px";
-        handle.style.marginBottom = "6px";
-        handle.style.border = "1px solid rgba(255,255,255,0.13)";
-        handle.style.borderRadius = "9999px";
-        handle.style.background = "rgba(255,255,255,0.055)";
-        handle.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
-        if (arrow) {
-          arrow.style.fontSize = "14px";
-          arrow.style.opacity = "0.95";
-        }
-      } else {
-        handle.style.removeProperty("min-height");
-        handle.style.removeProperty("margin-bottom");
-        handle.style.removeProperty("border");
-        handle.style.removeProperty("border-radius");
-        handle.style.removeProperty("background");
-        handle.style.removeProperty("box-shadow");
-        arrow?.style.removeProperty("font-size");
-        arrow?.style.removeProperty("opacity");
-      }
-    };
-
-    apply();
-    media.addEventListener("change", apply);
-    return () => {
-      media.removeEventListener("change", apply);
-      handle.style.removeProperty("min-height");
-      handle.style.removeProperty("margin-bottom");
-      handle.style.removeProperty("border");
-      handle.style.removeProperty("border-radius");
-      handle.style.removeProperty("background");
-      handle.style.removeProperty("box-shadow");
-      arrow?.style.removeProperty("font-size");
-      arrow?.style.removeProperty("opacity");
-    };
-  }, [containerRef]);
-
   useEffect(() => {
     anchorY.current = window.scrollY;
     let lastY = window.scrollY;
