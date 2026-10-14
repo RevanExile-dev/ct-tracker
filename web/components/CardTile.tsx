@@ -133,6 +133,12 @@ function CardTile({
   // confrontare due profili diversi, non lo stesso nel tempo.
   const prevPriceCents = hasOwnedMatch
     ? null
+    : hasFilter
+      // Come buildPriceExprs (db.server.ts): con un filtro la variazione vale solo
+      // se il prezzo filtrato e' proprio quello della serie IT NM Zero.
+      ? card.filtered_price_cents === card.it_nm_zero_price_cents
+        ? card.prev_it_nm_zero_price_cents
+        : null
     : isBest
       ? card.prev_best_price_cents ?? card.prev_price_cents
       : card.prev_it_nm_zero_price_cents;
@@ -155,7 +161,7 @@ function CardTile({
   // Il catalogo si aggiorna a rotazione: il prezzo "precedente" puo' essere di
   // settimane fa, quindi la variazione dice sempre di quanti giorni e' (stessa
   // serie del prezzo precedente scelto sopra).
-  const deltaAgeDays = isBest
+  const deltaAgeDays = isBest && !hasFilter
     ? card.prev_age_days
     : card.prev_it_nm_zero_age_days;
   const [popping, setPopping] = useState(false);

@@ -263,7 +263,14 @@ function buildPriceExprs(hasListingFilter: boolean): { priceExpr: string; prevPr
   const priceExpr = hasListingFilter
     ? "COALESCE(fl.price_cents, lp.best_price_cents, lp.min_price_cents)"
     : "lp.it_nm_zero_price_cents";
-  const prevPriceExpr = "lp.prev_it_nm_zero_price_cents";
+  // Con un filtro lingua/condizione/Zero il prezzo mostrato e' quello dell'inserzione
+  // filtrata, ma lo storico (prev_*) e' solo della serie IT NM Zero: confrontarli
+  // inventava cali/rialzi finti (es. 300,59 € "-79,9%" quando la serie vera era
+  // -46,5%). La variazione vale solo se il prezzo filtrato coincide con quello della
+  // serie (stesso prezzo = stesso profilo); altrimenti e' NULL = "nessuna variazione".
+  const prevPriceExpr = hasListingFilter
+    ? "(CASE WHEN fl.price_cents = lp.it_nm_zero_price_cents THEN lp.prev_it_nm_zero_price_cents END)"
+    : "lp.prev_it_nm_zero_price_cents";
   return { priceExpr, prevPriceExpr };
 }
 
