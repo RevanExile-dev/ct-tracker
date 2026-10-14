@@ -45,6 +45,17 @@ body::after {
   animation-duration: 32s;
 }
 
+/* Su telefono/tablet (nessun mouse) lo sfondo resta fermo: l'animazione
+   infinita sui due bagliori sfocati fa ridisegnare la pagina mentre si
+   scorre e consuma batteria, per un effetto quasi invisibile. Misurato
+   (telefono simulato, tocchi veri, CPU 4x, 2 prove): ~25-26 -> ~29-30 fps. */
+@media (hover: none) {
+  body::before,
+  body::after {
+    animation: none;
+  }
+}
+
 @keyframes aurora-drift {
   0% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(6vmax, 4vmax) scale(1.08); }
