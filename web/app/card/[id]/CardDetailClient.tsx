@@ -159,18 +159,20 @@ function CardDetailContent() {
     return (
       <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
         <SiteHeader compact />
-        <div className="h-5 w-32 rounded bg-base-surface skeleton mb-8" />
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(300px,400px)_1fr] gap-8 lg:gap-12">
+        <div className="h-5 w-32 rounded bg-base-surface skeleton mb-4 md:mb-8" />
+        <div className="grid grid-cols-[34%_minmax(0,1fr)] gap-x-4 gap-y-0 md:grid-cols-[minmax(300px,400px)_1fr] md:gap-8 lg:gap-12">
           <div className="skeleton rounded-card border border-base-border bg-base-surface aspect-[5/7]" />
-          <div>
-            <div className="h-3 w-24 rounded bg-base-surface skeleton" />
-            <div className="h-9 w-64 max-w-full rounded bg-base-surface skeleton mt-3" />
-            <div className="h-4 w-40 rounded bg-base-surface skeleton mt-3" />
+          <div className="contents md:block [&>*]:col-span-2 md:[&>*]:col-auto">
+            <div className="!col-span-1 !col-start-2 md:!col-auto">
+              <div className="h-3 w-24 rounded bg-base-surface skeleton" />
+              <div className="h-9 w-64 max-w-full rounded bg-base-surface skeleton mt-3" />
+              <div className="h-4 w-40 max-w-full rounded bg-base-surface skeleton mt-3" />
+            </div>
             <div className="flex gap-2 mt-4">
               <div className="h-7 w-20 rounded-full bg-base-surface skeleton" />
               <div className="h-7 w-32 rounded-full bg-base-surface skeleton" />
             </div>
-            <div className="grid grid-cols-2 gap-4 max-w-sm mt-6">
+            <div className="grid grid-cols-2 gap-4 max-w-sm mt-4 md:mt-6">
               <div className="h-20 rounded-card bg-base-surface skeleton" />
               <div className="h-20 rounded-card bg-base-surface skeleton" />
             </div>
@@ -216,12 +218,15 @@ function CardDetailContent() {
       <SiteHeader compact />
       <Link
         href={returnTo}
-        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-8"
+        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-4 md:mb-8"
       >
         ← Torna indietro
       </Link>
 
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(300px,400px)_1fr] gap-8 lg:gap-12 card-enter">
+      {/* Su telefono: immagine piccola a sinistra e titolo a destra (prezzo e azioni
+          restano nel primo schermo, prima stavano oltre i 900 px), da md in su la
+          disposizione a due colonne di sempre. */}
+      <div className="grid grid-cols-[34%_minmax(0,1fr)] gap-x-4 gap-y-0 md:grid-cols-[minmax(300px,400px)_1fr] md:gap-8 lg:gap-12 card-enter">
         {threeMode === "on" && card.image_url && !imgError ? (
           <div className="w-full max-w-[400px] mx-auto md:mx-0 rounded-card border border-base-border bg-base-surface overflow-hidden self-start shadow-card">
             <div className="relative aspect-[5/7]">
@@ -246,7 +251,7 @@ function CardDetailContent() {
                   src={card.image_url}
                   alt={card.name}
                   fill
-                  sizes="(max-width: 767px) 90vw, 400px"
+                  sizes="(max-width: 767px) 40vw, 400px"
                   className="object-cover"
                   priority
                   onError={() => setImgError(true)}
@@ -260,11 +265,14 @@ function CardDetailContent() {
           </InteractiveCard>
         )}
 
-        <div>
+        {/* Su telefono il contenitore sparisce (contents): intestazione accanto
+            all'immagine, tutto il resto a larghezza piena. */}
+        <div className="contents md:block [&>*]:col-span-2 md:[&>*]:col-auto">
+          <div className="!col-span-1 !col-start-2 md:!col-auto min-w-0">
           <div className="font-mono text-xs uppercase tracking-wider text-accent">
             {card.expansion_name}
           </div>
-          <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink-primary mt-1">
+          <h1 className="font-display text-2xl sm:text-4xl font-bold text-ink-primary mt-1 break-words">
             {card.name}
           </h1>
           {card.version && (
@@ -281,8 +289,9 @@ function CardDetailContent() {
               </Link>
             </div>
           )}
+          </div>
 
-          <div className="flex flex-wrap gap-2 mt-3 items-center">
+          <div className="flex flex-wrap gap-2 mt-4 md:mt-3 items-center">
             {card.is_premium === 1 && (
               <span className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-accent/10 border border-accent/40 text-accent-bright">
                 premium
@@ -340,7 +349,7 @@ function CardDetailContent() {
             </button>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-4 max-w-sm">
+          <div className="mt-4 md:mt-6 grid grid-cols-2 gap-4 max-w-sm">
             <div
               className={`rounded-card border p-4 ${
                 isZero
