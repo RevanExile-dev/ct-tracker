@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { cachedJson, PRICES_CACHE } from "@/lib/apiCache";
 import { fetchPriceHistory } from "@/lib/db.server";
 
 export async function GET(
@@ -7,5 +7,5 @@ export async function GET(
 ) {
   const { id } = await params;
   const history = await fetchPriceHistory(Number(id));
-  return NextResponse.json(history);
+  return cachedJson(history, PRICES_CACHE);
 }

@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { cachedJson, PRICES_CACHE } from "@/lib/apiCache";
+import { NextRequest } from "next/server";
 import { fetchMoversPage } from "@/lib/db.server";
 import type { MoversDirection, MoversSort } from "@/lib/types";
 
@@ -26,5 +27,5 @@ export async function GET(req: NextRequest) {
     maxAgeDays: maxAgeParam ? Number(maxAgeParam) : null,
     occasioni,
   });
-  return NextResponse.json(result);
+  return cachedJson(result, PRICES_CACHE);
 }
