@@ -26,11 +26,21 @@ test("API carte: filtro per artista e conteggio coerenti", async ({ request }) =
 
 // Test con eventi touch veri (CLAUDE.md, regola 6): un click sintetico su un
 // viewport stretto non esercita il percorso touchstart/pointerdown reale.
+// Su telefono i filtri secondari stanno dietro il pulsante "Filtri" (chiusi di default).
+async function openMoreFilters(page) {
+  const toggle = page.getByRole("button", { name: /^Filtri/ });
+  await expect(toggle).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(300); // hydration su runner lenti
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.tap();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 test.describe("filtro Artista - telefono", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   test("tap su un artista filtra, il pannello resta aperto, chip e URL coerenti", async ({ page }) => {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    await openMoreFilters(page);
     const trigger = page.getByRole("button", { name: /Artista/i });
     await expect(trigger).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(300); // hydration su runner lenti (stesso motivo di mobile-toolbar)

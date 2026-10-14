@@ -85,6 +85,9 @@ export default function Toolbar({
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
   const [activeFilter, setActiveFilter] = useState<"rarity" | "artist" | "language" | "condition" | null>(null);
   const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const secondaryFilterCount =
+    selectedRarities.length + selectedArtists.length + selectedLanguages.length + selectedConditions.length + (onlyZero ? 1 : 0);
 
   // Suggerimenti di nome mentre si digita (tipo Google): l'elenco si apre
   // solo con il campo a fuoco; Invio sceglie quello evidenziato o, se non
@@ -288,7 +291,20 @@ export default function Toolbar({
         </div>
       </div>
 
-      <div className="filter-toolbar flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5">
+      {/* Su telefono i filtri secondari stanno dietro un pulsante (chiusi di
+          default) cosi' le carte entrano nel primo schermo; le selezioni attive
+          restano visibili come chip qui sotto. Da md in su il pannello e' sempre aperto. */}
+      <button
+        type="button"
+        onClick={() => setMoreFiltersOpen((v) => !v)}
+        aria-expanded={moreFiltersOpen}
+        aria-controls="home-filters"
+        className="md:hidden w-full min-h-11 flex items-center justify-between rounded-card border border-base-border bg-base-surface/45 px-4 text-sm text-ink-muted active:scale-[0.99]"
+      >
+        <span>Filtri{secondaryFilterCount > 0 ? ` (${secondaryFilterCount} attivi)` : ""}</span>
+        <span aria-hidden>{moreFiltersOpen ? "▲" : "▼"}</span>
+      </button>
+      <div id="home-filters" className={`filter-toolbar ${moreFiltersOpen ? "flex" : "hidden"} md:flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5`}>
         <FilterDropdown
           reserveSpace
           label="Rarità"
