@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { cachedJson, PRICES_CACHE } from "@/lib/apiCache";
+import { NextRequest } from "next/server";
 import { fetchCards } from "@/lib/db.server";
 import { parseCardsFilterOpts } from "@/lib/apiParams";
 import type { SortOption } from "@/lib/types";
@@ -20,5 +21,5 @@ export async function GET(req: NextRequest) {
     : opts.ids ? undefined : MAX_CARDS_LIMIT;
 
   const rows = await fetchCards({ ...opts, sortBy, limit });
-  return NextResponse.json(rows);
+  return cachedJson(rows, PRICES_CACHE);
 }

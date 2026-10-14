@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { cachedJson, PRICES_CACHE } from "@/lib/apiCache";
 import { fetchCardDetail } from "@/lib/db.server";
 
 export async function GET(
@@ -7,5 +7,5 @@ export async function GET(
 ) {
   const { id } = await params;
   const card = await fetchCardDetail(Number(id));
-  return NextResponse.json(card);
+  return cachedJson(card, PRICES_CACHE);
 }
