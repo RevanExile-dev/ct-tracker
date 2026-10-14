@@ -77,7 +77,7 @@ export default function SiteHeader({
                     <span aria-hidden className="invisible">00.000</span>{" "}carte
                   </>
                 )}{" "}
-                Pokémon TCG tracciate — dati aggiornati automaticamente ogni giorno da CardTrader.
+                Pokémon TCG tracciate — dati da CardTrader, aggiornati a rotazione (ogni giro per le carte che segui, ogni pochi giorni per le altre).
               </p>
               {/* Riga sempre presente (min-h-4): la data arriva da una chiamata
                   e, aggiunta dopo, spingerebbe in basso filtri e carte. */}
