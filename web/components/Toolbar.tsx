@@ -174,7 +174,7 @@ export default function Toolbar({
                 chooseSuggestion(shownSuggestions[Math.max(activeSuggestion, 0)]);
               }
             }}
-            placeholder="Cerca per nome o numero (es. 12/98)…"
+            placeholder="Nome o numero (es. 12/98)"
             aria-label="Cerca una carta per nome o numero"
             role="combobox"
             aria-expanded={shownSuggestions.length > 0}

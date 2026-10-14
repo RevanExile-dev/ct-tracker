@@ -62,7 +62,20 @@ export default function SiteHeader({
           </div>
           {!compact && (
             <>
-              <p className="text-ink-muted mt-2 max-w-xl">
+              <p className="text-ink-muted mt-2 max-w-xl sm:hidden">
+                Prezzi e andamento di{" "}
+                {totalCards ? (
+                  <span className="text-ink-primary font-medium">
+                    {totalCards.toLocaleString("it-IT")} carte
+                  </span>
+                ) : (
+                  <>
+                    <span aria-hidden className="invisible">00.000</span>{" "}carte
+                  </>
+                )}{" "}
+                Pokémon TCG, da CardTrader.
+              </p>
+              <p className="text-ink-muted mt-2 max-w-xl hidden sm:block">
                 Catalogo, prezzi e andamento storico di{" "}
                 {totalCards ? (
                   <span className="text-ink-primary font-medium">
@@ -88,7 +101,11 @@ export default function SiteHeader({
           )}
         </div>
 
-        <nav aria-label="Sezioni del sito" className="flex gap-2 flex-wrap">
+        <nav aria-label="Sezioni del sito" className="flex gap-2 w-full sm:w-auto sm:flex-wrap">
+          {/* Su telefono i link stanno su una sola riga scorrevole (il menu utente
+              resta fuori: il suo popup verrebbe tagliato dallo scorrimento); da sm in su
+              il contenitore sparisce (contents) e il layout e' quello di prima. */}
+          <div className="flex gap-2 min-w-0 flex-1 overflow-x-auto sm:contents [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {!onScanner && (
             <Link
               href="/scan"
@@ -130,6 +147,7 @@ export default function SiteHeader({
               🧾 Lotti
             </Link>
           )}
+          </div>
           <UserMenu />
         </nav>
       </div>
