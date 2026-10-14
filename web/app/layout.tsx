@@ -53,7 +53,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-body antialiased min-h-screen">
         <AuthSessionProvider>
           <AccountSync />
-          {children}
+          {/* Il contenuto occupa almeno uno schermo: durante lo scheletro di
+              caricamento il footer resta sotto la piega e non salta in vista
+              quando arrivano i dati (CLS 0,23 su PC misurato il 14/10). */}
+          <div className="min-h-screen">{children}</div>
           <SiteFooter />
           <BackToTop />
         </AuthSessionProvider>
