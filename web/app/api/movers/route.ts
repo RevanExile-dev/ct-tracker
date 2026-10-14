@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   const minDelta = minDeltaParam ? Number(minDeltaParam) : null;
   const pageParam = sp.get("page");
   const maxAgeParam = sp.get("maxAgeDays");
+  const occasioni = sp.get("occasioni") === "1";
 
   const result = await fetchMoversPage({
     direction,
@@ -23,6 +24,7 @@ export async function GET(req: NextRequest) {
     minDeltaCents: Number.isFinite(minDelta) ? minDelta : null,
     page: pageParam ? Number(pageParam) : undefined,
     maxAgeDays: maxAgeParam ? Number(maxAgeParam) : null,
+    occasioni,
   });
   return NextResponse.json(result);
 }

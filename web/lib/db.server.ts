@@ -7,6 +7,7 @@ import type { CardmarketPrices, CardmarketReference } from "./cardmarket";
 import topArtists from "@/config/top_artists.json";
 import {
   MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE,
+  OCCASIONI_MIN_PCT, OCCASIONI_MIN_CENTS, OCCASIONI_MIN_LISTINGS, OCCASIONI_MAX_COMPARE_DAYS, OCCASIONI_MAX_PRICE_AGE_DAYS,
   type ArtistOption, type CardRow, type CardsFilterOpts, type CardsSummary, type CardDetail, type ExpansionInfo,
   type Listing, type MoversPageOpts, type MoversPageResult, type PricePoint, type ScannerCatalogRow,
   type SortOption,
@@ -496,6 +497,20 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     // Data ignota (riga non ancora ricalcolata dal sync) = fuori da ogni
     // finestra: meglio non mostrarla che mostrarla senza sapere da quando.
     where.push(`lp.prev_it_nm_zero_captured_at >= CURRENT_DATE - ${p.add(Math.max(1, Math.floor(opts.maxAgeDays)))}::int`);
+  }
+  if (opts.occasioni) {
+    // Solo variazioni solide (vedi OCCASIONI_*): percentuale minima, prezzo e
+    // liquidita' minimi, confronto non vecchio e prezzo rilevato di recente.
+    const ratio = opts.direction === "rise" ? 1 + OCCASIONI_MIN_PCT / 100 : 1 - OCCASIONI_MIN_PCT / 100;
+    where.push(
+      opts.direction === "rise"
+        ? `lp.it_nm_zero_price_cents >= lp.prev_it_nm_zero_price_cents * ${p.add(ratio)}::real`
+        : `lp.it_nm_zero_price_cents <= lp.prev_it_nm_zero_price_cents * ${p.add(ratio)}::real`,
+    );
+    where.push(`lp.it_nm_zero_price_cents >= ${p.add(OCCASIONI_MIN_CENTS)}`);
+    where.push(`lp.it_nm_zero_listings_count >= ${p.add(OCCASIONI_MIN_LISTINGS)}`);
+    where.push(`lp.prev_it_nm_zero_captured_at >= CURRENT_DATE - ${p.add(OCCASIONI_MAX_COMPARE_DAYS)}::int`);
+    where.push(`lp.captured_at_ts >= now() - make_interval(days => ${p.add(OCCASIONI_MAX_PRICE_AGE_DAYS)}::int)`);
   }
   if (opts.minCents != null) {
     where.push(`lp.it_nm_zero_price_cents >= ${p.add(opts.minCents)}`);

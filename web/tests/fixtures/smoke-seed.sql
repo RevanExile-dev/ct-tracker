@@ -116,6 +116,25 @@ SELECT 902000 + n, CURRENT_DATE, now(), 300, 'EUR', 1, 300, 'EUR', 1000, 6, CURR
 FROM generate_series(1, 2) AS n
 ON CONFLICT (blueprint_id) DO NOTHING;
 
+-- "Occasioni" (tests/movers-occasioni.spec.mjs): una sola carta supera tutte le
+-- soglie (ribasso 33%, 20 EUR, 12 inserzioni, prezzo di oggi, confronto di 4 giorni
+-- fa); le altre mancano di UNA soglia ciascuna.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium) VALUES
+  (903001, 'Occasione Valida', '1/9', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/occasione-1-smoke-test-set.jpg', 'Common', 0),
+  (903002, 'Occasione Ribasso Lieve', '2/9', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/occasione-2-smoke-test-set.jpg', 'Common', 0),
+  (903003, 'Occasione Poche Inserzioni', '3/9', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/occasione-3-smoke-test-set.jpg', 'Common', 0),
+  (903004, 'Occasione Prezzo Vecchio', '4/9', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/occasione-4-smoke-test-set.jpg', 'Common', 0),
+  (903005, 'Occasione Prezzo Basso', '5/9', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/occasione-5-smoke-test-set.jpg', 'Common', 0)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, it_nm_zero_price_cents, it_nm_zero_price_currency, prev_it_nm_zero_price_cents, it_nm_zero_listings_count, prev_it_nm_zero_captured_at) VALUES
+  (903001, CURRENT_DATE, now(), 2000, 'EUR', 12, 2000, 'EUR', 3000, 12, CURRENT_DATE - 4),
+  (903002, CURRENT_DATE, now(), 2800, 'EUR', 12, 2800, 'EUR', 3000, 12, CURRENT_DATE - 4),
+  (903003, CURRENT_DATE, now(), 2000, 'EUR', 6, 2000, 'EUR', 3000, 6, CURRENT_DATE - 4),
+  (903004, CURRENT_DATE - 10, now() - interval '10 days', 2000, 'EUR', 12, 2000, 'EUR', 3000, 12, CURRENT_DATE - 14),
+  (903005, CURRENT_DATE, now(), 300, 'EUR', 12, 300, 'EUR', 450, 12, CURRENT_DATE - 4)
+ON CONFLICT (blueprint_id) DO NOTHING;
+
 INSERT INTO meta (key, value) VALUES
   ('last_price_sync', now()::text),
   ('last_catalog_sync', now()::text)

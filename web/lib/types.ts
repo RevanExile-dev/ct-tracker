@@ -117,7 +117,16 @@ export type MoversPageOpts = {
   page?: number;
   /** Solo confronti con un prezzo non piu' vecchio di N giorni (null/assente = tutti). */
   maxAgeDays?: number | null;
+  /** "Occasioni": solo variazioni solide, cioe' di almeno 15%, prezzo da 5 EUR,
+   * almeno 10 inserzioni, confronto entro 30 giorni e prezzo rilevato da meno di 3. */
+  occasioni?: boolean;
 };
+
+export const OCCASIONI_MIN_PCT = 15;
+export const OCCASIONI_MIN_CENTS = 500;
+export const OCCASIONI_MIN_LISTINGS = 10;
+export const OCCASIONI_MAX_COMPARE_DAYS = 30;
+export const OCCASIONI_MAX_PRICE_AGE_DAYS = 3;
 
 export type MoversPageResult = {
   cards: CardRow[];
