@@ -174,7 +174,7 @@ function CardTile({
 
   return (
     <div
-      className="group relative card-enter card-cv"
+      className="group relative card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
     >
       {/* InteractiveCard avvolge l'INTERA tile (immagine+nome+prezzo+
