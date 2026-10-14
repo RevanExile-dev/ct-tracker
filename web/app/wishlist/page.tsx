@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { CardRow, fetchCards } from "@/lib/db";
 import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
-import { priceDeltaPct } from "@/lib/format";
+import { formatCents, priceDeltaPct } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import CardTile from "@/components/CardTile";
 import SiteHeader from "@/components/SiteHeader";
@@ -66,6 +66,19 @@ function WishlistContent() {
     }).length;
   }, [sorted]);
 
+  // Quanto costa comprare tutta la lista adesso (stesso prezzo mostrato sulle
+  // carte); le carte senza prezzo non entrano nel totale e vengono contate.
+  const totals = useMemo(() => {
+    let cents = 0;
+    let missing = 0;
+    for (const c of sorted ?? []) {
+      const p = c.best_price_cents ?? c.latest_price_cents;
+      if (p && p > 0) cents += p;
+      else missing += 1;
+    }
+    return { cents, missing };
+  }, [sorted]);
+
   return (
     <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12">
       <SiteHeader compact />
@@ -90,6 +103,17 @@ function WishlistContent() {
           <div>
             <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Carte in lista</div>
             <div className="font-display text-xl font-bold text-ink-primary">{sorted.length}</div>
+          </div>
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Totale oggi</div>
+            <div className="font-display text-xl font-bold text-ink-primary" data-testid="wishlist-total">
+              {formatCents(totals.cents)}
+            </div>
+            {totals.missing > 0 && (
+              <div className="text-[11px] text-ink-faint">
+                {totals.missing} {totals.missing === 1 ? "carta senza prezzo non inclusa" : "carte senza prezzo non incluse"}
+              </div>
+            )}
           </div>
           {dropsCount > 0 && (
             <div>
