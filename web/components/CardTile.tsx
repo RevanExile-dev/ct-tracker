@@ -275,7 +275,7 @@ function CardTile({
               >
                 {delta >= 0 ? "▲" : "▼"} {formatPercent(Math.abs(delta), 1)}
                 {formatCompareAge(deltaAgeDays) && (
-                  <span className="text-ink-faint"> {formatCompareAge(deltaAgeDays)}</span>
+                  <span className="block text-[10px] leading-tight text-ink-faint">{formatCompareAge(deltaAgeDays)}</span>
                 )}
               </div>
             )}
