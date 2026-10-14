@@ -217,6 +217,21 @@ body::after {
   animation-delay: var(--enter-delay, 0ms);
 }
 
+/* Le tile fuori schermo non vengono disegnate ne' impaginate finche' non
+   servono (la home ne monta centinaia): scroll PC misurato ~33 -> ~44 fps.
+   L'altezza stimata (poi sostituita da quella vera, "auto") e' quella reale
+   della tile compatta. */
+.card-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 176px;
+  /* il contenimento di paint ritaglierebbe l'alone/ombra al passaggio del
+     mouse: si concede un margine */
+  overflow-clip-margin: 48px;
+}
+@media (max-width: 767px) {
+  .card-cv { contain-intrinsic-size: auto 164px; }
+}
+
 /* --- Rivelazione della carta sulla pagina di dettaglio: la carta "vola"
    verso chi guarda ruotando leggermente, come l'apertura di una carta in
    Pokemon TCG Pocket, invece del semplice fade-in-up generico usato altrove
