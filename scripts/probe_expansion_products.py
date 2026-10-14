@@ -1,39 +1,47 @@
 """Diagnostica (sola lettura): GET /marketplace/products?expansion_id=X dà
-davvero le stesse offerte del singolo blueprint? Quanto costa (tempo, byte)?"""
+gli stessi riassunti del singolo blueprint? Quanto costa (tempo, byte)?"""
 import json
+import random
 import sys
 import time
 
+import db
 from api_client import CardTraderClient
 
-
-def key(p):
-    return (p.get("id"), p["price"]["cents"] if isinstance(p.get("price"), dict) else p.get("price_cents"))
+FIELDS = ("min_price_cents", "best_price_cents", "it_nm_zero_price_cents", "listings_count", "languages_available")
 
 
 def main():
     c = CardTraderClient()
+    random.seed(1)
     for exp_id in (int(x) for x in sys.argv[1:]):
         t = time.time()
-        data = c._get("/marketplace/products", params={"expansion_id": exp_id}, limiter=c._marketplace_limiter)
+        resp = c.session.get(
+            "https://api.cardtrader.com/api/v2/marketplace/products",
+            params={"expansion_id": exp_id}, timeout=120,
+        )
         dt = time.time() - t
-        raw = json.dumps(data)
-        print(f"expansion {exp_id}: {dt:.1f}s, {len(raw)/1024:.0f} KB, blueprint con offerte: {len(data or {})}")
-        if not data:
+        print(f"expansion {exp_id}: HTTP {resp.status_code}, {dt:.1f}s, {len(resp.content)/1048576:.1f} MB, "
+              f"gzip={resp.headers.get('content-encoding')}")
+        if resp.status_code != 200:
+            print(resp.text[:300])
             continue
-        sizes = [len(v) for v in data.values()]
-        print(f"  offerte per blueprint: min {min(sizes)}, max {max(sizes)}, totale {sum(sizes)}")
-        first = next(iter(data.values()))[0]
-        print("  esempio offerta, chiavi:", sorted(first.keys()))
-        # confronto con la chiamata singola su 4 blueprint (due con molte offerte, due con poche)
-        ids = sorted(data, key=lambda k: -len(data[k]))
-        sample = ids[:2] + ids[-2:]
+        data = resp.json()
+        print(f"  blueprint con offerte: {len(data)}, offerte totali {sum(len(v) for v in data.values())}")
+        ids = list(data)
+        sample = random.sample(ids, min(12, len(ids)))
+        same, diff = 0, 0
         for bid in sample:
             single = c.get_marketplace_products(int(bid))
-            a = sorted(key(p) for p in data[bid])
-            b = sorted(key(p) for p in single)
-            print(f"  bp {bid}: espansione {len(a)} offerte, singola {len(b)}, uguali: {a == b}")
-        # blueprint senza offerte: assenti dalla risposta?
+            a, b = db._summarize_products(data[bid]), db._summarize_products(single)
+            ov = len({p["id"] for p in data[bid]} & {p["id"] for p in single}) / max(1, len({p["id"] for p in single}))
+            eq = all(a[f] == b[f] for f in FIELDS) if a and b else a == b
+            same += eq
+            diff += not eq
+            tag = "uguale" if eq else "DIVERSO"
+            print(f"  bp {bid}: {tag}, offerte {len(data[bid])} vs {len(single)}, id in comune {ov:.0%}"
+                  + ("" if eq else f" | exp={ {f: a[f] for f in FIELDS} } sing={ {f: b[f] for f in FIELDS} }"))
+        print(f"  riassunto uguale su {same}/{same+diff}")
     print("fine")
 
 
