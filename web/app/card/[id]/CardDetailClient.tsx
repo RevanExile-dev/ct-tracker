@@ -461,7 +461,7 @@ function CardDetailContent() {
                               </span>
                             )}
                             {l.can_sell_via_hub === 1 && (
-                              <span className="ml-2 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/40 text-accent-bright align-middle">
+                              <span className="ml-2 text-[11px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/40 text-accent-bright align-middle">
                                 CardTrader Zero
                               </span>
                             )}

@@ -399,11 +399,11 @@ export default function PriceChart({
         <span>{formatDate(withPrice[withPrice.length - 1].captured_at)}</span>
       </div>
       {withPrice.length > 1 && (
-        <p className="sm:hidden mt-2 text-center text-[10px] text-ink-faint">
+        <p className="sm:hidden mt-2 text-center text-[11px] text-ink-faint">
           Trascina sul grafico per scorrere lo storico
         </p>
       )}
-      <p className="mt-3 text-[10px] text-ink-faint">
+      <p className="mt-3 text-[11px] text-ink-faint">
         Un punto per ogni rilevazione (per le carte non seguite anche a distanza di giorni), non in tempo reale — il marketplace CardTrader può inoltre avere una breve cache lato loro tra un aggiornamento e l&apos;altro.
       </p>
     </div>
