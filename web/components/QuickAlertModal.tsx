@@ -9,6 +9,20 @@ import { formatCents } from "@/lib/format";
 
 const ANY_OPTION = ""; // select vuoto = "qualunque" (stesso valore sentinella di /account/alerts)
 
+// Preset "affare": un tocco compila profilo e soglia dell'allarme con la
+// scelta piu' comune (italiano, Near Mint, CardTrader Zero, calo del 25%).
+// Sono gli stessi campi che l'utente puo' impostare a mano: il preset non
+// introduce un tipo di allarme nuovo, quindi vale per lui tutto cio' che
+// vale per gli allarmi normali (baseline fissata alla creazione, tetto
+// allarmi per account, avviso su Telegram).
+const DEAL_PRESET = {
+  languages: ["it"],
+  condition: "Near Mint",
+  canSellViaHub: "only" as const,
+  targetType: "percent_drop" as const,
+  targetInput: "25",
+};
+
 // In modifica le opzioni arrivano da una fetch asincrona: finche' non sono
 // caricate (o se il valore salvato non e' piu' tra quelle offerte) il valore
 // corrente deve comunque esistere nella select, altrimenti React la mostra
@@ -87,6 +101,20 @@ export default function QuickAlertModal({
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  function applyDealPreset() {
+    setLanguages(DEAL_PRESET.languages);
+    setCondition(DEAL_PRESET.condition);
+    setCanSellViaHub(DEAL_PRESET.canSellViaHub);
+    setTargetType(DEAL_PRESET.targetType);
+    setTargetInput(DEAL_PRESET.targetInput);
+    setError(null);
+  }
+
+  const dealPresetActive =
+    languages.length === 1 && languages[0] === DEAL_PRESET.languages[0] &&
+    condition === DEAL_PRESET.condition && canSellViaHub === DEAL_PRESET.canSellViaHub &&
+    targetType === DEAL_PRESET.targetType && targetInput === DEAL_PRESET.targetInput;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -178,6 +206,24 @@ export default function QuickAlertModal({
             )}
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+              {!editing && (
+                <button
+                  type="button"
+                  onClick={applyDealPreset}
+                  aria-pressed={dealPresetActive}
+                  className={`w-full text-left min-h-11 px-3 py-2 rounded-card border transition-colors active:scale-95 ${
+                    dealPresetActive
+                      ? "bg-accent/10 border-accent/60 text-accent-bright"
+                      : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+                  }`}
+                >
+                  <span className="block text-sm">🔥 Affare: −25%, italiano, Near Mint</span>
+                  <span className="block text-xs text-ink-faint">
+                    Compila tutto per te: avvisami quando costa il 25% in meno (solo CardTrader Zero).
+                  </span>
+                </button>
+              )}
+
               <div>
                 <div className="text-xs font-mono uppercase tracking-wider text-ink-faint mb-2">Profilo</div>
                 <div className="grid gap-3 sm:grid-cols-2">
