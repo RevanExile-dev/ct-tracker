@@ -57,7 +57,7 @@ export default function SiteHeader({
               <BrandLogo compact={compact} />
             </Link>
             <span className="font-mono text-xs uppercase tracking-widest text-accent">
-              CardTrader Tracker
+              Prezzi Pokémon TCG
             </span>
           </div>
           {!compact && (

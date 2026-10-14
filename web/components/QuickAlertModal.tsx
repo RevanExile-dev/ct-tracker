@@ -127,7 +127,7 @@ export default function QuickAlertModal({
       targetValue = Math.round(parsed * 100);
     } else {
       const parsed = Number(targetInput);
-      if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 100) { setError("Percentuale di calo non valida (1-99)."); return; }
+      if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 100) { setError("Percentuale di ribasso non valida (1-99)."); return; }
       targetValue = parsed;
     }
 
@@ -281,7 +281,7 @@ export default function QuickAlertModal({
                         : "bg-base-surface2 border-base-border text-ink-muted"
                     }`}
                   >
-                    Calo %
+                    Ribasso %
                   </button>
                 </div>
 

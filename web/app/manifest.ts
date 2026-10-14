@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Carta Viva",
-    short_name: "Carta Viva",
+    name: "CartaViva",
+    short_name: "CartaViva",
     description: "Tracker e Binder personale per carte collezionabili.",
     start_url: "/",
     display: "standalone",

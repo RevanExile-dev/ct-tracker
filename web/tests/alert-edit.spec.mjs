@@ -101,7 +101,7 @@ test.describe('modifica allarme prezzo (touch)', () => {
     await page.getByRole('button', { name: /Modifica allarme Pikachu VMAX/ }).tap();
     const dialog = page.getByRole('dialog', { name: 'Modifica allarme di prezzo' });
     await expect(dialog.getByLabel('Attesa minima tra due avvisi (ore)')).toHaveValue('12');
-    await dialog.getByRole('button', { name: 'Calo %' }).tap();
+    await dialog.getByRole('button', { name: 'Ribasso %' }).tap();
     await dialog.getByPlaceholder('es. 20').fill('15');
     await dialog.getByRole('button', { name: 'Salva' }).tap();
     await expect(dialog).toHaveCount(0);

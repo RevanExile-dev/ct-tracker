@@ -505,7 +505,7 @@ function MoversContent() {
                   : "bg-base-surface2 border-base-border text-ink-muted"
               }`}
             >
-              ▼ Cali
+              ▼ Ribassi
             </button>
           </div>
 
@@ -552,14 +552,14 @@ function MoversContent() {
 
             <section ref={dropSectionRef} className={activeTab === "drops" ? "" : "hidden lg:block"}>
               <h2 className="font-display font-medium text-signal-down flex items-center gap-2 mb-4">
-                ▼ Maggiori cali
+                ▼ Maggiori ribassi
                 {drops !== null && (
                   <span className="text-xs font-mono text-ink-faint">({drops.totalCount})</span>
                 )}
               </h2>
               {drops === null && <MoversSkeleton />}
               {drops !== null && drops.cards.length === 0 && (
-                <div className="text-ink-muted text-sm">Nessun calo di prezzo in questa combinazione di filtri.</div>
+                <div className="text-ink-muted text-sm">Nessun ribasso di prezzo in questa combinazione di filtri.</div>
               )}
               {drops !== null && drops.cards.length > 0 && (
                 <>

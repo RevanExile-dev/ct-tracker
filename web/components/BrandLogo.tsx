@@ -1,6 +1,6 @@
 export default function BrandLogo({ compact = false }: { compact?: boolean }) {
   return (
-    <span className="brand-logo inline-flex items-center gap-2.5" aria-label="Carta Viva">
+    <span className="brand-logo inline-flex items-center gap-2.5" aria-label="CartaViva">
       <svg className={compact ? "brand-mark h-8 w-8" : "brand-mark h-9 w-9 sm:h-11 sm:w-11"} viewBox="0 0 48 48" role="img" aria-hidden>
         <defs>
           <linearGradient id="carta-viva-mark" x1="5" y1="4" x2="43" y2="45" gradientUnits="userSpaceOnUse">
