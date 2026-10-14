@@ -10,6 +10,8 @@ test("movers nasconde le variazioni sotto 1€ di default e le mostra col tocco"
     if (r.url().includes("/api/movers")) urls.push(r.url());
   });
   await page.goto(`${BASE_URL}/movers`, { waitUntil: "domcontentloaded" });
+  // I filtri su telefono stanno dietro il pulsante "Filtri" (chiusi di default).
+  await page.getByRole("button", { name: /^Filtri/ }).tap();
   const toggle = page.getByRole("button", { name: "Nascondo variazioni sotto 1€" });
   await expect(toggle).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => urls.some((u) => u.includes("minDeltaCents=100"))).toBe(true);

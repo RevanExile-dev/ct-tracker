@@ -23,13 +23,25 @@ for (const variant of [
   test.describe(`/movers periodo di confronto - ${variant.name}`, () => {
     test.use(variant.contextOptions);
 
+    // Su telefono i filtri stanno dietro il pulsante "Filtri" (chiusi di default).
+    async function openFilters(page) {
+      const toggle = page.getByRole("button", { name: /^Filtri/ });
+      // Aspetta che la pagina sia idratata: o c'e' il pulsante (telefono) o i filtri sono gia' in vista.
+      await toggle.or(page.getByRole("button", { name: "30 giorni" })).first().waitFor({ state: "visible" });
+      if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-expanded")) === "false") {
+        await toggle.tap();
+      }
+    }
+
     async function press(page, locator) {
+      await openFilters(page);
       if (variant.tap) await locator.tap();
       else await locator.click();
     }
 
     test("di default non mostra confronti piu' vecchi di 30 giorni e li etichetta", async ({ page }) => {
       await page.goto(`${BASE_URL}/movers?tab=drops`, { waitUntil: "domcontentloaded" });
+      await openFilters(page);
       await expect(page.getByRole("button", { name: "30 giorni" })).toHaveAttribute("aria-pressed", "true");
       await expect(visible(page.getByText(/Mover Card/), page).first()).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText("Vecchio Confronto")).toHaveCount(0);
@@ -54,12 +66,14 @@ for (const variant of [
       await expect(page.getByText(/Mover Card/)).toHaveCount(0);
       await expect(visible(page.getByText(/Nessun .* in questa combinazione di filtri/), page).first()).toBeVisible();
       await press(page, page.getByRole("button", { name: /Reset filtri/ }));
+      await openFilters(page);
       await expect(page.getByRole("button", { name: "30 giorni" })).toHaveAttribute("aria-pressed", "true");
       await expect(visible(page.getByText(/Mover Card/), page).first()).toBeVisible({ timeout: 15_000 });
     });
 
     test("un periodo sconosciuto nell'URL torna al predefinito senza errori", async ({ page }) => {
       await page.goto(`${BASE_URL}/movers?period=boh`, { waitUntil: "domcontentloaded" });
+      await openFilters(page);
       await expect(page.getByRole("button", { name: "30 giorni" })).toHaveAttribute("aria-pressed", "true");
     });
   });
