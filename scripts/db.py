@@ -702,6 +702,21 @@ PRIORITY_ALERT = 0
 PRIORITY_WISHLIST = 1
 PRIORITY_BINDER = 2
 PRIORITY_CATALOG = 3
+# Ogni quanti giorni conviene rinfrescare una carta del catalogo, per fascia di
+# prezzo (centesimi, "da" in giu'): chi vale di piu' si muove di piu' e conta di
+# piu' per chi compra. Misurato il 14 ott 2026: 2.673 carte >= 20 euro, 5.432 tra
+# 3 e 20, 6.436 tra 0,50 e 3, 15.648 sotto 0,50 o senza offerte; con questi
+# obiettivi servono ~8.000 chiamate al giorno, quanto reggono 4 giri notturni
+# (circa 2.000 carte a giro). L'ordine e' "quanto e' in ritardo rispetto al suo
+# obiettivo" (eta' / giorni obiettivo): cresce con l'eta' per OGNI carta, quindi
+# nessuna fascia puo' restare indietro per sempre, e se la capacita' cala (notti
+# saltate) il ritardo si distribuisce su tutte invece di affamare le economiche.
+CATALOG_REFRESH_BANDS = (
+    (2000, 1),   # >= 20 euro: ogni giorno
+    (300, 3),    # 3 - 20 euro: ogni 3 giorni
+    (50, 5),     # 0,50 - 3 euro: ogni 5 giorni
+    (0, 7),      # sotto 0,50 euro o senza offerte: ogni 7 giorni
+)
 
 
 def fetch_priority_batch(conn, limit: int):
@@ -730,7 +745,9 @@ def fetch_priority_batch(conn, limit: int):
     with conn.cursor() as cur:
         cur.execute(
             """
+            SELECT id, name, expansion_name, priority FROM (
             SELECT b.id, b.name, b.expansion_name,
+                   lp.last_attempted_at, lp.captured_at_ts, lp.best_price_cents, lp.min_price_cents,
                    CASE
                      WHEN EXISTS (SELECT 1 FROM price_alerts pa WHERE pa.blueprint_id = b.id AND pa.state = 'armed') THEN %(p_alert)s
                      WHEN EXISTS (SELECT 1 FROM wishlist_cards w WHERE w.blueprint_id = b.id) THEN %(p_wishlist)s
@@ -739,11 +756,30 @@ def fetch_priority_batch(conn, limit: int):
                    END AS priority
             FROM blueprints b
             LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
-            ORDER BY priority ASC, COALESCE(lp.last_attempted_at, lp.captured_at_ts) ASC NULLS FIRST, b.id ASC
+            ) t
+            ORDER BY priority ASC,
+                     CASE WHEN priority < %(p_catalog)s
+                          THEN COALESCE(last_attempted_at, captured_at_ts) END ASC NULLS FIRST,
+                     CASE WHEN priority = %(p_catalog)s THEN
+                       CASE WHEN COALESCE(last_attempted_at, captured_at_ts) IS NULL THEN 1e12
+                       ELSE EXTRACT(EPOCH FROM now() - COALESCE(last_attempted_at, captured_at_ts))
+                            / (CASE
+                                 WHEN COALESCE(best_price_cents, min_price_cents, 0) >= %(t1_cents)s THEN %(t1_days)s
+                                 WHEN COALESCE(best_price_cents, min_price_cents, 0) >= %(t2_cents)s THEN %(t2_days)s
+                                 WHEN COALESCE(best_price_cents, min_price_cents, 0) >= %(t3_cents)s THEN %(t3_days)s
+                                 ELSE %(t4_days)s
+                               END * 86400.0)
+                       END
+                     END DESC NULLS LAST,
+                     id ASC
             LIMIT %(limit)s
             """,
             {"p_alert": PRIORITY_ALERT, "p_wishlist": PRIORITY_WISHLIST, "p_binder": PRIORITY_BINDER,
-             "p_catalog": PRIORITY_CATALOG, "limit": limit},
+             "p_catalog": PRIORITY_CATALOG, "limit": limit,
+             "t1_cents": CATALOG_REFRESH_BANDS[0][0], "t1_days": CATALOG_REFRESH_BANDS[0][1],
+             "t2_cents": CATALOG_REFRESH_BANDS[1][0], "t2_days": CATALOG_REFRESH_BANDS[1][1],
+             "t3_cents": CATALOG_REFRESH_BANDS[2][0], "t3_days": CATALOG_REFRESH_BANDS[2][1],
+             "t4_days": CATALOG_REFRESH_BANDS[3][1]},
         )
         return cur.fetchall()
 
