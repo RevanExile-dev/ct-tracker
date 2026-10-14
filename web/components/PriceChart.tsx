@@ -113,8 +113,7 @@ export default function PriceChart({
   if (withPrice.length === 0) {
     return (
       <div className="rounded-card border border-base-border bg-base-surface p-8 text-center text-ink-muted">
-        Ancora nessuno storico prezzi per questa carta. Torna dopo il prossimo aggiornamento
-        giornaliero.
+        Ancora nessuno storico prezzi per questa carta. Torna dopo il prossimo aggiornamento.
       </div>
     );
   }
@@ -405,7 +404,7 @@ export default function PriceChart({
         </p>
       )}
       <p className="mt-3 text-[10px] text-ink-faint">
-        Un punto al giorno, non in tempo reale — il marketplace CardTrader può inoltre avere una breve cache lato loro tra un aggiornamento e l&apos;altro.
+        Un punto per ogni rilevazione (per le carte non seguite anche a distanza di giorni), non in tempo reale — il marketplace CardTrader può inoltre avere una breve cache lato loro tra un aggiornamento e l&apos;altro.
       </p>
     </div>
   );

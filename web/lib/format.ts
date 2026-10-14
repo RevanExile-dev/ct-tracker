@@ -56,6 +56,11 @@ export type TrendVsAverage = { avgCents: number; deltaPct: number; days: number 
  * "best" di oggi con la media del "min" storico avrebbe mostrato un calo/
  * rialzo falso ogni volta che i due differiscono, anche a mercato fermo.
  */
+/** Sotto questo numero di rilevazioni la "media" e' solo il prezzo di ieri:
+ * mostrava quasi sempre 0,0% (misurato il 14/10: su 28.815 carte con storico
+ * a 30 gg, 17.758 hanno 1 sola rilevazione e 10.545 due; solo 512 ne hanno 3+). */
+export const MIN_TREND_POINTS = 3;
+
 export function trendVsMovingAverage(
   history: { captured_at: string; min_price_cents: number | null; best_price_cents?: number | null }[],
   currentCents: number | null,
@@ -71,7 +76,7 @@ export function trendVsMovingAverage(
   const withPrice = history.filter((p) => valueOf(p) !== null);
   const windowed = withPrice.filter((p) => new Date(p.captured_at) >= cutoff);
   const points = windowed.length > 0 ? windowed : withPrice;
-  if (points.length === 0) return null;
+  if (points.length < MIN_TREND_POINTS) return null;
 
   const avgCents = points.reduce((sum, p) => sum + (valueOf(p) as number), 0) / points.length;
   if (avgCents === 0) return null;
