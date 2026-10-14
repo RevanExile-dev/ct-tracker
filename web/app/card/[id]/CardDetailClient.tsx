@@ -15,6 +15,7 @@ import { getWishlistIds } from "@/lib/wishlist";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
 import InteractiveCard from "@/components/InteractiveCard";
+import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 import PriceChart from "@/components/PriceChart";
 import ConditionBadge from "@/components/ConditionBadge";
@@ -40,6 +41,9 @@ function CardDetailContent() {
     : "/";
 
   const [card, setCard] = useState<CardDetail | null | undefined>(undefined);
+  // Errore di rete/server: diverso da "carta inesistente" (card === null).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const { data: session } = useSession();
@@ -81,7 +85,7 @@ function CardDetailContent() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch(() => { if (!cancelled) setCard(null); });
+    fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch((e) => { if (!cancelled) setLoadError(String(e?.message ?? e)); });
     fetchPriceHistory(id).then((value) => { if (!cancelled) setHistory(value); }).catch(() => {});
     fetchBestListings(id).then((value) => { if (!cancelled) setListings(value); }).catch(() => {});
     const frame = requestAnimationFrame(() => {
@@ -95,7 +99,7 @@ function CardDetailContent() {
       setImgError(false);
     });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [id]);
+  }, [id, reloadTick]);
 
   // Prezzo piu' basso per lingua tra le migliori inserzioni gia' scaricate
   // (fetchBestListings): confronto "a colpo d'occhio", non un'analisi
@@ -135,6 +139,20 @@ function CardDetailContent() {
 
   function handleToggleCondition(c: string) {
     setSelectedConditions((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+  }
+
+  if (loadError) {
+    return (
+      <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
+        <SiteHeader compact />
+        <LoadError
+          title="Non riesco a caricare questa carta."
+          detail={loadError}
+          className=""
+          onRetry={() => { setLoadError(null); setCard(undefined); setReloadTick((t) => t + 1); }}
+        />
+      </main>
+    );
   }
 
   if (card === undefined) {

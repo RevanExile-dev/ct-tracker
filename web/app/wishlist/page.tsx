@@ -8,6 +8,7 @@ import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
 import { formatCents, priceDeltaPct } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import CardTile from "@/components/CardTile";
+import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 
 function WishlistContent() {
@@ -16,6 +17,7 @@ function WishlistContent() {
   const [cards, setCards] = useState<CardRow[] | null>(null);
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +30,7 @@ function WishlistContent() {
       .then((cards) => { if (!cancelled) setCards(cards); })
       .catch((reason) => { if (!cancelled) setError(String(reason?.message ?? reason)); });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, []);
+  }, [reloadTick]);
 
   // Chi tiene d'occhio una carta che non possiede ancora vuole vedere prima
   // di tutto quella che e' calata di piu': e' il momento migliore per
@@ -125,9 +127,11 @@ function WishlistContent() {
       )}
 
       {error && (
-        <div className="mt-8 rounded-card border border-signal-down/30 bg-signal-down/5 text-signal-down p-5 font-mono text-sm">
-          {error}
-        </div>
+        <LoadError
+          title="Non riesco a caricare la lista desideri."
+          detail={error}
+          onRetry={() => { setError(null); setCards(null); setReloadTick((t) => t + 1); }}
+        />
       )}
 
       {cards === null && !error && (
