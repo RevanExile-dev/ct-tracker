@@ -7,6 +7,10 @@ import {
   CardRow,
   MIN_MOVER_LISTINGS,
   MOVERS_MIN_DELTA_CENTS,
+  OCCASIONI_MIN_PCT,
+  OCCASIONI_MIN_CENTS,
+  OCCASIONI_MIN_LISTINGS,
+  OCCASIONI_MAX_PRICE_AGE_DAYS,
   MOVERS_PAGE_SIZE,
   MoversPageResult,
   MoversSort,
@@ -153,6 +157,7 @@ function MoversContent() {
   const [periodKey, setPeriodKey] = useState<string>(() => findMoversPeriod(searchParams.get("period")).key);
   const [sort, setSort] = useState<MoversSort>(() => (searchParams.get("sort") === "abs" ? "abs" : "pct"));
   const [showSmall, setShowSmall] = useState<boolean>(() => searchParams.get("piccole") === "1");
+  const [occasioni, setOccasioni] = useState<boolean>(() => searchParams.get("occasioni") === "1");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [risePage, setRisePage] = useState(() => parsePage(searchParams.get("risePage")));
   const [dropPage, setDropPage] = useState(() => parsePage(searchParams.get("dropPage")));
@@ -182,13 +187,14 @@ function MoversContent() {
     }
     if (sort !== "pct") params.set("sort", sort);
     if (showSmall) params.set("piccole", "1");
+    if (occasioni) params.set("occasioni", "1");
     if (periodKey !== DEFAULT_MOVERS_PERIOD) params.set("period", periodKey);
     if (risePage > 1) params.set("risePage", String(risePage));
     if (dropPage > 1) params.set("dropPage", String(dropPage));
     if (activeTab !== "rises") params.set("tab", activeTab);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, risePage, dropPage, activeTab, pathname, router]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, occasioni, risePage, dropPage, activeTab, pathname, router]);
 
   useEffect(() => {
     fetchRarities().then(setRarities).catch(() => {});
@@ -204,6 +210,7 @@ function MoversContent() {
       sort,
       maxAgeDays: findMoversPeriod(periodKey).days,
       minDeltaCents: showSmall ? null : MOVERS_MIN_DELTA_CENTS,
+      occasioni,
     };
     Promise.all([
       fetchMoversPage({ ...base, direction: "rise", page: risePage }),
@@ -221,7 +228,7 @@ function MoversContent() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, risePage, dropPage]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, periodKey, showSmall, occasioni, risePage, dropPage]);
 
   // useCallback: CardTile e' memo (vedi components/CardTile.tsx), un
   // riferimento stabile qui evita di ri-renderizzare tutte le tile di
@@ -276,6 +283,11 @@ function MoversContent() {
     resetPages();
   }
 
+  function handleToggleOccasioni() {
+    setOccasioni((v) => !v);
+    resetPages();
+  }
+
   function handleToggleSmall() {
     setShowSmall((v) => !v);
     resetPages();
@@ -287,7 +299,7 @@ function MoversContent() {
   }
 
   const hasActiveFilters = Boolean(
-    selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct" || showSmall ||
+    selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct" || showSmall || occasioni ||
       periodKey !== DEFAULT_MOVERS_PERIOD
   );
   const activeFilterCount =
@@ -307,6 +319,7 @@ function MoversContent() {
     setCustomMax("");
     setSort("pct");
     setShowSmall(false);
+    setOccasioni(false);
     setPeriodKey(DEFAULT_MOVERS_PERIOD);
     resetPages();
   }
@@ -349,12 +362,31 @@ function MoversContent() {
         {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che cambia prezzo.
       </p>
 
+      <div className="mt-4 flex items-center gap-x-3 gap-y-1 flex-wrap">
+        <button
+          type="button"
+          aria-pressed={occasioni}
+          onClick={handleToggleOccasioni}
+          className={`min-h-11 text-sm px-4 rounded-full border transition-colors active:scale-95 ${
+            occasioni
+              ? "bg-accent/10 border-accent/60 text-accent-bright"
+              : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+          }`}
+        >
+          Occasioni
+        </button>
+        <span className="text-xs text-ink-muted">
+          Solo variazioni solide: almeno {OCCASIONI_MIN_PCT}%, da {OCCASIONI_MIN_CENTS / 100} €, almeno{" "}
+          {OCCASIONI_MIN_LISTINGS} inserzioni, prezzo rilevato negli ultimi {OCCASIONI_MAX_PRICE_AGE_DAYS} giorni.
+        </span>
+      </div>
+
       <button
         type="button"
         aria-expanded={filtersOpen}
         aria-controls="movers-filters"
         onClick={() => setFiltersOpen((v) => !v)}
-        className="lg:hidden mt-4 min-h-11 w-full text-sm rounded-card border border-base-border bg-base-surface/55 px-4 flex items-center justify-between text-ink-muted active:scale-[0.99] transition-colors"
+        className="lg:hidden mt-3 min-h-11 w-full text-sm rounded-card border border-base-border bg-base-surface/55 px-4 flex items-center justify-between text-ink-muted active:scale-[0.99] transition-colors"
       >
         <span>
           Filtri
