@@ -23,7 +23,16 @@ const mobileDevices = [
 ];
 
 for (const device of mobileDevices) {
-  test.describe(`modale filtri centrato - telefono ${device.name}`, () => {
+  // Su telefono i filtri secondari stanno dietro il pulsante "Filtri" (chiusi di default).
+async function openMoreFilters(page) {
+  const toggle = page.getByRole("button", { name: /^Filtri/ });
+  await expect(toggle).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(300); // hydration su runner lenti
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.tap();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
+test.describe(`modale filtri centrato - telefono ${device.name}`, () => {
     test.use({ viewport: device.viewport, hasTouch: true, isMobile: true });
 
     test(`nessun overflow e nessuna chiusura automatica a ${device.name}`, async ({ page }) => {
@@ -31,6 +40,7 @@ for (const device of mobileDevices) {
 
       const search = page.getByLabel("Cerca una carta per nome o numero");
       await expect(search).toBeVisible({ timeout: 30_000 });
+      await openMoreFilters(page);
 
       // Da chiuso, i filtri non devono MAI occupare spazio ne' allargare la
       // pagina - il bug originale segnalato dall'utente ("coprono l'intera
