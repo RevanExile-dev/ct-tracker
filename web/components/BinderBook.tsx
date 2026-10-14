@@ -53,7 +53,7 @@ function Pocket({ card, returnTo }: { card: CardRow | undefined; returnTo: strin
             <div className="w-full h-full flex items-center justify-center text-ink-faint text-[9px] font-mono text-center px-1">{card.name}</div>
           )}
           <div className="binder-pocket-gloss" />
-          <div className="binder-pocket-caption absolute bottom-0 inset-x-0 bg-black/75 backdrop-blur-sm px-1.5 py-1">
+          <div className="binder-pocket-caption absolute bottom-0 inset-x-0 bg-black/80 px-1.5 py-1">
             <div className="text-[9px] text-ink-primary truncate leading-tight">{card.name}</div>
             <div className="text-[9px] font-mono text-accent-bright leading-tight">
               {formatCents(card.best_price_cents ?? card.latest_price_cents, card.best_price_currency ?? card.latest_price_currency ?? "EUR")}
