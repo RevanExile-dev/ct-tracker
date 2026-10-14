@@ -1,47 +1,59 @@
-"""Diagnostica (sola lettura): GET /marketplace/products?expansion_id=X dà
-gli stessi riassunti del singolo blueprint? Quanto costa (tempo, byte)?"""
-import json
+"""Diagnostica 3: perche' l'espansione ha meno offerte del singolo blueprint?
+Cache vecchia (ripetendo la chiamata dopo 2 minuti) o filtro (che offerte mancano?)."""
+import collections
 import random
 import sys
 import time
 
-import db
 from api_client import CardTraderClient
 
-FIELDS = ("min_price_cents", "best_price_cents", "it_nm_zero_price_cents", "listings_count", "languages_available")
+URL = "https://api.cardtrader.com/api/v2/marketplace/products"
+
+
+def ids(lst):
+    return {p["id"] for p in lst}
 
 
 def main():
     c = CardTraderClient()
-    random.seed(1)
-    for exp_id in (int(x) for x in sys.argv[1:]):
-        t = time.time()
-        resp = c.session.get(
-            "https://api.cardtrader.com/api/v2/marketplace/products",
-            params={"expansion_id": exp_id}, timeout=120,
-        )
-        dt = time.time() - t
-        print(f"expansion {exp_id}: HTTP {resp.status_code}, {dt:.1f}s, {len(resp.content)/1048576:.1f} MB, "
-              f"gzip={resp.headers.get('content-encoding')}")
-        if resp.status_code != 200:
-            print(resp.text[:300])
-            continue
-        data = resp.json()
-        print(f"  blueprint con offerte: {len(data)}, offerte totali {sum(len(v) for v in data.values())}")
-        ids = list(data)
-        sample = random.sample(ids, min(12, len(ids)))
-        same, diff = 0, 0
-        for bid in sample:
-            single = c.get_marketplace_products(int(bid))
-            a, b = db._summarize_products(data[bid]), db._summarize_products(single)
-            ov = len({p["id"] for p in data[bid]} & {p["id"] for p in single}) / max(1, len({p["id"] for p in single}))
-            eq = all(a[f] == b[f] for f in FIELDS) if a and b else a == b
-            same += eq
-            diff += not eq
-            tag = "uguale" if eq else "DIVERSO"
-            print(f"  bp {bid}: {tag}, offerte {len(data[bid])} vs {len(single)}, id in comune {ov:.0%}"
-                  + ("" if eq else f" | exp={ {f: a[f] for f in FIELDS} } sing={ {f: b[f] for f in FIELDS} }"))
-        print(f"  riassunto uguale su {same}/{same+diff}")
+    random.seed(2)
+    exp_id = int(sys.argv[1])
+    e1 = c.session.get(URL, params={"expansion_id": exp_id}, timeout=120).json()
+    bids = random.sample(list(e1), 6)
+    s1 = {b: c.get_marketplace_products(int(b)) for b in bids}
+    print("t0: espansione e singoli presi")
+    for b in bids:
+        print(f"  bp {b}: exp {len(e1[b])} singolo {len(s1[b])} in comune {len(ids(e1[b]) & ids(s1[b]))}")
+    # offerte mancanti nell'espansione: che classe sono?
+    miss = collections.Counter()
+    tot = collections.Counter()
+    price_miss, price_all = [], []
+    for b in bids:
+        ei = ids(e1[b])
+        for p in s1[b]:
+            ph = p.get("properties_hash") or {}
+            u = p.get("user") or {}
+            keyset = (ph.get("condition"), bool(u.get("can_sell_via_hub")), u.get("on_vacation") if "on_vacation" in u else p.get("on_vacation"), p.get("graded"))
+            tot[keyset] += 1
+            price_all.append(p["price"]["cents"])
+            if p["id"] not in ei:
+                miss[keyset] += 1
+                price_miss.append(p["price"]["cents"])
+    print("classi (condizione, hub, vacanza, graded): mancanti/totali")
+    for k, v in tot.most_common(12):
+        print(f"  {k}: {miss[k]}/{v}")
+    price_miss.sort(); price_all.sort()
+    q = lambda a, f: a[int(len(a) * f)] if a else None
+    print("prezzo offerte mancanti p10/p50/p90:", q(price_miss, .1), q(price_miss, .5), q(price_miss, .9))
+    print("prezzo tutte      p10/p50/p90:", q(price_all, .1), q(price_all, .5), q(price_all, .9))
+    time.sleep(120)
+    e2 = c.session.get(URL, params={"expansion_id": exp_id}, timeout=120).json()
+    s2 = {b: c.get_marketplace_products(int(b)) for b in bids}
+    print("t+2min:")
+    for b in bids:
+        print(f"  bp {b}: exp1~exp2 comune {len(ids(e1[b]) & ids(e2[b]))}/{len(ids(e1[b]))}; "
+              f"sing1~sing2 comune {len(ids(s1[b]) & ids(s2[b]))}/{len(ids(s1[b]))}; "
+              f"exp2~sing2 comune {len(ids(e2[b]) & ids(s2[b]))} (exp2 {len(e2[b])}, sing2 {len(s2[b])})")
     print("fine")
 
 
