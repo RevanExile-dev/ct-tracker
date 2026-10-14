@@ -212,6 +212,19 @@ def _summarize_products(products: list):
     }
 
 
+# Riassunto di una carta senza nessuna offerta valida: stessi campi di
+# _summarize_products, tutti vuoti (listings_count 0).
+_EMPTY_SUMMARY = {
+    "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
+    "listings_count": 0, "cheapest_condition": None, "cheapest_language": None,
+    "cheapest_foil": None, "languages_available": None,
+    "best_price_cents": None, "best_price_currency": None, "best_condition": None,
+    "best_language": None, "best_can_sell_via_hub": None,
+    "it_nm_zero_price_cents": None, "it_nm_zero_price_currency": None,
+    "it_nm_zero_listings_count": 0,
+}
+
+
 def insert_price_snapshot(conn, blueprint_id: int, captured_at: str,
                             captured_at_ts: str, products: list):
     """Aggiunge (o sovrascrive, se rilanciato lo stesso giorno) il punto di
@@ -285,15 +298,7 @@ def upsert_latest_price(conn, blueprint_id: int, captured_at: str,
         prev_it_nm_zero_price_cents = prev_exact_row[0] if prev_exact_row else None
         prev_it_nm_zero_captured_at = prev_exact_row[1] if prev_exact_row else None
 
-        summary = _summarize_products(products) or {
-            "min_price_cents": None, "min_price_currency": None, "avg_price_cents": None,
-            "listings_count": 0, "cheapest_condition": None, "cheapest_language": None,
-            "cheapest_foil": None, "languages_available": None,
-            "best_price_cents": None, "best_price_currency": None, "best_condition": None,
-            "best_language": None, "best_can_sell_via_hub": None,
-            "it_nm_zero_price_cents": None, "it_nm_zero_price_currency": None,
-            "it_nm_zero_listings_count": 0,
-        }
+        summary = _summarize_products(products) or _EMPTY_SUMMARY
 
         cur.execute(
             """
@@ -527,6 +532,172 @@ def get_meta(conn, key: str) -> str | None:
 # carta con un allarme 'armed' merita il prezzo piu' fresco possibile,
 # altrimenti l'utente rischia di scoprire un calo gia' passato con ore di
 # ritardo solo perche' quella carta non e' anche in wishlist/binder.
+_LATEST_COLUMNS = (
+    "blueprint_id", "captured_at", "captured_at_ts", "min_price_cents",
+    "min_price_currency", "avg_price_cents", "listings_count",
+    "cheapest_condition", "cheapest_language", "cheapest_foil",
+    "languages_available", "prev_price_cents", "prev_captured_at",
+    "best_price_cents", "best_price_currency", "best_condition",
+    "best_language", "best_can_sell_via_hub", "prev_best_price_cents",
+    "it_nm_zero_price_cents", "it_nm_zero_price_currency",
+    "it_nm_zero_listings_count", "prev_it_nm_zero_price_cents",
+    "prev_it_nm_zero_captured_at",
+)
+_SNAPSHOT_COLUMNS = (
+    "blueprint_id", "captured_at", "captured_at_ts", "min_price_cents",
+    "min_price_currency", "avg_price_cents", "listings_count",
+    "cheapest_condition", "cheapest_language", "cheapest_foil",
+    "best_price_cents", "it_nm_zero_price_cents",
+)
+
+
+def write_price_batch(conn, captured_at: str, captured_at_ts: str, items: list) -> int:
+    """Scrive in blocco il risultato di piu' carte gia' scaricate: stesso
+    effetto di chiamare, per ciascuna, insert_price_snapshot +
+    upsert_latest_price + replace_price_listings + valutazione allarmi +
+    aggiornamento rarita' (verificato dal test test_db_price_batch.py, che
+    confronta le due strade riga per riga), ma con una manciata di
+    istruzioni per l'INTERO gruppo invece di ~12 viaggi verso Neon PER
+    carta. Il database e' in Europa e i runner GitHub di solito in USA:
+    ~100 ms a viaggio erano la ragione per cui una carta costava ~2,4 s
+    contro 1 s di limite dell'API CardTrader.
+
+    `items` = lista di (blueprint_id, nome, nome_espansione, offerte, rarita'),
+    con `offerte` la lista grezza dell'API (anche vuota). Non fa commit:
+    sta al chiamante, cosi' un errore annulla l'intero gruppo (e il chiamante
+    ripiega sulle singole carte per isolare quella colpevole). Ritorna
+    quanti allarmi prezzo sono scattati."""
+    if not items:
+        return 0
+    by_id = {}
+    for item in items:  # l'ultima occorrenza vince (ON CONFLICT non ammette duplicati)
+        by_id[item[0]] = item
+    items = list(by_id.values())
+    ids = [it[0] for it in items]
+    summaries = {it[0]: _summarize_products(it[3]) for it in items}
+
+    with conn.cursor() as cur:
+        # Storico del giorno: stessa regola di insert_price_snapshot (un rilancio
+        # lo stesso giorno sovrascrive il punto, non lo duplica).
+        cur.execute(
+            "DELETE FROM price_snapshots WHERE blueprint_id = ANY(%s) AND captured_at = %s",
+            (ids, captured_at),
+        )
+        # "Precedenti" PRIMA del punto di oggi, per tutte le carte in una query
+        # ciascuna (stesse due serie separate di upsert_latest_price).
+        cur.execute(
+            """SELECT DISTINCT ON (blueprint_id) blueprint_id, captured_at, min_price_cents, best_price_cents
+               FROM price_snapshots
+               WHERE blueprint_id = ANY(%s) AND captured_at < %s AND min_price_cents IS NOT NULL
+               ORDER BY blueprint_id, captured_at DESC""",
+            (ids, captured_at),
+        )
+        prev = {r[0]: r[1:] for r in cur.fetchall()}
+        cur.execute(
+            """SELECT DISTINCT ON (blueprint_id) blueprint_id, it_nm_zero_price_cents, captured_at
+               FROM price_snapshots
+               WHERE blueprint_id = ANY(%s) AND captured_at < %s AND it_nm_zero_price_cents IS NOT NULL
+               ORDER BY blueprint_id, captured_at DESC""",
+            (ids, captured_at),
+        )
+        prev_exact = {r[0]: r[1:] for r in cur.fetchall()}
+
+        snapshot_rows, latest_rows, listing_rows = [], [], []
+        for bp_id, _name, _exp, products, _rarity in items:
+            summary = summaries[bp_id]
+            snapshot_rows.append((
+                bp_id, captured_at, captured_at_ts,
+                summary["min_price_cents"] if summary else None,
+                summary["min_price_currency"] if summary else None,
+                summary["avg_price_cents"] if summary else None,
+                summary["listings_count"] if summary else 0,
+                summary["cheapest_condition"] if summary else None,
+                summary["cheapest_language"] if summary else None,
+                summary["cheapest_foil"] if summary else None,
+                summary["best_price_cents"] if summary else None,
+                summary["it_nm_zero_price_cents"] if summary else None,
+            ))
+            s = summary or _EMPTY_SUMMARY
+            p_at, p_min, p_best = (prev.get(bp_id) or (None, None, None))
+            pe_cents, pe_at = (prev_exact.get(bp_id) or (None, None))
+            latest_rows.append((
+                bp_id, captured_at, captured_at_ts, s["min_price_cents"],
+                s["min_price_currency"], s["avg_price_cents"], s["listings_count"],
+                s["cheapest_condition"], s["cheapest_language"], s["cheapest_foil"],
+                s["languages_available"], p_min, p_at,
+                s["best_price_cents"], s["best_price_currency"], s["best_condition"],
+                s["best_language"], s["best_can_sell_via_hub"], p_best,
+                s["it_nm_zero_price_cents"], s["it_nm_zero_price_currency"],
+                s["it_nm_zero_listings_count"], pe_cents, pe_at,
+            ))
+            valid = [p for p in products if (p.get("price") or {}).get("cents") is not None]
+            for p in sorted(valid, key=lambda p: p["price"]["cents"])[:25]:
+                ph = p.get("properties_hash") or {}
+                u = p.get("user") or {}
+                listing_rows.append((
+                    bp_id, captured_at, p["price"]["cents"], p["price"].get("currency"),
+                    ph.get("condition"), ph.get("pokemon_language") or ph.get("mtg_language"),
+                    p.get("quantity"), u.get("username"), int(bool(u.get("can_sell_via_hub"))),
+                    u.get("country_code"),
+                ))
+
+        psycopg2.extras.execute_values(
+            cur,
+            f"INSERT INTO price_snapshots ({', '.join(_SNAPSHOT_COLUMNS)}) VALUES %s",
+            snapshot_rows, page_size=1000,
+        )
+        updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in _LATEST_COLUMNS if c != "blueprint_id")
+        psycopg2.extras.execute_values(
+            cur,
+            f"INSERT INTO latest_prices ({', '.join(_LATEST_COLUMNS)}) VALUES %s "
+            f"ON CONFLICT (blueprint_id) DO UPDATE SET {updates}",
+            latest_rows, page_size=1000,
+        )
+        cur.execute("DELETE FROM price_listings WHERE blueprint_id = ANY(%s)", (ids,))
+        if listing_rows:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO price_listings
+                   (blueprint_id, captured_at, price_cents, price_currency, condition,
+                    language, quantity, seller_username, can_sell_via_hub, ships_from_country)
+                   VALUES %s""",
+                listing_rows, page_size=1000,
+            )
+        rarity_rows = [(it[0], it[4]) for it in items if it[4]]
+        if rarity_rows:
+            psycopg2.extras.execute_values(
+                cur,
+                "UPDATE blueprints AS b SET rarity = v.rarity FROM (VALUES %s) AS v (id, rarity) WHERE b.id = v.id",
+                rarity_rows, page_size=1000,
+            )
+        # Allarmi: solo per le carte che ne hanno di armati (una query per tutte).
+        cur.execute(
+            "SELECT DISTINCT blueprint_id FROM price_alerts WHERE state = 'armed' AND blueprint_id = ANY(%s)",
+            (ids,),
+        )
+        with_alerts = {r[0] for r in cur.fetchall()}
+
+    fired = 0
+    for bp_id, name, expansion_name, _products, _rarity in items:
+        if bp_id in with_alerts:
+            fired += evaluate_price_alerts_for_blueprint(conn, bp_id, name, expansion_name)
+    return fired
+
+
+def mark_attempted_many(conn, blueprint_ids, attempted_at: str):
+    """Come mark_attempted, per un gruppo di carte in un solo viaggio."""
+    ids = sorted(set(blueprint_ids))
+    if not ids:
+        return
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO latest_prices (blueprint_id, last_attempted_at) VALUES %s
+               ON CONFLICT (blueprint_id) DO UPDATE SET last_attempted_at = EXCLUDED.last_attempted_at""",
+            [(i, attempted_at) for i in ids],
+        )
+
+
 PRIORITY_ALERT = 0
 PRIORITY_WISHLIST = 1
 PRIORITY_BINDER = 2

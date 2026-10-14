@@ -24,6 +24,23 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Postgres vero per il test di equivalenza della scrittura a blocchi
+    # (scripts/test_db_price_batch.py): lo schema usa pg_trgm/unaccent e
+    # ON CONFLICT, non simulabili in modo credibile con un finto database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ct_tracker_backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -31,8 +48,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
       - name: Verifica sintassi Python
         run: python -m compileall -q scripts
+
+      - name: Test scrittura prezzi a blocchi (db.write_price_batch, Postgres vero)
+        env:
+          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/ct_tracker_backend_test
+        run: python scripts/test_db_price_batch.py
 
       - name: Verifica configurazioni JSON
         run: |
