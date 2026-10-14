@@ -2,7 +2,7 @@
 
 import { memo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { cardImageSources } from "@/lib/cardImage";
 import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
 import { formatCompareAge } from "@/lib/moversPeriods";
@@ -197,14 +197,26 @@ function CardTile({
         >
           <div className="relative aspect-[5/7] bg-base-surface2">
             {card.image_url && !imgError ? (
-              <Image
-                src={card.image_url}
+              // <img> semplice: con images.unoptimized next/image non genera
+              // srcset, e qui serve far scegliere al browser tra preview_
+              // (schermi 1x) e file intero (retina).
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                {...cardImageSources(card.image_url)}
                 alt={card.name}
-                fill
-                sizes="(min-width: 1024px) 20vw, 45vw"
+                sizes={horizontalScroll ? "174px" : "(min-width: 1024px) 20vw, 45vw"}
+                // Caricata prima dell'idratazione (cache, SSR): onLoad non scatta piu'.
+                ref={(el) => {
+                  if (el?.complete) {
+                    if (el.naturalWidth > 0) setImgLoaded(true);
+                    else setImgError(true);
+                  }
+                }}
+                loading="lazy"
+                decoding="async"
                 onLoad={() => setImgLoaded(true)}
                 onError={() => setImgError(true)}
-                className={`object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
+                className={`absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
                   imgLoaded ? "opacity-100" : "opacity-0"
                 }`}
               />
