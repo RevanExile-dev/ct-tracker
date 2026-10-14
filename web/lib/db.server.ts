@@ -2,6 +2,7 @@ import "server-only";
 import { getPgPool } from "./pgPool";
 import { expandRarityFilters, normalizeRarity } from "./rarity";
 import { compareExpansions } from "./expansions";
+import { MIN_TREND_POINTS } from "./format";
 import type { CardmarketPrices, CardmarketReference } from "./cardmarket";
 import topArtists from "@/config/top_artists.json";
 import {
@@ -594,8 +595,9 @@ export async function fetchCardsTrend(
       AND captured_at >= (CURRENT_DATE - $2::int)
       AND COALESCE(best_price_cents, min_price_cents) IS NOT NULL
     GROUP BY blueprint_id
+    HAVING COUNT(*) >= $3
     `,
-    [blueprintIds, days],
+    [blueprintIds, days, MIN_TREND_POINTS],
   );
   const result: Record<number, { avgCents: number; days: number }> = {};
   for (const row of rows) {
