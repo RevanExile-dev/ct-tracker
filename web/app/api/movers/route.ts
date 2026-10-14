@@ -9,6 +9,8 @@ export async function GET(req: NextRequest) {
   const minCentsParam = sp.get("minCents");
   const maxCentsParam = sp.get("maxCents");
   const sort = (sp.get("sort") as MoversSort | null) ?? undefined;
+  const minDeltaParam = sp.get("minDeltaCents");
+  const minDelta = minDeltaParam ? Number(minDeltaParam) : null;
   const pageParam = sp.get("page");
 
   const result = await fetchMoversPage({
@@ -17,6 +19,7 @@ export async function GET(req: NextRequest) {
     minCents: minCentsParam ? Number(minCentsParam) : null,
     maxCents: maxCentsParam ? Number(maxCentsParam) : null,
     sort,
+    minDeltaCents: Number.isFinite(minDelta) ? minDelta : null,
     page: pageParam ? Number(pageParam) : undefined,
   });
   return NextResponse.json(result);

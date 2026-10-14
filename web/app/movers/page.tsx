@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CardRow,
   MIN_MOVER_LISTINGS,
+  MOVERS_MIN_DELTA_CENTS,
   MOVERS_PAGE_SIZE,
   MoversPageResult,
   MoversSort,
@@ -149,6 +150,7 @@ function MoversContent() {
     searchParams.get("tier") ? "" : searchParams.get("max") ?? ""
   );
   const [sort, setSort] = useState<MoversSort>(() => (searchParams.get("sort") === "abs" ? "abs" : "pct"));
+  const [showSmall, setShowSmall] = useState<boolean>(() => searchParams.get("piccole") === "1");
   const [risePage, setRisePage] = useState(() => parsePage(searchParams.get("risePage")));
   const [dropPage, setDropPage] = useState(() => parsePage(searchParams.get("dropPage")));
   const [activeFilter, setActiveFilter] = useState<"rarity" | null>(null);
@@ -176,12 +178,13 @@ function MoversContent() {
       if (customMax.trim()) params.set("max", customMax.trim());
     }
     if (sort !== "pct") params.set("sort", sort);
+    if (showSmall) params.set("piccole", "1");
     if (risePage > 1) params.set("risePage", String(risePage));
     if (dropPage > 1) params.set("dropPage", String(dropPage));
     if (activeTab !== "rises") params.set("tab", activeTab);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage, activeTab, pathname, router]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, showSmall, risePage, dropPage, activeTab, pathname, router]);
 
   useEffect(() => {
     fetchRarities().then(setRarities).catch(() => {});
@@ -190,7 +193,13 @@ function MoversContent() {
   useEffect(() => {
     let cancelled = false;
     const { minCents, maxCents } = computeRangeCents(tierKey, customMin, customMax);
-    const base = { rarities: selectedRarities, minCents, maxCents, sort };
+    const base = {
+      rarities: selectedRarities,
+      minCents,
+      maxCents,
+      sort,
+      minDeltaCents: showSmall ? null : MOVERS_MIN_DELTA_CENTS,
+    };
     Promise.all([
       fetchMoversPage({ ...base, direction: "rise", page: risePage }),
       fetchMoversPage({ ...base, direction: "drop", page: dropPage }),
@@ -207,7 +216,7 @@ function MoversContent() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRarities, tierKey, customMin, customMax, sort, risePage, dropPage]);
+  }, [selectedRarities, tierKey, customMin, customMax, sort, showSmall, risePage, dropPage]);
 
   // useCallback: CardTile e' memo (vedi components/CardTile.tsx), un
   // riferimento stabile qui evita di ri-renderizzare tutte le tile di
@@ -257,13 +266,18 @@ function MoversContent() {
     resetPages();
   }
 
+  function handleToggleSmall() {
+    setShowSmall((v) => !v);
+    resetPages();
+  }
+
   function handleSortChange(next: MoversSort) {
     setSort(next);
     resetPages();
   }
 
   const hasActiveFilters = Boolean(
-    selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct"
+    selectedRarities.length || tierKey || customMin.trim() || customMax.trim() || sort !== "pct" || showSmall
   );
   const currentQuery = searchParams.toString();
   const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
@@ -275,6 +289,7 @@ function MoversContent() {
     setCustomMin("");
     setCustomMax("");
     setSort("pct");
+    setShowSmall(false);
     resetPages();
   }
 
@@ -390,6 +405,19 @@ function MoversContent() {
           </button>
         </div>
 
+        <button
+          type="button"
+          aria-pressed={showSmall}
+          onClick={handleToggleSmall}
+          className={`min-h-9 text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+            showSmall
+              ? "bg-accent/10 border-accent/60 text-accent-bright"
+              : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+          }`}
+        >
+          {showSmall ? "Mostro anche sotto 1€" : "Nascondo variazioni sotto 1€"}
+        </button>
+
         {hasActiveFilters && (
           <button
             type="button"
@@ -405,7 +433,7 @@ function MoversContent() {
         {sort === "abs"
           ? "Ordine per differenza in euro dalla rilevazione precedente: prima i maggiori aumenti o ribassi. Esempio: −10 € precede −2 €."
           : "Ordine per variazione percentuale dalla rilevazione precedente: prima i maggiori aumenti o ribassi in proporzione al prezzo."}
-        {" "}Profilo confrontato: italiano · Near Mint · CardTrader Zero.
+        {" "}{showSmall ? "Sono incluse anche le variazioni sotto 1€." : "Nascoste le variazioni sotto 1€ (rumore: es. 0,60€ → 0,11€)."}{" "}Profilo confrontato: italiano · Near Mint · CardTrader Zero.
       </p>
 
       {error && (

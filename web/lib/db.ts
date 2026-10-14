@@ -16,7 +16,7 @@ export type {
   Listing, ExpansionInfo, ArtistOption,
 } from "./types";
 export type { CardmarketPrices, CardmarketReference } from "./cardmarket";
-export { MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE } from "./types";
+export { MIN_MOVER_LISTINGS, MOVERS_MIN_DELTA_CENTS, MOVERS_PAGE_SIZE } from "./types";
 export { normalizeRarity } from "./rarity";
 
 import type { CardmarketReference } from "./cardmarket";
@@ -105,6 +105,7 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     minCents: opts.minCents,
     maxCents: opts.maxCents,
     sort: opts.sort,
+    minDeltaCents: opts.minDeltaCents,
     page: opts.page,
   });
 }
