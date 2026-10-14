@@ -1,8 +1,16 @@
-import test from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
 
-// Come gli altri test unitari, importa il TypeScript direttamente (Node strip-types).
-const { findMoversPeriod, formatCompareAge, DEFAULT_MOVERS_PERIOD, MOVERS_PERIODS } = await import("../lib/moversPeriods.ts");
+// moversPeriods.ts non ha import: si carica da solo (come plans.test.mjs).
+const exports = {};
+const code = ts.transpileModule(readFileSync(new URL("../lib/moversPeriods.ts", import.meta.url), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+vm.runInNewContext(code, { exports, module: { exports } });
+const { findMoversPeriod, formatCompareAge, DEFAULT_MOVERS_PERIOD, MOVERS_PERIODS } = exports;
 
 test("periodo sconosciuto o assente = predefinito (30 giorni)", () => {
   assert.equal(DEFAULT_MOVERS_PERIOD, "30");
