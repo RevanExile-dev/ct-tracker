@@ -255,6 +255,10 @@ export type PriceAlert = {
   state: PriceAlertState;
   firedAt: string | null;
   createdAt: string;
+  // Solo da GET /api/account/alerts: inserzione piu' economica adesso per lo
+  // stesso profilo (null = nessuna). Assente nelle risposte di POST/PATCH.
+  matchingPriceCents?: number | null;
+  matchingPriceCurrency?: string | null;
 };
 
 export type PriceAlertInput = {
