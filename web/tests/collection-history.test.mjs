@@ -40,3 +40,17 @@ test('a malformed currency is never exported as a spreadsheet formula', () => {
   const csv = collectionHistoryCsv([{ ...point('2026-09-01'), currency: '=1+1' }]);
   assert.ok(!csv.includes('=1+1'));
 });
+
+test('periodChange compares with the last snapshot at least N days old, null when history is too short', () => {
+  const { periodChange } = exports;
+  const pts = [point('2026-09-01', 10000), point('2026-09-20', 12000), point('2026-10-01', 11000), point('2026-10-08', 11500)];
+  const w = periodChange(pts, 7);
+  assert.equal(w.from, '2026-10-01');
+  assert.equal(w.delta_cents, 500);
+  assert.ok(Math.abs(w.pct - 4.5454) < 0.01);
+  assert.equal(periodChange(pts, 30).from, '2026-09-01');
+  assert.equal(periodChange(pts, 90), null);
+  assert.equal(periodChange([], 7), null);
+  assert.equal(periodChange([point('2026-10-01', 0), point('2026-10-08', 500)], 7).pct, null);
+  assert.equal(periodChange([{ ...point('2026-10-01'), currency: 'USD' }, point('2026-10-08')], 7), null);
+});
