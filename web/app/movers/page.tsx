@@ -350,7 +350,7 @@ function MoversContent() {
       <div className="text-ink-muted mt-1 max-w-xl lg:hidden">
         <p>Le variazioni di prezzo più marcate, per chi cerca affari.</p>
         <details className="text-xs mt-1">
-          <summary className="inline cursor-pointer text-accent-bright">Come si legge</summary>
+          <summary className="inline-flex items-center min-h-11 cursor-pointer text-accent-bright">Come si legge</summary>
           <span className="block mt-1">
             Serie italiano · Near Mint · CardTrader Zero, con il periodo di confronto scelto nei filtri. Contano
             solo le carte con almeno {MIN_MOVER_LISTINGS} inserzioni, per non seguire il singolo venditore che
