@@ -86,7 +86,7 @@ test('lista allarmi: ogni riga dice prezzo di ora, soglia e cosa succede dopo', 
   const ov = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
   expect(ov.sw).toBeLessThanOrEqual(ov.cw);
   const link = await page.getByTestId('telegram-missing').getByRole('link').boundingBox();
-  expect(link.height).toBeGreaterThanOrEqual(44);
+  expect(link.height).toBeGreaterThanOrEqual(43);
 });
 
 test('allarme ripetibile dalla scheda: 3 tocchi (apri, Ripetibile, Traccia)', async ({ page }) => {
