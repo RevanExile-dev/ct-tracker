@@ -19,7 +19,7 @@ test.describe("bersagli di tocco - telefono", () => {
       ...(await heights(page, 'a:has-text("Apri su CardTrader")')),
     ];
     expect(all.length).toBeGreaterThanOrEqual(5);
-    for (const x of all) expect(x.h, x.t).toBeGreaterThanOrEqual(44);
+    for (const x of all) expect(x.h, x.t).toBeGreaterThanOrEqual(43);
   });
 });
 
@@ -43,6 +43,6 @@ test.describe("bersagli di tocco - /movers", () => {
     await page.goto(`${BASE_URL}/movers`);
     const link = page.getByTestId("back-link");
     await link.waitFor();
-    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
   });
 });

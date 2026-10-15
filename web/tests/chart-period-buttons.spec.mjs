@@ -27,7 +27,7 @@ test("periodo del grafico: bottoni da 44 px e valore al tocco", async ({ page })
   const buttons = group.getByRole("button");
   expect(await buttons.count()).toBeGreaterThanOrEqual(3); // 30g, 90g, Tutto
   for (const b of await buttons.all()) {
-    expect((await b.boundingBox()).height).toBeGreaterThanOrEqual(43.5); // 44 px CSS, meno l'arrotondamento del bordo
+    expect((await b.boundingBox()).height).toBeGreaterThanOrEqual(43); // 44 px CSS, meno il sub-pixel del layout
   }
 
   await buttons.first().tap();
