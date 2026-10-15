@@ -19,6 +19,17 @@ const VIEWPORTS = [
   { name: 'telefono', width: 390, height: 800 },
 ];
 
+async function gravi(page) {
+  await page.evaluate(axeSource);
+  const res = await page.evaluate(() =>
+    // eslint-disable-next-line no-undef
+    axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] }),
+  );
+  return res.violations
+    .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+    .map((v) => `${v.id}: ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' ; ')}`);
+}
+
 for (const colorScheme of ['light', 'dark']) {
   for (const vp of VIEWPORTS) {
     test.describe(`axe ${colorScheme} ${vp.name}`, () => {
@@ -37,15 +48,38 @@ for (const colorScheme of ['light', 'dark']) {
           await page.route('**/api/account/**', (route) => route.fulfill({ status: 200, json: [] }));
           await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
           await page.waitForTimeout(800); // animazioni di ingresso (libro, tessere) assestate
-          await page.evaluate(axeSource);
-          const res = await page.evaluate(() =>
-            // eslint-disable-next-line no-undef
-            axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] }),
-          );
-          const gravi = res.violations
-            .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-            .map((v) => `${v.id}: ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' ; ')}`);
-          expect(gravi).toEqual([]);
+          expect(await gravi(page)).toEqual([]);
+        });
+      }
+    });
+  }
+}
+
+// Home con i pannelli aperti: suggerimenti della ricerca, Prezzo e Rarita'
+// (sempre in vista dopo #184). Stati che al caricamento non esistono.
+for (const colorScheme of ['light', 'dark']) {
+  for (const vp of VIEWPORTS) {
+    test.describe(`axe home aperta ${colorScheme} ${vp.name}`, () => {
+      test.use({ colorScheme, viewport: { width: vp.width, height: vp.height } });
+      test('suggerimenti ricerca', async ({ page }) => {
+        await page.goto(BASE, { waitUntil: 'networkidle' });
+        const input = page.getByLabel('Cerca una carta per nome o numero');
+        await input.click();
+        await page.keyboard.type('smoke');
+        await expect(page.getByRole('listbox')).toBeVisible({ timeout: 20_000 });
+        await page.waitForTimeout(600);
+        expect(await gravi(page)).toEqual([]);
+      });
+      for (const nome of [/^Prezzo/, /Rarità/i]) {
+        test(`pannello ${nome}`, async ({ page }) => {
+          await page.goto(BASE, { waitUntil: 'networkidle' });
+          await page.waitForTimeout(500);
+          await page.getByRole('button', { name: nome }).first().click();
+          await expect(page.locator('button[aria-pressed]:visible').first()).toBeVisible();
+          // Le opzioni hanno transition sul colore: misurate a meta' animazione
+          // axe vede colori intermedi (falso contrasto basso).
+          await page.waitForTimeout(600);
+          expect(await gravi(page)).toEqual([]);
         });
       }
     });
