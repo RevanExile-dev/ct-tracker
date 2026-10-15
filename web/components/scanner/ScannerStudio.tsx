@@ -20,7 +20,7 @@ import {
 } from "@/lib/scanner/catalog";
 import { extractAllNumberKeys } from "@/lib/scanner/collector-number";
 import { catalogSignature, visualSignature, visualSimilarity } from "@/lib/scanner/visual";
-import { detectLanguage, ocrEngineNotice, recognizeText } from "@/lib/scanner/ocr";
+import { detectLanguage, ocrEngineNotice, recognizeText, warmUpOcr } from "@/lib/scanner/ocr";
 import type {
   DetectedLanguage,
   ScanQuality,
@@ -202,6 +202,11 @@ export default function ScannerStudio() {
     // in app/page.tsx e app/movers/page.tsx (react-hooks/set-state-in-effect).
     const frame = requestAnimationFrame(() => setBinderIds(getBinderIds()));
     return () => cancelAnimationFrame(frame);
+  }, []);
+
+  const warmUp = useCallback(() => {
+    void loadScannerCatalog().catch(() => undefined);
+    warmUpOcr();
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -522,7 +527,7 @@ export default function ScannerStudio() {
           <div className="grid lg:grid-cols-2 gap-4 sm:gap-5">
             <button
               type="button"
-              onClick={() => inputRef.current?.click()}
+              onClick={() => { warmUp(); inputRef.current?.click(); }}
               onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
               onDragOver={(event) => event.preventDefault()}
               onDragLeave={() => setDragActive(false)}
@@ -541,7 +546,7 @@ export default function ScannerStudio() {
 
             <button
               type="button"
-              onClick={() => setCameraOpen(true)}
+              onClick={() => { warmUp(); setCameraOpen(true); }}
               className={`${styles.captureCard} min-h-[260px] rounded-[24px] p-6 sm:p-8 text-left transition-all duration-300 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70`}
             >
               <div className="w-14 h-14 rounded-2xl border border-indigo-300/20 bg-indigo-300/10 flex items-center justify-center text-2xl">◎</div>
@@ -606,7 +611,7 @@ export default function ScannerStudio() {
                     {regions.length === 1 && regions[0]?.fallback ? "Nessun bordo sicuro: analizzo l'intera foto" : `${regions.length} ${regions.length === 1 ? "carta rilevata" : "carte rilevate"}`}
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => inputRef.current?.click()} className="px-4 py-2.5 rounded-xl border border-base-border bg-base-surface text-xs text-ink-muted hover:text-ink-primary">Cambia foto</button>
+                    <button type="button" onClick={() => { warmUp(); inputRef.current?.click(); }} className="px-4 py-2.5 rounded-xl border border-base-border bg-base-surface text-xs text-ink-muted hover:text-ink-primary">Cambia foto</button>
                     <button type="button" disabled={busy} onClick={() => void recognizeBatch(items.map((item) => ({ ...item, status: "queued", error: null })))} className="px-4 py-2.5 rounded-xl border border-accent/35 bg-accent/10 text-xs text-accent-bright disabled:opacity-40">Rianalizza</button>
                     <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl border border-base-border text-xs text-ink-faint">Reset</button>
                   </div>
