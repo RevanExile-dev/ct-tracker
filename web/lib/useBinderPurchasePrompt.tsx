@@ -7,7 +7,7 @@ import { toggleBinder } from "./binder";
 import LogPurchaseModal from "@/components/LogPurchaseModal";
 import LoginToTrackToast from "@/components/LoginToTrackToast";
 
-const TOAST_MS = 5000;
+const TOAST_MS = 9000;
 
 /** Centralizza il comportamento "stella -> overlay dettagli acquisto",
  * stesso pattern di useWishlistAlertPrompt.tsx ma per il binder: chiama

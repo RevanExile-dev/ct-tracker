@@ -357,7 +357,7 @@ function CardDetailContent() {
                 else {
                   if (manualLoginToastTimerRef.current !== null) window.clearTimeout(manualLoginToastTimerRef.current);
                   setManualLoginToast(true);
-                  manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 5000);
+                  manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 9000);
                 }
               }}
               className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
