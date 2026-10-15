@@ -1,0 +1,565 @@
+"use client";
+
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  ArtistOption, CardRow, CardsSummary, ExpansionInfo, SortOption,
+  fetchCards, fetchCardsCount, fetchCardsSummary, fetchCatalogStats, fetchConditions, fetchExpansions,
+  fetchArtists, fetchLanguages, fetchMeta, fetchRarities, normalizeRarity,
+} from "@/lib/db";
+import { FilterPreset } from "@/lib/filterPreset";
+import { priceBandByKey, priceBandRange } from "@/lib/priceBands";
+import { splitCsv } from "@/lib/queryParams";
+import { useBinderWishlistIds } from "@/lib/useBinderWishlistIds";
+import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
+import { useProgressiveCount } from "@/lib/useProgressiveCount";
+import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
+import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
+import CardTile from "@/components/CardTile";
+import Toolbar from "@/components/Toolbar";
+import LoadError from "@/components/LoadError";
+import SiteHeader from "@/components/SiteHeader";
+import CountUp from "@/components/CountUp";
+import HomeHighlights from "@/components/HomeHighlights";
+import { formatPercent } from "@/lib/format";
+import type { InitialHighlights } from "@/lib/homeHighlights";
+
+// Spike Three.js isolato (PR #6, stesso flag di ThreeCardHero in
+// card/[id]): mai importato/scaricato nel percorso di default - ssr:false +
+// import dinamico tengono three/@react-three/fiber fuori dal bundle server
+// e da quello iniziale del client finche' non serve davvero.
+const HomeHero3D = dynamic(() => import("@/components/HomeHero3D"), { ssr: false });
+
+const PAGE_SIZE = 60;
+// Montaggio a scaglioni della griglia: quante tile subito e quante per frame.
+const GRID_INITIAL = 8;
+const GRID_STEP = 6;
+
+function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlights }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [cards, setCards] = useState<CardRow[] | null>(null);
+  // Conteggio totale delle carte che soddisfano i filtri correnti,
+  // calcolato in SQL (fetchCardsCount) - NON e' cards.length: cards e'
+  // limitato a visibleCount (vedi fetchCards limit), altrimenti ogni
+  // ricerca/filtro tornerebbe a scaricare l'intero catalogo in JS solo per
+  // sapere quante righe corrispondono in tutto.
+  const [resultCount, setResultCount] = useState<number | undefined>();
+  const [expansions, setExpansions] = useState<ExpansionInfo[]>([]);
+  const [rarities, setRarities] = useState<string[]>([]);
+  const [artists, setArtists] = useState<ArtistOption[]>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [conditions, setConditions] = useState<string[]>([]);
+  const [lastSync, setLastSync] = useState<string | undefined>();
+  const [totalCards, setTotalCards] = useState<number | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  // Incrementato dal pulsante "Riprova" nello stato d'errore per rilanciare
+  // le stesse fetch senza dover duplicare la logica in due punti diversi -
+  // ogni chiamata in lib/db.ts e' una fetch() di rete indipendente, quindi
+  // un semplice re-run dell'effect basta (nessuna Promise fallita da
+  // resettare, a differenza della vecchia versione client-side su sql.js).
+  const [reloadTick, setReloadTick] = useState(0);
+  const [expansionSummaryData, setExpansionSummaryData] = useState<CardsSummary | null>(null);
+
+  // Lo stato dei filtri e' inizializzato dalla query string cosi' che
+  // "indietro" dal browser dopo aver aperto una carta torni alla stessa
+  // vista filtrata, invece di una home resettata.
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  // Il valore digitato aggiorna subito l'input (search, sopra) ma la query
+  // vera e propria parte solo 250ms dopo l'ultimo tasto premuto: senza
+  // questo, ogni singolo carattere rilanciava una query SQL sull'intero
+  // catalogo (bug reale trovato in revisione, aggravato dal fatto che
+  // fetchCards prima non aveva nemmeno un LIMIT - vedi sotto).
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+  const [expansionCode, setExpansionCode] = useState(() => searchParams.get("exp") ?? "");
+  const [selectedRarities, setSelectedRarities] = useState<string[]>(() =>
+    splitCsv(searchParams.get("rarity")).map(normalizeRarity)
+  );
+  const [selectedArtists, setSelectedArtists] = useState<string[]>(() =>
+    splitCsv(searchParams.get("artist"))
+  );
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(() =>
+    splitCsv(searchParams.get("lang"))
+  );
+  const [selectedConditions, setSelectedConditions] = useState<string[]>(() =>
+    splitCsv(searchParams.get("cond"))
+  );
+  const [onlyZero, setOnlyZero] = useState(() => searchParams.get("zero") === "1");
+  const [exactName, setExactName] = useState(() => searchParams.get("exact") === "1");
+  const [priceBand, setPriceBand] = useState(() => priceBandByKey(searchParams.get("price"))?.key ?? "");
+  const priceRange = useMemo(() => priceBandRange(priceBand), [priceBand]);
+  const [sortBy, setSortBy] = useState<SortOption>(
+    () => (searchParams.get("sort") as SortOption) || "expansion"
+  );
+  const { binderIds, setBinderIds, wishlistIds, setWishlistIds } = useBinderWishlistIds();
+  const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
+  const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
+  const [visibleCount, setVisibleCount] = useState(() => {
+    const shown = Number(searchParams.get("shown"));
+    // Tetto uguale a quello di /api/cards: un ?shown enorme nell'URL non deve
+    // chiedere (e far serializzare) mezzo catalogo in una sola risposta.
+    return Number.isFinite(shown) && shown >= PAGE_SIZE ? Math.min(shown, 1000) : PAGE_SIZE;
+  });
+  const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedArtists.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, exactName, priceBand, sortBy].join("|");
+  const previousFilterKey = useRef(filterKey);
+
+  // Barra filtri sticky: si nasconde scrollando verso il basso (piu' spazio
+  // per vedere le carte, richiesto esplicitamente dall'utente - "quando
+  // scrollo in basso il filtro scompaia"), torna scrollando verso l'alto.
+  // Anche una maniglia manuale (sotto) puo' aprirla/chiuderla in qualunque
+  // momento, indipendentemente dallo scroll.
+  const toolbarWrapRef = useRef<HTMLDivElement>(null);
+  // Stato applicativo "e' aperto un pannello filtro", non desunto dal
+  // focus DOM: il pannello mobile e' in portale fuori da toolbarWrapRef e
+  // Safari (desktop/iOS) non da' focus a un <button> al click/tap - il
+  // solo controllo di focus in useHideOnScrollDown mancava entrambi i
+  // casi, comprimendo la barra (e il popover ancorato a essa) mentre un
+  // filtro era ancora visibilmente aperto (bug reale segnalato su iOS e
+  // desktop, riprodotto con uno scroll reale a filtro aperto).
+  const [anyFilterOpen, setAnyFilterOpen] = useState(false);
+  const [toolbarVisible, setToolbarVisible] = useHideOnScrollDown(toolbarWrapRef, undefined, undefined, anyFilterOpen);
+
+  // Hero 3D decorativo, stesso flag ?three=1 e stessa disciplina di
+  // ThreeCardHero (card/[id]/page.tsx, PR #6): "off" per default, passa a
+  // "on" solo se il flag e' presente, prefers-reduced-motion non e' attivo
+  // e il browser supporta davvero WebGL - controllo fatto in un effetto
+  // (richiede window/canvas, non disponibile server-side). onFallback
+  // (passato a HomeHero3D) riporta a "off" per qualunque motivo il
+  // componente non possa continuare a mostrarsi: qui non serve un fallback
+  // visivo, la home resta semplicemente senza hero.
+  const [heroThreeMode, setHeroThreeMode] = useState<"off" | "on">("off");
+  useEffect(() => {
+    if (searchParams.get("three") !== "1") {
+      // Una navigazione client-side (es. una ricerca che aggiorna la query
+      // string senza includere "three", vedi l'effetto di sincronizzazione
+      // URL sopra) puo' far sparire il flag senza rismontare il componente:
+      // senza questo reset esplicito heroThreeMode restava "on" (bug reale
+      // trovato in review), mostrando l'hero anche senza il flag nell'URL.
+      // setState va dentro un callback (rAF), mai sincrono nel corpo
+      // dell'effetto (regola di lint del progetto, react-hooks/set-state-in-effect).
+      const offFrame = requestAnimationFrame(() => setHeroThreeMode("off"));
+      return () => cancelAnimationFrame(offFrame);
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) return;
+    const frame = requestAnimationFrame(() => setHeroThreeMode("on"));
+    return () => cancelAnimationFrame(frame);
+  }, [searchParams]);
+
+  // Specchia i filtri nella URL (senza aggiungere una entry nella cronologia
+  // ad ogni singola modifica: solo la navigazione verso una carta la crea).
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    if (expansionCode) params.set("exp", expansionCode);
+    if (selectedRarities.length) params.set("rarity", selectedRarities.join(","));
+    if (selectedArtists.length) params.set("artist", selectedArtists.join(","));
+    if (selectedLanguages.length) params.set("lang", selectedLanguages.join(","));
+    if (selectedConditions.length) params.set("cond", selectedConditions.join(","));
+    if (onlyZero) params.set("zero", "1");
+    if (exactName) params.set("exact", "1");
+    if (priceBand) params.set("price", priceBand);
+    if (sortBy !== "expansion") params.set("sort", sortBy);
+    if (visibleCount > PAGE_SIZE) params.set("shown", String(visibleCount));
+    // "three" non e' un filtro del catalogo ma un flag di visualizzazione
+    // (hero 3D decorativo, vedi heroThreeMode sotto): va preservato qui,
+    // altrimenti questo stesso effetto lo cancella dalla URL un istante
+    // dopo il mount (gia' al primo giro, essendo un effetto - non solo ad
+    // ogni cambio di filtro), rispegnendo l'hero appena acceso (bug reale
+    // trovato verificando in browser il fix del punto 2 della review AI).
+    if (searchParams.get("three") === "1") params.set("three", "1");
+    const qs = params.toString();
+    // Guardia difensiva (suggerita in review, provider groq): con
+    // searchParams tra le dipendenze, un router.replace verso la stessa
+    // query string potrebbe in teoria far ripartire l'effetto se una
+    // futura versione di Next.js smettesse di trattarlo come no-op -
+    // confrontare le stringhe qui evita quel loop a prescindere.
+    if (qs !== searchParams.toString()) {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [search, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, exactName, priceBand, sortBy, visibleCount, pathname, router, searchParams]);
+
+  useEffect(() => {
+    fetchExpansions().then(setExpansions).catch(() => {});
+    fetchRarities().then(setRarities).catch(() => {});
+    fetchArtists().then(setArtists).catch(() => {});
+    fetchLanguages().then(setLanguages).catch(() => {});
+    fetchConditions().then(setConditions).catch(() => {});
+    fetchMeta()
+      .then((m) => setLastSync(m["last_price_sync"]))
+      .catch(() => {});
+    fetchCatalogStats()
+      .then((s) => setTotalCards(s.totalCards))
+      .catch(() => {});
+  }, []);
+
+  // Ricarica le carte quando cambiano i filtri lato-query (ricerca,
+  // espansione, rarità, lingua, condizione, ordinamento) o quante mostrarne
+  // (visibleCount, "mostra altre"): sono gestiti in SQL con un LIMIT, non
+  // si scarica ne' si rifiltra in JS. reloadTick permette al pulsante
+  // "Riprova" dello stato d'errore di rilanciare la stessa fetch.
+  // `limit` qui e' l'intervento piu' importante trovato in revisione:
+  // prima, senza LIMIT, ogni ricerca/filtro materializzava in oggetti JS
+  // TUTTE le righe corrispondenti (decine di migliaia a catalogo pieno)
+  // per poi mostrarne solo 60 con uno slice() lato client.
+  useEffect(() => {
+    let cancelled = false;
+    fetchCards({
+      search: debouncedSearch, exactName, expansionCode, rarities: selectedRarities, artists: selectedArtists,
+      languages: selectedLanguages, conditions: selectedConditions, onlyZero, ...priceRange, sortBy, limit: visibleCount,
+    })
+      .then((nextCards) => {
+        if (!cancelled) { setError(null); setCards(nextCards); }
+      })
+      .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); });
+    return () => { cancelled = true; };
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, exactName, priceRange, sortBy, visibleCount, reloadTick]);
+
+  useEffect(() => {
+    if (previousFilterKey.current !== filterKey) {
+      previousFilterKey.current = filterKey;
+      setVisibleCount(PAGE_SIZE);
+    }
+  }, [filterKey]);
+
+  // Conteggio totale e andamento medio dell'espansione: calcolati in SQL
+  // (fetchCardsCount/fetchCardsSummary) invece che derivati da `cards`, che
+  // ora e' limitato a visibleCount e non contiene piu' tutte le righe che
+  // soddisfano i filtri correnti. Non dipende da visibleCount/reloadTick
+  // sortBy: il totale e l'andamento medio non cambiano ne' scorrendo "mostra
+  // altre" ne' cambiando ordinamento.
+  useEffect(() => {
+    let cancelled = false;
+    let frame: number | null = null;
+    const filters = {
+      search: debouncedSearch, exactName, expansionCode, rarities: selectedRarities, artists: selectedArtists,
+      languages: selectedLanguages, conditions: selectedConditions, onlyZero, ...priceRange,
+    };
+    fetchCardsCount(filters).then((c) => { if (!cancelled) setResultCount(c); }).catch(() => {});
+    if (expansionCode) {
+      fetchCardsSummary(filters)
+        .then((s) => { if (!cancelled) setExpansionSummaryData(s); })
+        .catch(() => { if (!cancelled) setExpansionSummaryData(null); });
+    } else {
+      // setState va dentro un callback (rAF), mai sincrono nel corpo
+      // dell'effetto (regola di lint del progetto, react-hooks/set-state-in-effect).
+      frame = requestAnimationFrame(() => { if (!cancelled) setExpansionSummaryData(null); });
+    }
+    return () => { cancelled = true; if (frame !== null) cancelAnimationFrame(frame); };
+  }, [debouncedSearch, expansionCode, selectedRarities, selectedArtists, selectedLanguages, selectedConditions, onlyZero, exactName, priceRange]);
+
+  // Gia' limitato lato SQL a visibleCount (vedi fetchCards sopra): nessuno
+  // slice() lato client necessario.
+  // Le tile si montano a scaglioni (vedi useProgressiveCount): stesso
+  // risultato finale, ma senza un unico blocco lungo che tiene la pagina
+  // ferma ai tocchi. Le prime sono quelle sopra la piega.
+  const { count: mountedCount, done: gridMounted } = useProgressiveCount(cards?.length ?? 0, GRID_INITIAL, GRID_STEP);
+  const visible = cards && cards.slice(0, mountedCount);
+  const currentQuery = searchParams.toString();
+  const returnTo = currentQuery ? `${pathname}?${currentQuery}` : pathname;
+
+  // Il ripristino dello scroll aspetta che tutte le tile siano montate: se
+  // la pagina non e' ancora alta abbastanza, scrollTo() si fermerebbe prima.
+  useScrollRestoration("catalog", (cards !== null && gridMounted) || error !== null, returnTo);
+
+  const expansionSummary = expansionSummaryData && cards
+    ? { ...expansionSummaryData, expansionName: cards[0]?.expansion_name ?? "" }
+    : null;
+
+  function handleToggleRarity(r: string) {
+    setSelectedRarities((prev) =>
+      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
+  }
+
+  function handleToggleArtist(a: string) {
+    setSelectedArtists((prev) =>
+      prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]
+    );
+  }
+
+  function handleToggleLanguage(l: string) {
+    setSelectedLanguages((prev) =>
+      prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]
+    );
+  }
+
+  function handleToggleCondition(c: string) {
+    setSelectedConditions((prev) =>
+      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
+    );
+  }
+
+  // useCallback (non funzioni semplici): CardTile e' memo (vedi
+  // components/CardTile.tsx) - un riferimento stabile qui e' cio' che
+  // permette a un toggle su UNA carta di ri-renderizzare solo quella tile
+  // invece dell'intera griglia visibile.
+  const handleToggleBinderCard = useCallback((card: CardRow) => {
+    setBinderIds((prev) => new Set(promptBinderToggle(card, prev.has(card.id))));
+  }, [promptBinderToggle, setBinderIds]);
+
+  const handleToggleWishlistCard = useCallback((card: CardRow) => {
+    setWishlistIds((prev) => new Set(promptWishlistToggle(card, prev.has(card.id))));
+  }, [promptWishlistToggle, setWishlistIds]);
+
+  const hasActiveFilters = Boolean(
+    search || expansionCode || selectedRarities.length || selectedArtists.length || selectedLanguages.length ||
+      selectedConditions.length || onlyZero || exactName || priceBand || sortBy !== "expansion"
+  );
+
+  function resetAllFilters() {
+    setSearch("");
+    setExpansionCode("");
+    setSelectedRarities([]);
+    setSelectedArtists([]);
+    setSelectedLanguages([]);
+    setSelectedConditions([]);
+    setOnlyZero(false);
+    setExactName(false);
+    setPriceBand("");
+    setSortBy("expansion");
+  }
+
+  function applyPreset(preset: FilterPreset) {
+    setSearch(preset.search ?? "");
+    setExpansionCode(preset.expansionCode ?? "");
+    setSelectedRarities(preset.rarities.map(normalizeRarity));
+    setSelectedArtists(preset.artists ?? []);
+    setSelectedLanguages(preset.languages);
+    setSelectedConditions(preset.conditions);
+    setOnlyZero(preset.onlyZero);
+    setExactName(preset.exactName === true);
+    setPriceBand(priceBandByKey(preset.priceBand)?.key ?? "");
+    setSortBy(preset.sortBy ?? "expansion");
+  }
+
+  return (
+    // overflow-anchor:none e' necessario, non decorativo: la barra filtri
+    // sticky sotto cambia altezza reale (si comprime/espande) quando si
+    // nasconde/mostra scrollando. Senza questo, lo "scroll anchoring"
+    // nativo del browser compensa quel cambio di altezza spostando da solo
+    // scrollY per tenere fermo il contenuto sotto - il che genera un NUOVO
+    // evento scroll, che il hook interpreta come un gesto dell'utente e
+    // reagisce di nuovo, in un loop infinito (bug reale, osservato: scrollY
+    // oscillava senza mai assestarsi, decine di volte al secondo).
+    <main className="max-w-7xl mx-auto px-5 sm:px-8 py-12 [overflow-anchor:none]">
+      <SiteHeader
+        lastSync={lastSync}
+        totalCards={totalCards}
+        onLogoClick={hasActiveFilters ? resetAllFilters : undefined}
+      />
+      <h1 className="sr-only">CartaViva: catalogo e prezzi delle carte Pokémon</h1>
+
+      {heroThreeMode === "on" && !hasActiveFilters && (
+        <HomeHero3D onFallback={() => setHeroThreeMode("off")} />
+      )}
+
+      <div ref={toolbarWrapRef} data-testid="toolbar-collapse" className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 bg-base-bg/85 backdrop-blur-sm">
+        <div
+          className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+            toolbarVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          }`}
+        >
+          {/* overflow-hidden SOLO mentre la barra e' compressa o si sta
+              comprimendo (necessario perche' grid-template-rows a 0fr
+              collassi visivamente) - overflow-visible a barra aperta,
+              altrimenti questo stesso contenitore taglia il popover
+              desktop di FilterDropdown (position:absolute, si estende
+              sotto l'altezza naturale della barra) ogni volta che un
+              pannello filtro e' aperto, anche a barra pienamente visibile
+              (bug reale segnalato dall'utente: "i filtri sono nascosti
+              sotto" su desktop - su mobile FilterDropdown non ne soffre
+              perche' il suo pannello e' in portale su document.body,
+              fuori da questo contenitore). Sicuro cambiare la classe in
+              sincrono con toolbarVisible: un filtro aperto forza sempre
+              toolbarVisible a true PRIMA che l'utente possa vedere un
+              pannello (vedi keepVisible in useHideOnScrollDown), quindi
+              overflow-visible e' gia' attivo in quell'istante. */}
+          <div className={toolbarVisible ? "overflow-visible" : "overflow-hidden"}>
+            <div className="py-3">
+              <Toolbar
+                search={search}
+                onSearch={setSearch}
+                expansions={expansions}
+                expansionCode={expansionCode}
+                onExpansionChange={setExpansionCode}
+                rarities={rarities}
+                selectedRarities={selectedRarities}
+                onToggleRarity={handleToggleRarity}
+                artists={artists}
+                selectedArtists={selectedArtists}
+                onToggleArtist={handleToggleArtist}
+                languages={languages}
+                selectedLanguages={selectedLanguages}
+                onToggleLanguage={handleToggleLanguage}
+                conditions={conditions}
+                selectedConditions={selectedConditions}
+                onToggleCondition={handleToggleCondition}
+                onlyZero={onlyZero}
+                onToggleOnlyZero={() => setOnlyZero((v) => !v)}
+                exactName={exactName}
+                onToggleExactName={() => setExactName((v) => !v)}
+                priceBand={priceBand}
+                onPriceBandChange={setPriceBand}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                hasActiveFilters={hasActiveFilters}
+                onResetAll={resetAllFilters}
+                onApplyPreset={applyPreset}
+                resultCount={resultCount}
+                onAnyFilterOpenChange={setAnyFilterOpen}
+              />
+            </div>
+          </div>
+        </div>
+        {/* Maniglia sempre visibile (fuori dal blocco che si comprime) per
+            riaprire/richiudere a mano, indipendentemente dallo scroll -
+            richiesto esplicitamente: "una tendina a scomparsa che lo fa
+            estendere o nascondere". */}
+        <button
+          type="button"
+          onClick={() => setToolbarVisible((v) => !v)}
+          aria-expanded={toolbarVisible}
+          aria-label={toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
+          className="w-full min-h-9 sm:min-h-10 flex items-center justify-center gap-2 text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
+        >
+          <span
+            aria-hidden
+            className={`text-[10px] transition-transform duration-300 ${toolbarVisible ? "" : "rotate-180"}`}
+          >
+            ▲
+          </span>
+          {/* Su telefono la freccia da sola sembrava un pannello vuoto: serve
+              un'etichetta. Il nome accessibile (aria-label) ripete lo stesso testo: WCAG 2.5.3. */}
+          <span aria-hidden className="sm:hidden text-xs">
+            {toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
+          </span>
+        </button>
+      </div>
+
+      <HomeHighlights
+        active={!hasActiveFilters}
+        initial={initialHighlights}
+        binderIds={binderIds}
+        onToggleBinder={handleToggleBinderCard}
+        wishlistIds={wishlistIds}
+        onToggleWishlist={handleToggleWishlistCard}
+        returnTo={returnTo}
+      />
+
+      {expansionSummary && (
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-card border border-base-border bg-base-surface px-5 py-4">
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">
+              Andamento {expansionSummary.expansionName} (giorno su giorno)
+            </div>
+            <div
+              className={`font-display text-xl font-bold ${
+                expansionSummary.avgPct >= 0 ? "text-signal-up" : "text-signal-down"
+              }`}
+            >
+              {expansionSummary.avgPct >= 0 ? "▲" : "▼"}{" "}
+              <CountUp
+                value={Math.abs(expansionSummary.avgPct)}
+                format={(n) => formatPercent(n, 1)}
+              />
+              <span className="text-xs font-mono text-ink-faint ml-1.5">
+                (media su {expansionSummary.sampleSize}/{expansionSummary.totalCards} carte)
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <LoadError
+          title="Non riesco a caricare il catalogo al momento."
+          detail={error}
+          onRetry={() => setReloadTick((t) => t + 1)}
+        />
+      )}
+
+      {!cards && !error && (
+        <div className="mt-8">
+          <div className="text-center text-ink-muted font-mono text-sm mb-6">
+            Carico le carte…
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={i}
+                className="skeleton rounded-card border border-base-border bg-base-surface overflow-hidden"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
+                <div className="aspect-[5/7] bg-base-surface2" />
+                <div className="p-3 space-y-2">
+                  <div className="h-2.5 w-2/3 rounded bg-base-surface2" />
+                  <div className="h-3.5 w-4/5 rounded bg-base-surface2" />
+                  <div className="h-4 w-1/2 rounded bg-base-surface2 mt-3" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {cards && cards.length === 0 && (
+        <div className="mt-16 text-center text-ink-muted">
+          Nessuna carta trovata. Prova a modificare la ricerca o i filtri.
+        </div>
+      )}
+
+      {visible && visible.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5 mt-8">
+              {visible.map((card, i) => (
+                <CardTile
+                  key={card.id}
+                  card={card}
+                  index={i}
+                  imagePriority={i >= 8 ? "low" : hasActiveFilters && i < 4 ? "high" : undefined}
+                  inBinder={binderIds.has(card.id)}
+                  onToggleBinder={handleToggleBinderCard}
+                  inWishlist={wishlistIds.has(card.id)}
+                  onToggleWishlist={handleToggleWishlistCard}
+                  returnTo={returnTo}
+                />
+              ))}
+          </div>
+
+          {gridMounted && resultCount !== undefined && visibleCount < resultCount && (
+            <div className="flex justify-center mt-8">
+              <button
+                onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
+                className="btn-lift text-sm px-6 py-2.5 rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
+              >
+                Mostra altre {Math.min(PAGE_SIZE, resultCount - visibleCount)} carte
+                <span className="text-ink-faint"> ({cards?.length ?? 0}/{resultCount})</span>
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {wishlistPromptOverlay}
+      {binderPromptOverlay}
+    </main>
+  );
+}
+
+export default function HomeClient({ initialHighlights }: { initialHighlights?: InitialHighlights }) {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent initialHighlights={initialHighlights} />
+    </Suspense>
+  );
+}

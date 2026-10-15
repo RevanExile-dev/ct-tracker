@@ -11,10 +11,10 @@
 
 import { useEffect, useState } from "react";
 import { CardRow, MIN_MOVER_LISTINGS, fetchCards } from "@/lib/db";
+import { HIGHLIGHT_ROWS, type InitialHighlights } from "@/lib/homeHighlights";
 import { useProgressiveCount } from "@/lib/useProgressiveCount";
 import CardTile from "./CardTile";
 
-const ROW_LIMIT = 10;
 // Montaggio a scaglioni delle tile delle tre righe (stesso motivo e stessa
 // tecnica della griglia in app/page.tsx): quante per riga subito, quante in piu' per frame.
 const ROW_INITIAL = 3;
@@ -93,12 +93,16 @@ function HighlightRow({
 }
 
 export default function HomeHighlights({
-  active, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
+  active, initial, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
 }: {
   /** Mostra le righe solo quando l'utente non ha ancora impostato filtri
    * propri (vedi hasActiveFilters in app/page.tsx) - una volta che cerca o
    * filtra, queste righe non sono piu' pertinenti alla vista corrente. */
   active: boolean;
+  /** Righe gia' lette dal server (pagina statica rigenerata ogni minuto): con
+   * queste le tile si disegnano subito all'idratazione, senza il giro di API
+   * che prima ritardava le immagini di ~0,5 s e il preload parte dall'HTML. */
+  initial?: InitialHighlights;
   binderIds: Set<number>;
   onToggleBinder: (card: CardRow) => void;
   wishlistIds: Set<number>;
@@ -106,9 +110,9 @@ export default function HomeHighlights({
   returnTo: string;
 }) {
   const [rows, setRows] = useState<Row[]>([
-    { key: "trending", title: "In tendenza", subtitle: `Maggior rialzo di prezzo giorno su giorno, su carte con almeno ${MIN_MOVER_LISTINGS} inserzioni`, cards: null },
-    { key: "it-premium", title: "Full art italiane", subtitle: "Illustration/secret/alternate art, prezzo piu' alto prima", cards: null },
-    { key: "new-premium", title: "Ultime uscite, full art", subtitle: "Dalle espansioni piu' recenti tracciate", cards: null },
+    { key: "trending", title: "In tendenza", subtitle: `Maggior rialzo di prezzo giorno su giorno, su carte con almeno ${MIN_MOVER_LISTINGS} inserzioni`, cards: initial?.trending ?? null },
+    { key: "it-premium", title: "Full art italiane", subtitle: "Illustration/secret/alternate art, prezzo piu' alto prima", cards: initial?.["it-premium"] ?? null },
+    { key: "new-premium", title: "Ultime uscite, full art", subtitle: "Dalle espansioni piu' recenti tracciate", cards: initial?.["new-premium"] ?? null },
   ]);
 
   // Una sola volta al montaggio: queste righe non dipendono dai filtri del
@@ -130,12 +134,12 @@ export default function HomeHighlights({
         }
       }
     };
-    load("trending", () => fetchCards({ sortBy: "rise_first", limit: ROW_LIMIT }));
-    load("it-premium", () =>
-      fetchCards({ onlyPremium: true, languages: ["it"], sortBy: "price_desc", limit: ROW_LIMIT })
-    );
-    load("new-premium", () => fetchCards({ onlyPremium: true, sortBy: "expansion", limit: ROW_LIMIT }));
+    // Solo le righe che il server non ha potuto leggere (DB irraggiungibile).
+    for (const def of HIGHLIGHT_ROWS) {
+      if (!initial?.[def.key]) load(def.key, () => fetchCards(def.opts));
+    }
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` e' fisso per la vita della pagina
   }, []);
 
   // Prima le tile visibili, il resto dopo REST_DELAY_MS (o al primo gesto).
