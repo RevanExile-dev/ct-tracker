@@ -32,14 +32,17 @@ export async function generateMetadata({
   if (price != null) parts.push(`prezzo attuale ${formatCents(price, currency)}`);
   const description = `${parts.join(", ")}. Andamento del prezzo, inserzioni attive e allarmi su CartaViva.`;
   const title = `${card.name} · ${card.expansion_name}`;
-  const images = card.image_url ? [{ url: card.image_url, alt: card.name }] : undefined;
+  // cardtrader.com risponde 301 verso www.cardtrader.com: puntare subito
+  // all'host finale risparmia un salto ai crawler di WhatsApp/Telegram.
+  const imageUrl = card.image_url?.replace(/^https:\/\/cardtrader\.com\//, "https://www.cardtrader.com/");
+  const images = imageUrl ? [{ url: imageUrl, alt: card.name }] : undefined;
 
   return {
     title,
     description,
     alternates: { canonical: `/card/${cardId}` },
     openGraph: { type: "website", locale: "it_IT", siteName: "CartaViva", title, description, ...(images ? { images } : {}) },
-    twitter: { card: images ? "summary_large_image" : "summary", title, description, ...(images ? { images: [card.image_url as string] } : {}) },
+    twitter: { card: images ? "summary_large_image" : "summary", title, description, ...(images ? { images: [imageUrl as string] } : {}) },
   };
 }
 
