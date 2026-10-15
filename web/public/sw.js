@@ -10,7 +10,7 @@
  * worker avvisa la pagina (messaggio "stale" con la data), che mostra
  * l'avviso "prezzi salvati il ...". Cosi' non si vedono prezzi vecchi senza
  * saperlo. */
-const VERSION = "v1";
+const VERSION = "v2";
 const PAGES = `cv-pages-${VERSION}`;
 const STATIC = `cv-static-${VERSION}`;
 const DATA = `cv-data-${VERSION}`;
