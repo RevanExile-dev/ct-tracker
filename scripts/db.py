@@ -84,6 +84,18 @@ def _best_image_url(bp: dict) -> str | None:
     return bp.get("image_url")
 
 
+def _blueprint_rarity(bp: dict) -> str | None:
+    """Rarita' dichiarata dal catalogo (fixed_properties.pokemon_rarity del
+    bulk /blueprints/export). Prima si leggeva solo dalle inserzioni live
+    (sync prezzi): le carte senza nessuna inserzione, tipicamente vecchie
+    promo, restavano senza rarita' per sempre."""
+    props = bp.get("fixed_properties")
+    if not isinstance(props, dict):
+        return None
+    rarity = props.get("pokemon_rarity") or props.get("rarity")
+    return rarity.strip() or None if isinstance(rarity, str) else None
+
+
 def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
                        is_premium: bool, synced_at: str):
     with conn.cursor() as cur:
@@ -92,13 +104,14 @@ def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
             INSERT INTO blueprints
                 (id, name, version, game_id, category_id, expansion_id,
                  expansion_code, expansion_name, image_url, scryfall_id,
-                 tcg_player_id, is_premium, last_synced_at)
+                 tcg_player_id, is_premium, last_synced_at, rarity)
             VALUES
                 (%(id)s, %(name)s, %(version)s, %(game_id)s, %(category_id)s, %(expansion_id)s,
                  %(expansion_code)s, %(expansion_name)s, %(image_url)s, %(scryfall_id)s,
-                 %(tcg_player_id)s, %(is_premium)s, %(synced_at)s)
+                 %(tcg_player_id)s, %(is_premium)s, %(synced_at)s, %(rarity)s)
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name, version = EXCLUDED.version,
+                rarity = COALESCE(NULLIF(blueprints.rarity, ''), EXCLUDED.rarity),
                 image_url = EXCLUDED.image_url, is_premium = EXCLUDED.is_premium,
                 last_synced_at = EXCLUDED.last_synced_at
             """,
@@ -116,6 +129,7 @@ def upsert_blueprint(conn, bp: dict, expansion_code: str, expansion_name: str,
                 "tcg_player_id": bp.get("tcg_player_id"),
                 "is_premium": int(is_premium),
                 "synced_at": synced_at,
+                "rarity": _blueprint_rarity(bp),
             },
         )
 
