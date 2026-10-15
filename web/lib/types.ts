@@ -44,6 +44,8 @@ export type CardRow = {
   prev_it_nm_zero_age_days?: number | null;
   // Idem per prev_price_cents / prev_best_price_cents (prev_captured_at).
   prev_age_days?: number | null;
+  // Giorni interi dall'ultimo aggiornamento riuscito del prezzo (captured_at_ts).
+  price_age_days?: number | null;
   // Presenti SOLO quando fetchCards() ha almeno un filtro lingua/condizione/
   // Zero attivo (vedi hasListingFilter): la piu' economica tra le inserzioni
   // che rispettano TUTTI quei filtri insieme, cosi' il prezzo mostrato non
@@ -132,6 +134,8 @@ export const OCCASIONI_MIN_CENTS = 500;
 export const OCCASIONI_MIN_LISTINGS = 10;
 export const OCCASIONI_MAX_COMPARE_DAYS = 30;
 export const OCCASIONI_MAX_PRICE_AGE_DAYS = 3;
+/** Oltre questa eta' il prezzo e' segnalato come "vecchio" e non alimenta ribassi/rialzi. */
+export const STALE_PRICE_DAYS = 7;
 
 export type MoversPageResult = {
   cards: CardRow[];
