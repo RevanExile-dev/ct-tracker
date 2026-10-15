@@ -585,6 +585,20 @@ export async function unlinkTelegram(userId: string): Promise<void> {
   await pool.query("DELETE FROM telegram_links WHERE user_id = $1", [userId]);
 }
 
+/** Parola da digitare per confermare l'eliminazione dell'account. */
+export const DELETE_ACCOUNT_CONFIRM = "ELIMINA";
+
+/** Elimina l'account e tutti i suoi dati. Tutte le tabelle dell'utente
+ * (sessioni, accessi, binder, desideri, lotti, storico, filtri, allarmi,
+ * Telegram, piano) hanno `ON DELETE CASCADE` verso `users`, quindi basta
+ * cancellare la riga dell'utente: nient'altro viene toccato (catalogo e
+ * prezzi non dipendono dagli utenti). Ritorna true se l'utente esisteva. */
+export async function deleteAccount(userId: string): Promise<boolean> {
+  const pool = getPgPool();
+  const { rowCount } = await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+  return (rowCount ?? 0) > 0;
+}
+
 function generateLinkCode(): string {
   // 10 caratteri esadecimali maiuscoli: abbastanza corti da scrivere a
   // mano in una chat Telegram ("/start A1B2C3D4E5"), abbastanza lunghi da
