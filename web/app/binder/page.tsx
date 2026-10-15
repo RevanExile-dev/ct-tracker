@@ -398,7 +398,15 @@ function BinderContent() {
           onRetry={() => { setError(null); setCards(null); setReloadTick((t) => t + 1); }}
         />
       )}
-      {cards && cards.length === 0 && <div className="rounded-card border border-base-border bg-base-surface/60 py-20 px-5 text-center text-ink-muted">Il Binder è ancora vuoto. Dal catalogo usa la stella su una carta per aggiungerla.</div>}
+      {cards && cards.length === 0 && (
+        <div className="rounded-card border border-base-border bg-base-surface/60 py-16 px-5 text-center text-ink-muted">
+          <p>Il Binder è ancora vuoto. Nel catalogo tocca la stella <span aria-hidden>☆</span> su una carta per aggiungerla, oppure scansiona quelle che hai in mano.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Link href="/" className="btn-lift inline-flex items-center min-h-11 px-4 text-sm rounded-card border border-base-border bg-base-surface text-ink-primary hover:border-accent/60 transition-colors">Cerca nel catalogo</Link>
+            <Link href="/scan" className="btn-lift inline-flex items-center min-h-11 px-4 text-sm rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 transition-colors">✦ Scansiona una carta</Link>
+          </div>
+        </div>
+      )}
 
       {cards && cards.length > 0 && view === "collection" && (
         layout === "table" ? (
