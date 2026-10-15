@@ -267,14 +267,17 @@ body::after {
 }
 
 /* --- Disegno progressivo della linea nel grafico prezzi --- */
-@keyframes draw-line {
-  from { stroke-dashoffset: var(--line-length, 300); }
-  to { stroke-dashoffset: 0; }
+/* La linea del grafico prezzi entra in dissolvenza. Prima si "disegnava" con
+   stroke-dasharray + pathLength=1, ma con vector-effect: non-scaling-stroke
+   Chromium ignora pathLength e la linea restava a pezzi (misurato: tratti
+   mancanti a fine animazione). */
+@keyframes price-line-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .price-line {
-  stroke-dasharray: var(--line-length, 300);
-  animation: draw-line 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: price-line-in 0.6s ease-out backwards;
 }
 
 @keyframes pop {

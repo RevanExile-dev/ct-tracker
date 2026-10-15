@@ -11,6 +11,7 @@ const DAY_MS = 86_400_000;
 // sotto) - su una carta con pochi giorni di storico non avrebbe senso
 // offrire "1 anno" identico a "Tutto".
 const RANGE_PRESETS = [
+  { days: 7, label: "7g" },
   { days: 30, label: "30g" },
   { days: 90, label: "90g" },
   { days: 180, label: "6 mesi" },
@@ -18,6 +19,19 @@ const RANGE_PRESETS = [
 ] as const;
 
 type Series = "min" | "exact";
+
+// Oltre questo salto tra due rilevazioni consecutive la linea non e' piu'
+// un andamento ma un buco di dati: lo storico vecchio e' compresso a un
+// punto a settimana (7 gg), quindi 10 gg e' gia' un buco vero.
+const GAP_DAYS = 10;
+
+/** Il prezzo in evidenza della scheda (best_price_cents, la cascata NM+Zero);
+ * per gli snapshot vecchi senza quella colonna, il minimo grezzo. E' lo
+ * stesso criterio di trendVsMovingAverage: grafico, prezzo grande e
+ * "vs media 30gg" parlano dello stesso numero. */
+function mainValue(p: PricePoint): number | null {
+  return p.best_price_cents ?? p.min_price_cents;
+}
 
 /** Campione di linea per la legenda - una vera linea SVG (tratteggiata o
  * continua a seconda della serie), non una casella colorata: alla densita'
@@ -47,7 +61,7 @@ export default function PriceChart({
   const [hiddenSeries, setHiddenSeries] = useState<Set<Series>>(new Set());
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const allWithPrice = useMemo(() => points.filter((p) => p.min_price_cents !== null), [points]);
+  const allWithPrice = useMemo(() => points.filter((p) => mainValue(p) !== null), [points]);
 
   // Solo i preset che tagliano davvero qualcosa rispetto allo storico
   // completo (con un margine di 2 giorni, altrimenti "1 anno" su una carta
@@ -66,7 +80,7 @@ export default function PriceChart({
     return points.filter((p) => Date.parse(p.captured_at) >= cutoff);
   }, [points, rangeDays, allWithPrice]);
 
-  const withPrice = useMemo(() => filteredPoints.filter((p) => p.min_price_cents !== null), [filteredPoints]);
+  const withPrice = useMemo(() => filteredPoints.filter((p) => mainValue(p) !== null), [filteredPoints]);
   const hasExact = withPrice.some((p) => p.it_nm_zero_price_cents !== null);
 
   // Cambiare periodo azzera sempre hoverIdx (vedi selectRange sotto): un
@@ -77,23 +91,24 @@ export default function PriceChart({
     setHoverIdx(null);
   }
 
-  const { minPath, minCoords, exactPath, minV, maxV, minMs, maxMs } = useMemo(() => {
+  const { minPaths, minCoords, exactPath, gapPath, areaFills, isolated, minV, maxV, minMs, maxMs } = useMemo(() => {
     if (withPrice.length === 0) {
       return {
-        minPath: "", minCoords: [] as ChartCoord[], exactPath: "",
+        minPaths: [] as string[], minCoords: [] as ChartCoord[], exactPath: "",
+        gapPath: "", areaFills: [] as string[], isolated: [] as ChartCoord[],
         minV: 0, maxV: 0, minMs: 0, maxMs: 0,
       };
     }
     const minMs = Date.parse(withPrice[0].captured_at);
     const maxMs = Date.parse(withPrice[withPrice.length - 1].captured_at);
     const allValues = withPrice.flatMap((p) =>
-      [p.min_price_cents, p.it_nm_zero_price_cents].filter((v): v is number => v !== null)
+      [mainValue(p), p.it_nm_zero_price_cents].filter((v): v is number => v !== null)
     );
     const minV = Math.min(...allValues);
     const maxV = Math.max(...allValues);
     const minCoords = withPrice.map((p) => ({
       x: xForDate(Date.parse(p.captured_at), minMs, maxMs),
-      y: yForValue(p.min_price_cents as number, minV, maxV),
+      y: yForValue(mainValue(p) as number, minV, maxV),
     }));
     const exactCoords = withPrice
       .filter((p) => p.it_nm_zero_price_cents !== null)
@@ -101,14 +116,31 @@ export default function PriceChart({
         x: xForDate(Date.parse(p.captured_at), minMs, maxMs),
         y: yForValue(p.it_nm_zero_price_cents as number, minV, maxV),
       }));
+    // Tratti continui: si spezza dove manca piu' di GAP_DAYS di dati. I buchi
+    // si uniscono con un filo punteggiato (c'e' un salto, non un andamento).
+    const segments: ChartCoord[][] = [];
+    withPrice.forEach((p, i) => {
+      const gap = i > 0 && Date.parse(p.captured_at) - Date.parse(withPrice[i - 1].captured_at) > GAP_DAYS * DAY_MS;
+      if (i === 0 || gap) segments.push([]);
+      segments[segments.length - 1].push(minCoords[i]);
+    });
+    const paths = segments.map((seg) => monotonePath(seg));
+    const gapPath = segments
+      .slice(1)
+      .map((seg, i) => {
+        const prev = segments[i][segments[i].length - 1];
+        return `M ${prev.x} ${prev.y} L ${seg[0].x} ${seg[0].y}`;
+      })
+      .join(" ");
     return {
-      minPath: monotonePath(minCoords), minCoords,
+      minPaths: paths, minCoords,
       exactPath: monotonePath(exactCoords),
+      gapPath,
+      areaFills: segments.map((seg, i) => areaPath(paths[i], seg)),
+      isolated: segments.filter((seg) => seg.length === 1).map((seg) => seg[0]),
       minV, maxV, minMs, maxMs,
     };
   }, [withPrice]);
-
-  const areaFillPath = useMemo(() => areaPath(minPath, minCoords), [minPath, minCoords]);
 
   if (withPrice.length === 0) {
     return (
@@ -127,7 +159,7 @@ export default function PriceChart({
     hoverIdx !== null && withPrice[hoverIdx] ? withPrice[hoverIdx] : withPrice[withPrice.length - 1];
   const activeMinCoord = {
     x: xForDate(Date.parse(active.captured_at), minMs, maxMs),
-    y: yForValue(active.min_price_cents as number, minV, maxV),
+    y: yForValue(mainValue(active) as number, minV, maxV),
   };
   const activeExactCoord =
     active.it_nm_zero_price_cents !== null
@@ -197,7 +229,7 @@ export default function PriceChart({
   }
 
   // Rimonta il contenuto del grafico quando cambia il periodo, cosi' il
-  // disegno progressivo della linea (.price-line, gia' esistente) e la
+  // entrata della linea (.price-line) e la
   // dissolvenza della serie esatta ripartono da capo invece di restare
   // fermi sullo stato "gia' disegnato" della selezione precedente.
   const revealKey = `${rangeDays ?? "all"}-${withPrice.length}`;
@@ -243,9 +275,9 @@ export default function PriceChart({
           </div>
           <div className="flex items-baseline gap-3 flex-wrap mt-0.5">
             <div className="font-display text-3xl font-bold text-ink-primary">
-              {formatCents(active.min_price_cents, currency)}
+              {formatCents(mainValue(active), currency)}
             </div>
-            <div className="text-xs font-mono text-ink-faint">più basso in assoluto</div>
+            <div className="text-xs font-mono text-ink-faint">prezzo in evidenza</div>
           </div>
           {activeExactCoord !== null ? (
             <div className="flex items-center gap-2 flex-wrap mt-1">
@@ -281,7 +313,7 @@ export default function PriceChart({
             }`}
           >
             <LineKey color="#2DD8C9" />
-            <span className="text-ink-faint">più basso in assoluto</span>
+            <span className="text-ink-faint">prezzo in evidenza</span>
           </button>
           <button
             type="button"
@@ -310,7 +342,7 @@ export default function PriceChart({
         className="w-full h-40 sm:h-48 overflow-visible touch-pan-y cursor-crosshair rounded outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         role="img"
         tabIndex={0}
-        aria-label={`Andamento prezzo. Punto selezionato: ${formatDateLong(active.captured_at)}, ${formatCents(active.min_price_cents, currency)}, ${active.listings_count} inserzioni. Trascina o usa le frecce sinistra/destra per scorrere lo storico.`}
+        aria-label={`Andamento prezzo. Punto selezionato: ${formatDateLong(active.captured_at)}, ${formatCents(mainValue(active), currency)}, ${active.listings_count} inserzioni. Trascina o usa le frecce sinistra/destra per scorrere lo storico.`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
@@ -325,22 +357,35 @@ export default function PriceChart({
         </defs>
 
         <g key={revealKey}>
-          {!hiddenSeries.has("min") && <path d={areaFillPath} fill="url(#areaFill)" stroke="none" />}
+          {!hiddenSeries.has("min") && areaFills.map((d, i) => (
+            <path key={`a${i}`} d={d} fill="url(#areaFill)" stroke="none" />
+          ))}
 
-          {!hiddenSeries.has("min") && (
+          {/* Un path per tratto (i buchi di dati separano i tratti). */}
+          {!hiddenSeries.has("min") && minPaths.map((d, i) => (
             <path
+              key={`l${i}`}
               className="price-line"
-              d={minPath}
-              pathLength={1}
+              d={d}
               fill="none"
               stroke="#2DD8C9"
               strokeWidth="2"
               vectorEffect="non-scaling-stroke"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ "--line-length": 1 } as React.CSSProperties}
+            />
+          ))}
+
+          {!hiddenSeries.has("min") && gapPath && (
+            <path
+              d={gapPath} fill="none" stroke="#2DD8C9" strokeOpacity="0.6" strokeWidth="1.5"
+              strokeDasharray="1 4" vectorEffect="non-scaling-stroke" strokeLinecap="round"
+              data-testid="chart-gap"
             />
           )}
+          {!hiddenSeries.has("min") && isolated.map((c, i) => (
+            <circle key={i} cx={c.x} cy={c.y} r="1.4" fill="#2DD8C9" />
+          ))}
 
           {!hiddenSeries.has("exact") && exactPath && (
             <path
