@@ -11,6 +11,8 @@ export type FilterPreset = {
   onlyZero: boolean;
   // Opzionale: preset salvati prima del filtro "Nome esatto" non hanno il campo.
   exactName?: boolean;
+  // Opzionale: preset salvati prima del filtro Prezzo non hanno il campo.
+  priceBand?: string;
   sortBy?: SortOption;
 };
 
@@ -30,6 +32,7 @@ export function readFilterPreset(scope: string): FilterPreset | null {
       conditions: Array.isArray(value.conditions) ? value.conditions.filter((v): v is string => typeof v === "string") : [],
       onlyZero: value.onlyZero === true,
       exactName: value.exactName === true,
+      priceBand: typeof value.priceBand === "string" ? value.priceBand : undefined,
       sortBy: typeof value.sortBy === "string" ? value.sortBy as SortOption : undefined,
     };
   } catch {

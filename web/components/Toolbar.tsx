@@ -1,13 +1,58 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArtistOption, ExpansionInfo, fetchNameSuggestions, SortOption } from "@/lib/db";
 import { FilterPreset } from "@/lib/filterPreset";
 import { formatDateLong, formatNumber, languageFlag, languageLabel } from "@/lib/format";
+import { PRICE_BANDS, priceBandByKey } from "@/lib/priceBands";
 import { releaseDateFor, UPCOMING_SETS } from "@/lib/expansions";
 import ConditionBadge from "./ConditionBadge";
 import FilterDropdown from "./FilterDropdown";
 import FilterPresetControls from "./FilterPresetControls";
+
+type SuggestionItem =
+  | { kind: "name"; key: string; name: string }
+  | { kind: "set"; key: string; name: string; code: string };
+
+function foldText(v: string): string {
+  return v.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+const wordsOf = (v: string) => foldText(v).split(/[^a-z0-9]+/).filter(Boolean);
+const usableToken = (t: string) => t.length >= 3 || (t.length >= 2 && /^\d+$/.test(t));
+
+/** Espansioni che combaciano con le parole digitate: parola intera del nome
+ * del set, o inizio di parola per l'ultima parola (ancora in digitazione). */
+function matchExpansions(text: string, expansions: ExpansionInfo[]) {
+  const tokens = wordsOf(text);
+  const indexed = expansions.map((e) => ({ e, words: wordsOf(e.name) }));
+  const exactFor = (t: string) => indexed.filter((x) => x.words.includes(t));
+  const found = new Map<string, ExpansionInfo>();
+  const setTokens: string[] = [];
+  tokens.forEach((t, i) => {
+    if (!usableToken(t)) return;
+    const exact = exactFor(t);
+    if (exact.length > 0) setTokens.push(t);
+    for (const x of exact) found.set(x.e.code, x.e);
+    if (i === tokens.length - 1) {
+      for (const x of indexed) if (x.words.some((w) => w.startsWith(t))) found.set(x.e.code, x.e);
+    }
+  });
+  const sets = [...found.values()].slice(0, 3);
+  const rest = tokens.filter((t) => !setTokens.includes(t));
+  const first = setTokens.length > 0 ? exactFor(setTokens[0]) : [];
+  return {
+    sets,
+    exactSet: setTokens.length > 0,
+    fallbackQuery: setTokens.length > 0 ? rest.join(" ") : "",
+    fallbackCode: first.length === 1 ? first[0].e.code : "",
+    /** Testo di ricerca senza le parole che hanno portato a quel set. */
+    restWithout(code: string): string {
+      const x = indexed.find((i) => i.e.code === code);
+      if (!x) return text;
+      return tokens.filter((t) => !(usableToken(t) && x.words.some((w) => w === t || w.startsWith(t)))).join(" ");
+    },
+  };
+}
 
 export default function Toolbar({
   search,
@@ -31,6 +76,8 @@ export default function Toolbar({
   onToggleOnlyZero,
   exactName,
   onToggleExactName,
+  priceBand,
+  onPriceBandChange,
   sortBy,
   onSortChange,
   hasActiveFilters,
@@ -62,6 +109,9 @@ export default function Toolbar({
   /** Il nome deve contenere le parole cercate come parole intere ("mew" non trova "Mewtwo"). */
   exactName: boolean;
   onToggleExactName: () => void;
+  /** Chiave della fascia di prezzo scelta ("" = nessuna), vedi lib/priceBands.ts. */
+  priceBand: string;
+  onPriceBandChange: (key: string) => void;
   sortBy: SortOption;
   onSortChange: (v: SortOption) => void;
   hasActiveFilters: boolean;
@@ -83,15 +133,18 @@ export default function Toolbar({
   onAnyFilterOpenChange?: (open: boolean) => void;
 }) {
   const selectedExpansion = expansions.find((e) => e.code === expansionCode);
-  const [activeFilter, setActiveFilter] = useState<"rarity" | "artist" | "language" | "condition" | null>(null);
+  const [activeFilter, setActiveFilter] = useState<"rarity" | "price" | "artist" | "language" | "condition" | null>(null);
   const [expansionFilterOpen, setExpansionFilterOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const secondaryFilterCount =
     selectedRarities.length + selectedArtists.length + selectedLanguages.length + selectedConditions.length + (onlyZero ? 1 : 0);
 
-  // Suggerimenti di nome mentre si digita (tipo Google): l'elenco si apre
-  // solo con il campo a fuoco; Invio sceglie quello evidenziato o, se non
-  // ce n'e' uno, il piu' vicino (il primo).
+  // Suggerimenti mentre si digita (tipo Google): nomi di carta e, in coda,
+  // le espansioni che combaciano con una parola ("charizard 151" propone il
+  // set 151). L'elenco si apre solo con il campo a fuoco, si chiude da solo
+  // appena si scorre la pagina o si tocca fuori (0 tocchi per liberare i
+  // risultati); Invio sceglie quello evidenziato o, se non ce n'e' uno, il
+  // primo.
   const listboxId = useId();
   const [suggestions, setSuggestions] = useState<string[]>([]);
   // Testo per cui sono stati calcolati: mentre arriva la risposta nuova si
@@ -100,24 +153,72 @@ export default function Toolbar({
   const [suggestionsFor, setSuggestionsFor] = useState("");
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
   const trimmedSearch = search.trim();
+  const setMatches = useMemo(() => matchExpansions(trimmedSearch, expansions), [trimmedSearch, expansions]);
+  // Set a cui riportare la scelta di un nome quando i nomi sono stati cercati
+  // senza la parola-set ("charizard 151": nessun nome contiene "151").
+  const [suggestionsSet, setSuggestionsSet] = useState("");
+  const { fallbackQuery, fallbackCode } = setMatches;
   useEffect(() => {
     if (trimmedSearch.length < 2) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       fetchNameSuggestions(trimmedSearch)
-        .then((names) => { if (!cancelled) { setSuggestions(names); setSuggestionsFor(trimmedSearch); setActiveSuggestion(-1); } })
+        .then(async (names) => {
+          let via = "";
+          if (names.length === 0 && fallbackQuery.length >= 2) {
+            names = await fetchNameSuggestions(fallbackQuery);
+            via = fallbackCode;
+          }
+          if (!cancelled) { setSuggestions(names); setSuggestionsSet(via); setSuggestionsFor(trimmedSearch); setActiveSuggestion(-1); }
+        })
         .catch(() => { if (!cancelled) setSuggestions([]); });
     }, 150);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [trimmedSearch]);
-  const shownSuggestions = suggestOpen && trimmedSearch.length >= 2 ? suggestions : [];
+  }, [trimmedSearch, fallbackQuery, fallbackCode]);
+  const shownSuggestions: SuggestionItem[] = suggestOpen && trimmedSearch.length >= 2
+    ? (() => {
+        const names = suggestions.map((name): SuggestionItem => ({ kind: "name", key: `n:${name}`, name }));
+        const sets = setMatches.sets.map((e): SuggestionItem => ({ kind: "set", key: `s:${e.code}`, name: e.name, code: e.code }));
+        // Una parola che e' il nome intero di un set ("151") mette il set in
+        // cima: dopo 8 nomi finirebbe fuori dalla parte visibile dell'elenco.
+        return setMatches.exactSet ? [...sets, ...names] : [...names, ...sets];
+      })()
+    : [];
   const suggestionsFresh = suggestionsFor === trimmedSearch;
-  function chooseSuggestion(name: string) {
-    onSearch(name);
+  function chooseSuggestion(item: SuggestionItem) {
+    if (item.kind === "set") {
+      onExpansionChange(item.code);
+      onSearch(setMatches.restWithout(item.code));
+    } else {
+      onSearch(item.name);
+      // Nomi trovati senza la parola-set ("151"): il set diventa il filtro espansione.
+      if (suggestionsSet) onExpansionChange(suggestionsSet);
+    }
     setSuggestOpen(false);
     setActiveSuggestion(-1);
   }
+  // Scorrere la pagina o toccare fuori dal campo chiude l'elenco senza
+  // toccare nulla: su telefono il campo resta a fuoco (tastiera aperta),
+  // quindi il solo blur non basta.
+  useEffect(() => {
+    if (!suggestOpen) return;
+    const closeOnScroll = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && searchBoxRef.current?.contains(t)) return; // scorre l'elenco stesso
+      setSuggestOpen(false);
+    };
+    const closeOnOutside = (e: PointerEvent) => {
+      if (!searchBoxRef.current?.contains(e.target as Node)) setSuggestOpen(false);
+    };
+    document.addEventListener("scroll", closeOnScroll, { capture: true, passive: true });
+    document.addEventListener("pointerdown", closeOnOutside, { passive: true });
+    return () => {
+      document.removeEventListener("scroll", closeOnScroll, { capture: true });
+      document.removeEventListener("pointerdown", closeOnOutside);
+    };
+  }, [suggestOpen]);
 
   useEffect(() => {
     onAnyFilterOpenChange?.(activeFilter !== null || expansionFilterOpen);
@@ -140,6 +241,7 @@ export default function Toolbar({
   for (const c of selectedConditions) {
     chips.push({ key: `c-${c}`, label: <ConditionBadge condition={c} />, onRemove: () => onToggleCondition(c) });
   }
+  if (priceBand) chips.push({ key: "price", label: priceBandByKey(priceBand)?.label ?? priceBand, onRemove: () => onPriceBandChange("") });
   if (exactName) chips.push({ key: "exact", label: "Nome esatto", onRemove: onToggleExactName });
   if (onlyZero) chips.push({ key: "zero", label: "⚡ Solo CardTrader Zero", onRemove: onToggleOnlyZero });
 
@@ -157,7 +259,7 @@ export default function Toolbar({
         {/* Interruttore "Nome esatto" dentro il campo: non aggiunge una riga
             alla barra filtri (sul telefono ha un'altezza massima verificata
             da tests/mobile-toolbar.spec.mjs). */}
-        <div className="relative lg:flex-1 w-full">
+        <div ref={searchBoxRef} className="relative lg:flex-1 w-full">
           <input
             value={search}
             onChange={(e) => { onSearch(e.target.value); setSuggestOpen(true); }}
@@ -194,21 +296,26 @@ export default function Toolbar({
               aria-label="Suggerimenti"
               className="absolute left-0 right-0 top-full mt-1 z-30 max-h-72 overflow-y-auto bg-base-surface border border-base-border rounded-card shadow-lg py-1"
             >
-              {shownSuggestions.map((name, i) => (
+              {shownSuggestions.map((item, i) => (
                 <li
-                  key={name}
+                  key={item.key}
                   id={`${listboxId}-${i}`}
                   role="option"
                   aria-selected={i === activeSuggestion}
                   // mousedown (che il tap genera comunque) non deve togliere il
                   // fuoco al campo, altrimenti l'elenco si chiude prima del click.
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => chooseSuggestion(name)}
+                  onClick={() => chooseSuggestion(item)}
                   className={`min-h-11 flex items-center px-4 text-sm cursor-pointer ${
                     i === activeSuggestion ? "bg-accent/10 text-accent-bright" : "text-ink-primary hover:bg-base-surface2"
                   }`}
                 >
-                  {name}
+                  {item.kind === "set" ? (
+                    <span className="flex w-full items-center justify-between gap-3 min-w-0">
+                      <span className="truncate">{item.name}</span>
+                      <span className="shrink-0 text-[10px] font-mono uppercase tracking-wider text-ink-faint">espansione</span>
+                    </span>
+                  ) : item.name}
                 </li>
               ))}
             </ul>
@@ -291,6 +398,31 @@ export default function Toolbar({
         </div>
       </div>
 
+      {/* Rarità e Prezzo sono i filtri piu' usati: sempre in vista, 2 tocchi
+          (apri, scegli) invece di 4 dietro "Filtri". */}
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:items-start">
+        <FilterDropdown
+          reserveSpace
+          label="Rarità"
+          options={rarities}
+          selected={selectedRarities}
+          onToggle={onToggleRarity}
+          open={activeFilter === "rarity"}
+          onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
+        />
+        <FilterDropdown
+          reserveSpace
+          label={priceBandByKey(priceBand)?.label ?? "Prezzo"}
+          options={PRICE_BANDS.map((b) => b.key)}
+          selected={priceBand ? [priceBand] : []}
+          onToggle={(key) => onPriceBandChange(key === priceBand ? "" : key)}
+          closeOnSelect
+          renderOption={(key) => priceBandByKey(key)?.label ?? key}
+          open={activeFilter === "price"}
+          onOpenChange={(open) => setActiveFilter(open ? "price" : null)}
+        />
+      </div>
+
       {/* Su telefono i filtri secondari stanno dietro un pulsante (chiusi di
           default) cosi' le carte entrano nel primo schermo; le selezioni attive
           restano visibili come chip qui sotto. Da md in su il pannello e' sempre aperto. */}
@@ -305,15 +437,6 @@ export default function Toolbar({
         <span aria-hidden>{moreFiltersOpen ? "▲" : "▼"}</span>
       </button>
       <div id="home-filters" className={`filter-toolbar ${moreFiltersOpen ? "flex" : "hidden"} md:flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5`}>
-        <FilterDropdown
-          reserveSpace
-          label="Rarità"
-          options={rarities}
-          selected={selectedRarities}
-          onToggle={onToggleRarity}
-          open={activeFilter === "rarity"}
-          onOpenChange={(open) => setActiveFilter(open ? "rarity" : null)}
-        />
         {/* Pochi artisti scelti (non tutti gli illustratori): lista corta con
             ricerca, il numero di carte accanto al nome. */}
         <FilterDropdown
@@ -384,6 +507,7 @@ export default function Toolbar({
             conditions: selectedConditions,
             onlyZero,
             exactName,
+            priceBand,
             sortBy,
           }}
           onApply={onApplyPreset}

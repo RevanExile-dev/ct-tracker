@@ -3,6 +3,12 @@ import type { CardsFilterOpts } from "./types";
 // Parsing condiviso dei filtri catalogo dalla query string, usato da
 // /api/cards, /api/cards/count e /api/cards/summary - le stesse tre API
 // che in web/lib/db.ts condividono buildCardsFilter() lato client.
+function parseCents(raw: string | null): number | undefined {
+  if (raw === null || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 && n <= 100_000_000 ? Math.floor(n) : undefined;
+}
+
 export function parseCardsFilterOpts(sp: URLSearchParams): CardsFilterOpts {
   return {
     search: sp.get("search") ?? undefined,
@@ -14,6 +20,8 @@ export function parseCardsFilterOpts(sp: URLSearchParams): CardsFilterOpts {
     conditions: sp.getAll("conditions"),
     onlyZero: sp.get("onlyZero") === "1",
     onlyPremium: sp.get("onlyPremium") === "1",
+    minPriceCents: parseCents(sp.get("minPriceCents")),
+    maxPriceCents: parseCents(sp.get("maxPriceCents")),
     // "idsProvided" (non sp.has("ids")): un array ids VUOTO lato client non
     // produce alcun parametro "ids" in query string (niente da appendere),
     // quindi senza questo flag esplicito il server non potrebbe distinguere
