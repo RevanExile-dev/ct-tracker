@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cardImageSources } from "@/lib/cardImage";
 import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
-import { formatCompareAge } from "@/lib/moversPeriods";
+import { formatCompareAge, formatPriceAge } from "@/lib/moversPeriods";
 import { formatCents, formatPercent, languageFlag, priceDeltaPct } from "@/lib/format";
 
 const STAGGER_MS = 25;
@@ -42,6 +42,7 @@ function CardTile({
   imagePriority,
   hasAlert,
   onCreateAlert,
+  alertTarget,
 }: {
   card: CardRow;
   index?: number;
@@ -60,6 +61,8 @@ function CardTile({
    * campanella apre l'overlay per crearlo senza uscire dalla lista. */
   hasAlert?: boolean;
   onCreateAlert?: (card: CardRow) => void;
+  /** Solo /wishlist: prezzo obiettivo (soglia dell'allarme) e quanto manca. */
+  alertTarget?: { thresholdText: string; missingText: string | null; met: boolean } | null;
   // "best": prezzo a cascata (Near Mint + CardTrader Zero quando esiste,
   // qualunque lingua, altrimenti il piu' economico salvato) - usato SOLO dal
   // binder, dove la domanda e' "quanto vale la mia collezione" e serve
@@ -169,7 +172,10 @@ function CardTile({
         ? card.best_can_sell_via_hub
         : priceCents != null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
-  const delta = priceDeltaPct(priceCents, prevPriceCents);
+  // Prezzo non aggiornato da oltre una settimana: etichetta discreta e niente
+  // variazione (confrontare un prezzo vecchio con uno piu' vecchio non e' un ribasso).
+  const staleLabel = formatPriceAge(card.price_age_days);
+  const delta = staleLabel ? null : priceDeltaPct(priceCents, prevPriceCents);
   // Il catalogo si aggiorna a rotazione: il prezzo "precedente" puo' essere di
   // settimane fa, quindi la variazione dice sempre di quanti giorni e' (stessa
   // serie del prezzo precedente scelto sopra).
@@ -317,6 +323,21 @@ function CardTile({
             {ownedLanguageMatch && ownedLanguageMatch.cents == null && (
               <div className="text-[11px] text-ink-faint mt-0.5">
                 Nessuna inserzione in {languageFlag(ownedLanguageMatch.language)} {ownedLanguageMatch.language.toUpperCase()}: prezzo generale
+              </div>
+            )}
+            {staleLabel && priceCents != null && (
+              <div className="text-[11px] leading-tight text-ink-faint mt-0.5" data-testid="price-age">
+                {staleLabel}
+              </div>
+            )}
+            {alertTarget && (
+              <div
+                className={`text-[11px] leading-tight mt-0.5 ${alertTarget.met ? "text-signal-down" : "text-ink-faint"}`}
+                data-testid="wishlist-target"
+              >
+                {alertTarget.met
+                  ? `Sotto il tuo prezzo (${alertTarget.thresholdText})`
+                  : `Obiettivo ${alertTarget.thresholdText}: mancano ${alertTarget.missingText}`}
               </div>
             )}
             {delta !== null && (

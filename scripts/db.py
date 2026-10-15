@@ -704,18 +704,23 @@ PRIORITY_BINDER = 2
 PRIORITY_CATALOG = 3
 # Ogni quanti giorni conviene rinfrescare una carta del catalogo, per fascia di
 # prezzo (centesimi, "da" in giu'): chi vale di piu' si muove di piu' e conta di
-# piu' per chi compra. Misurato il 14 ott 2026: 2.673 carte >= 20 euro, 5.432 tra
-# 3 e 20, 6.436 tra 0,50 e 3, 15.648 sotto 0,50 o senza offerte; con questi
-# obiettivi servono ~8.000 chiamate al giorno, quanto reggono 4 giri notturni
-# (circa 2.000 carte a giro). L'ordine e' "quanto e' in ritardo rispetto al suo
-# obiettivo" (eta' / giorni obiettivo): cresce con l'eta' per OGNI carta, quindi
-# nessuna fascia puo' restare indietro per sempre, e se la capacita' cala (notti
-# saltate) il ritardo si distribuisce su tutte invece di affamare le economiche.
+# piu' per chi compra. Il prezzo di fascia e' il MASSIMO tra minimo, "best" e
+# prezzo IT+NM+Zero: quest'ultimo e' quello che l'utente vede sul sito e spesso e'
+# molto sopra il minimo (misurato il 15 ott 2026: 4.069 carte salgono di fascia,
+# es. Aromatisse min 1,60 EUR ma IT NM Zero 32,84 EUR ferma da 7,5 giorni).
+# Misurato il 15 ott 2026: 2.693 carte >= 20 euro, 5.660 tra 3 e 20, 6.788 tra
+# 0,50 e 3, 15.048 sotto 0,50 o senza offerte; con questi obiettivi servono ~7.200
+# chiamate al giorno, sotto la capacita' misurata di 4 giri notturni (~8.100:
+# 2.217 + 2.062 + 2.022 + 1.832). La domanda DEVE restare sotto la capacita':
+# se la supera il ritardo cresce all'infinito per tutte le fasce. L'ordine e'
+# "quanto e' in ritardo rispetto al suo obiettivo" (eta' / giorni obiettivo):
+# cresce con l'eta' per OGNI carta, quindi nessuna fascia puo' restare indietro
+# per sempre, e se una notte salta il ritardo si distribuisce su tutte.
 CATALOG_REFRESH_BANDS = (
     (2000, 1),   # >= 20 euro: ogni giorno
     (300, 3),    # 3 - 20 euro: ogni 3 giorni
-    (50, 5),     # 0,50 - 3 euro: ogni 5 giorni
-    (0, 7),      # sotto 0,50 euro o senza offerte: ogni 7 giorni
+    (50, 6),     # 0,50 - 3 euro: ogni 6 giorni
+    (0, 10),     # sotto 0,50 euro o senza offerte: ogni 10 giorni
 )
 
 
@@ -747,7 +752,9 @@ def fetch_priority_batch(conn, limit: int):
             """
             SELECT id, name, expansion_name, priority FROM (
             SELECT b.id, b.name, b.expansion_name,
-                   lp.last_attempted_at, lp.captured_at_ts, lp.best_price_cents, lp.min_price_cents,
+                   lp.last_attempted_at, lp.captured_at_ts,
+                   GREATEST(COALESCE(lp.best_price_cents, 0), COALESCE(lp.min_price_cents, 0),
+                            COALESCE(lp.it_nm_zero_price_cents, 0)) AS price_cents,
                    CASE
                      WHEN EXISTS (SELECT 1 FROM price_alerts pa WHERE pa.blueprint_id = b.id AND pa.state = 'armed') THEN %(p_alert)s
                      WHEN EXISTS (SELECT 1 FROM wishlist_cards w WHERE w.blueprint_id = b.id) THEN %(p_wishlist)s
@@ -764,9 +771,9 @@ def fetch_priority_batch(conn, limit: int):
                        CASE WHEN COALESCE(last_attempted_at, captured_at_ts) IS NULL THEN 1e12
                        ELSE EXTRACT(EPOCH FROM now() - COALESCE(last_attempted_at, captured_at_ts))
                             / (CASE
-                                 WHEN COALESCE(best_price_cents, min_price_cents, 0) >= %(t1_cents)s THEN %(t1_days)s
-                                 WHEN COALESCE(best_price_cents, min_price_cents, 0) >= %(t2_cents)s THEN %(t2_days)s
-                                 WHEN COALESCE(best_price_cents, min_price_cents, 0) >= %(t3_cents)s THEN %(t3_days)s
+                                 WHEN price_cents >= %(t1_cents)s THEN %(t1_days)s
+                                 WHEN price_cents >= %(t2_cents)s THEN %(t2_days)s
+                                 WHEN price_cents >= %(t3_cents)s THEN %(t3_days)s
                                  ELSE %(t4_days)s
                                END * 86400.0)
                        END

@@ -108,6 +108,7 @@ jobs:
             tests/card-image-fallback.spec.mjs \
             tests/touch-targets.spec.mjs \
             tests/chart-period-buttons.spec.mjs \
+            tests/price-age.spec.mjs \
             tests/login-toast.spec.mjs \
             tests/card-headline-language.spec.mjs \
             tests/a11y.spec.mjs \
@@ -117,7 +118,9 @@ jobs:
             tests/scroll-bottom-stability.spec.mjs \
             tests/cardmarket-reference.spec.mjs \
             tests/alert-flow.spec.mjs \
+            tests/account-delete.spec.mjs \
             tests/search-filters-touch.spec.mjs \
+            tests/offline-pwa.spec.mjs \
             --reporter=line
 
       - name: Log server in caso di errore

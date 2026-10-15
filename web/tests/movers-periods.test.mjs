@@ -10,7 +10,7 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/moversPeriods.ts", 
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 vm.runInNewContext(code, { exports, module: { exports } });
-const { findMoversPeriod, formatCompareAge, DEFAULT_MOVERS_PERIOD, MOVERS_PERIODS } = exports;
+const { findMoversPeriod, formatCompareAge, formatPriceAge, DEFAULT_MOVERS_PERIOD, MOVERS_PERIODS } = exports;
 
 test("periodo sconosciuto o assente = predefinito (30 giorni)", () => {
   assert.equal(DEFAULT_MOVERS_PERIOD, "30");
@@ -30,4 +30,12 @@ test("etichetta dell'eta' del confronto", () => {
   assert.equal(formatCompareAge(12), "in 12 gg");
   assert.equal(formatCompareAge(null), null);
   assert.equal(formatCompareAge(-3), null);
+});
+
+test("etichetta del prezzo vecchio: solo da 7 giorni in su", () => {
+  assert.equal(formatPriceAge(0), null);
+  assert.equal(formatPriceAge(6), null);
+  assert.equal(formatPriceAge(7), "prezzo di 7 gg fa");
+  assert.equal(formatPriceAge(null), null);
+  assert.equal(formatPriceAge(undefined), null);
 });

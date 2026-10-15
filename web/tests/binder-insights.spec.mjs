@@ -172,3 +172,23 @@ test.describe('touch on a phone', () => {
     await expect(page.locator('.binder-controls [aria-live]')).toHaveText('4–5/6');
   });
 });
+
+test.describe('variazione 7/30 giorni (telefono, touch)', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('mostra la variazione dalla rilevazione piu\' vicina e dice quando lo storico e\' troppo corto', async ({ page }) => {
+    await arrange(page);
+    await page.goto(`${BASE}/binder`);
+    await expect(page.getByTestId('variazione-7')).toContainText('+30,00');
+    await expect(page.getByTestId('variazione-30')).toContainText('+50,00');
+    await page.getByRole('button', { name: '1g', exact: true }).tap();
+    // le tessere restano riferite a tutto lo storico, non al periodo scelto
+    await expect(page.getByTestId('variazione-7')).toContainText('+30,00');
+  });
+
+  test('storico troppo corto: nessun numero inventato', async ({ page }) => {
+    await arrange(page, { history: points.slice(2) });
+    await page.goto(`${BASE}/binder`);
+    await expect(page.getByTestId('variazione-30')).toContainText('Servono più giorni di storico');
+  });
+});

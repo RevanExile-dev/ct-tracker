@@ -41,3 +41,14 @@ test('disattivato e dato assente', () => {
   assert.match(alertStatus({ ...base, state: 'disabled' }, fmt).text, /Disattivato/);
   assert.equal(alertStatus({ ...base, matchingPriceCents: undefined }, fmt), null);
 });
+
+const { wishlistTarget } = load('../lib/alertStatus.ts');
+test('desideri: obiettivo = soglia allarme, mancano / sotto il prezzo', () => {
+  assert.deepEqual({ ...wishlistTarget([base], fmt) }, { thresholdText: '10.00 €', missingText: '2.50 €', met: false });
+  assert.equal(wishlistTarget([{ ...base, matchingPriceCents: 900 }], fmt).met, true);
+  assert.equal(wishlistTarget([{ ...base, state: 'disabled' }], fmt), null);
+  assert.equal(wishlistTarget([{ ...base, matchingPriceCents: null }], fmt), null);
+  // piu' allarmi: vale il piu' vicino a scattare
+  const r = wishlistTarget([base, { ...base, targetValue: 1200 }], fmt);
+  assert.equal(r.thresholdText, '12.00 €');
+});

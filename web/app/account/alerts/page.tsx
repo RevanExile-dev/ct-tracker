@@ -444,7 +444,7 @@ export default function PriceAlertsPage() {
       {alerts === null ? (
         <div className="py-10 text-center text-sm font-mono text-ink-muted animate-pulse">Carico…</div>
       ) : alerts.length === 0 ? (
-        <p className="text-ink-faint text-sm">Nessun allarme creato finora.</p>
+        <p className="text-ink-faint text-sm">Nessun allarme creato finora. Compila il modulo qui sopra, oppure apri una carta e tocca &quot;Crea allarme&quot;: segui il prezzo e vedi quando scende sotto la soglia.</p>
       ) : (
         (() => {
           const firedAlerts = alerts.filter((a) => a.state === "fired");

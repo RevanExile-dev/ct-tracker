@@ -1,0 +1,28 @@
+name: Controllo sito in produzione
+
+# Controllo leggero (10 richieste HTTP, ~15 s): pagine e API principali, tempi
+# di risposta e freschezza dei prezzi. Se qualcosa si rompe o rallenta il job
+# fallisce e GitHub manda l'avviso. Non tocca il database direttamente.
+# Costo Actions: 2 esecuzioni al giorno x 1 min (arrotondato) = ~60 min/mese.
+on:
+  schedule:
+    - cron: "17 6,18 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/site_check.py
+          sparse-checkout-cone-mode: false
+      - run: python3 scripts/site_check.py

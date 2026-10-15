@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import LegalPage, { Fill } from "@/components/LegalPage";
 import { LEGAL_CONTACT_EMAIL, LEGAL_OWNER_ADDRESS, LEGAL_OWNER_NAME } from "@/lib/legal";
 
@@ -135,8 +136,9 @@ export default function PrivacyPage() {
       <p>
         Puoi chiederci in ogni momento di accedere ai tuoi dati, correggerli, cancellarli, limitarne
         l&apos;uso, riceverne una copia in formato leggibile (portabilità) oppure opporti al
-        trattamento. Per la cancellazione dell&apos;account scrivi a <Fill value={LEGAL_CONTACT_EMAIL} />{" "}
-        dall&apos;indirizzo con cui ti sei registrato: eliminiamo account, binder, lotti, lista
+        trattamento. Puoi scaricare una copia dei tuoi dati (file JSON) dal menu account, con &quot;Scarica i miei dati&quot;. Puoi eliminare l&apos;account da solo in qualsiasi momento dalla pagina{" "}
+        <Link href="/account/delete">Elimina account</Link> (menu account), oppure scrivere a{" "}
+        <Fill value={LEGAL_CONTACT_EMAIL} /> dall&apos;indirizzo con cui ti sei registrato: eliminiamo account, binder, lotti, lista
         desideri, filtri, allarmi e collegamento Telegram. Puoi anche scollegare Telegram da solo, e
         togliere carte e lotti dal sito quando vuoi. Rispondiamo entro un mese. Se ci hai dato un
         consenso (per esempio al collegamento Telegram) puoi ritirarlo in qualsiasi momento.

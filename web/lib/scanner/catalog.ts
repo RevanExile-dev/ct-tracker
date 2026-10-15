@@ -309,6 +309,9 @@ type NumberEvidence = {
   // nell'altra: il riquadro "MEP EN" spezza la riga).
   promoCodes: Set<string>;
   threeDigitNumbers: Set<string>;
+  // Tre cifre da sole, senza barra accanto: il numero stampato di una promo
+  // ("SVP 199"), non la prima meta' di un "058/193".
+  standaloneNumbers: Set<string>;
 };
 
 function readNumberEvidence(raw: string): NumberEvidence {
@@ -347,6 +350,7 @@ function readNumberEvidence(raw: string): NumberEvidence {
   // Solo sigle lunghe e distintive: "SM", "XY", "BW" compaiono per caso nel testo.
   const promoCodes = new Set([...text.matchAll(/(?<![a-z])(MEP|MEE|SVP|SWSH)(?![a-z])/gi)].map((m) => m[1].toUpperCase()));
   const threeDigitNumbers = new Set([...text.matchAll(/(?<!\d)(\d{3})(?!\d)/g)].map((m) => String(Number(m[1]))));
+  const standaloneNumbers = new Set([...text.matchAll(/(?<![\d/]\s?)(?<!\d)(\d{3})(?!\d)(?!\s?\/)/g)].map((m) => String(Number(m[1]))));
   return {
     exact: new Set(exactParts.map(collectorKey)),
     exactParts,
@@ -355,6 +359,7 @@ function readNumberEvidence(raw: string): NumberEvidence {
     promos: extractPromoNumbers(text),
     promoCodes,
     threeDigitNumbers,
+    standaloneNumbers,
   };
 }
 
@@ -375,6 +380,12 @@ function numberEvidenceScore(evidence: NumberEvidence, item: IndexedEntry) {
     const best = Math.max(0, ...evidence.promos.map((observed) => promoSimilarity(observed, item.promo!)));
     const split = item.promo.match(/^([A-Z]+) (\d+)$/);
     if (best < 0.75 && split && evidence.promoCodes.has(split[1]) && evidence.threeDigitNumbers.has(split[2])) return 0.75;
+    // La sigla promo e' spesso illeggibile ("svro 199", "MEL 199") ma il numero
+    // di tre cifre si legge: da solo non basta per proporre la carta (resta
+    // sotto 0.68) ne' per darla per certa, ma dice che una carta con quel nome
+    // e quel numero e' un'altra stampa della stessa illustrazione. Caso reale:
+    // Zarude SVP 199 scambiato per Zarude 011/191 (stessa illustrazione).
+    if (best < PROMO_NUMBER_HINT && split && evidence.standaloneNumbers.has(split[2])) return PROMO_NUMBER_HINT;
     return best;
   }
   const parts = item.parts;
@@ -440,6 +451,8 @@ const NAME_SUFFIXES = new Set(["ex", "gx", "v", "vmax", "vstar", "break", "prime
 
 export const STRONG_NAME = 0.75;
 export const STRONG_NUMBER = 0.9;
+// Solo il numero di una promo letto, senza la sigla: indizio debole.
+export const PROMO_NUMBER_HINT = 0.65;
 
 function isStrong(candidate: ScannerCandidate) {
   return candidate.nameScore >= STRONG_NAME && candidate.numberScore >= STRONG_NUMBER;
@@ -633,7 +646,15 @@ export function assessScan(
     // tutte le carte con quel nome sono state confrontate con la foto
     sameName.every((candidate) => visual(candidate) !== null) &&
     // un numero letto con sicurezza che non e' il suo la esclude
-    !others.some((candidate) => candidate.numberScore >= STRONG_NUMBER && counts(candidate))
+    !others.some((candidate) => candidate.numberScore >= STRONG_NUMBER && counts(candidate)) &&
+    // un'altra carta con lo stesso nome e un numero piu' vicino a quello letto
+    // (anche solo il numero di una promo, senza la sigla) non si scarta con la sola immagine
+    !others.some((candidate) => candidate.nameScore >= STRONG_NAME && candidate.numberScore === PROMO_NUMBER_HINT && top.numberScore < PROMO_NUMBER_HINT) &&
+    // Un nome letto in lettere latine non viene da una carta giapponese: se la
+    // lingua non e' stata riconosciuta e il numero non conferma, la proposta
+    // giapponese con lo stesso nome (stessa illustrazione di una promo inglese,
+    // caso reale: Horsea 112/SV-P al posto di Horsea SVP 137) resta da confermare.
+    (top.numberScore >= 0.68 || !expansionIsJapanese(top.expansion_code))
   ) {
     return "certain";
   }

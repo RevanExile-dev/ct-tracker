@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import BackToTop from "@/components/BackToTop";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
 import AccountSync from "@/components/AccountSync";
 import SiteFooter from "@/components/SiteFooter";
+import OfflineSupport from "@/components/OfflineSupport";
 import { getSiteUrl } from "@/lib/siteUrl";
 
 const display = Space_Grotesk({
@@ -29,7 +30,8 @@ export const metadata: Metadata = {
   authors: [{ name: "CartaViva" }],
   creator: "CartaViva",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: { icon: "/icon.svg", apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "CartaViva", statusBarStyle: "black" },
   openGraph: {
     type: "website",
     locale: "it_IT",
@@ -44,8 +46,9 @@ export const metadata: Metadata = {
     description: "Prezzi, movimenti e Binder personale in un'unica esperienza.",
     images: ["/opengraph-image"],
   },
-  other: { "theme-color": "#0d0f12" },
 };
+
+export const viewport: Viewport = { themeColor: "#0d0f12" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -53,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-body antialiased min-h-screen">
         <AuthSessionProvider>
           <AccountSync />
+          <OfflineSupport />
           {/* Il contenuto occupa almeno uno schermo: durante lo scheletro di
               caricamento il footer resta sotto la piega e non salta in vista
               quando arrivano i dati (CLS 0,23 su PC misurato il 14/10). */}

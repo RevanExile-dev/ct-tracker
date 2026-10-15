@@ -136,6 +136,23 @@ export default function UserMenu() {
           >
             Notifiche Telegram
           </Link>
+          <a
+            href="/api/account/export"
+            role="menuitem"
+            download
+            onClick={() => setOpen(false)}
+            className="block w-full text-left px-4 py-3 text-sm text-ink-muted hover:text-accent-bright hover:bg-base-surface2 transition-colors"
+          >
+            Scarica i miei dati
+          </a>
+          <Link
+            href="/account/delete"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block w-full text-left px-4 py-3 text-sm text-ink-muted hover:text-signal-down hover:bg-base-surface2 transition-colors"
+          >
+            Elimina account
+          </Link>
           <button
             type="button"
             role="menuitem"

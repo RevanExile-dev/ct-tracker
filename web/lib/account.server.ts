@@ -585,6 +585,53 @@ export async function unlinkTelegram(userId: string): Promise<void> {
   await pool.query("DELETE FROM telegram_links WHERE user_id = $1", [userId]);
 }
 
+/** Parola da digitare per confermare l'eliminazione dell'account. */
+export const DELETE_ACCOUNT_CONFIRM = "ELIMINA";
+
+/** Elimina l'account e tutti i suoi dati. Tutte le tabelle dell'utente
+ * (sessioni, accessi, binder, desideri, lotti, storico, filtri, allarmi,
+ * Telegram, piano) hanno `ON DELETE CASCADE` verso `users`, quindi basta
+ * cancellare la riga dell'utente: nient'altro viene toccato (catalogo e
+ * prezzi non dipendono dagli utenti). Ritorna true se l'utente esisteva. */
+export async function deleteAccount(userId: string): Promise<boolean> {
+  const pool = getPgPool();
+  const { rowCount } = await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+  return (rowCount ?? 0) > 0;
+}
+
+/** Tutti i dati dell'utente in un oggetto unico (esportazione "scarica i
+ * miei dati", portabilita' GDPR). Solo righe di quell'utente; niente id di
+ * chat Telegram (si dice solo se e' collegato). Il nome carta e il set sono
+ * aggiunti per renderlo leggibile senza il catalogo. */
+export async function exportAccountData(userId: string): Promise<Record<string, unknown>> {
+  const pool = getPgPool();
+  const q = async (sql: string) => (await pool.query(sql, [userId])).rows;
+  const card = "b.name AS card_name, b.expansion_name, b.expansion_code";
+  const [user, binder, wishlist, lots, lotEvents, alerts, presets, tg, plan] = await Promise.all([
+    q('SELECT email, name FROM users WHERE id = $1'),
+    q(`SELECT c.blueprint_id, ${card}, c.added_at, c.data FROM binder_cards c LEFT JOIN blueprints b ON b.id = c.blueprint_id WHERE c.user_id = $1 ORDER BY c.added_at`),
+    q(`SELECT c.blueprint_id, ${card}, c.added_at FROM wishlist_cards c LEFT JOIN blueprints b ON b.id = c.blueprint_id WHERE c.user_id = $1 ORDER BY c.added_at`),
+    q(`SELECT c.id, c.blueprint_id, ${card}, c.quantity, c.language, c.condition, c.finish, c.provenance, c.acquired_at, c.cost_total_cents, c.cost_currency, c.note, c.created_at FROM binder_lots c LEFT JOIN blueprints b ON b.id = c.blueprint_id WHERE c.user_id = $1 ORDER BY c.created_at`),
+    q('SELECT lot_id, blueprint_id, event_type, delta, occurred_at FROM binder_lot_events WHERE user_id = $1 ORDER BY occurred_at'),
+    q(`SELECT a.id, a.blueprint_id, ${card}, a.language, a.languages, a.condition, a.can_sell_via_hub, a.target_type, a.target_value, a.baseline_price_cents, a.baseline_currency, a.fire_mode, a.rearm_cooldown_hours, a.state, a.fired_at, a.created_at FROM price_alerts a LEFT JOIN blueprints b ON b.id = a.blueprint_id WHERE a.user_id = $1 ORDER BY a.created_at`),
+    q('SELECT scope, data, updated_at FROM filter_presets WHERE user_id = $1 ORDER BY scope'),
+    q('SELECT linked_at FROM telegram_links WHERE user_id = $1'),
+    q('SELECT plan, valid_until FROM user_plans WHERE user_id = $1'),
+  ]);
+  return {
+    exported_at: new Date().toISOString(),
+    account: user[0] ?? null,
+    plan: plan[0] ?? null,
+    binder,
+    wishlist,
+    lots,
+    lot_events: lotEvents,
+    price_alerts: alerts,
+    filter_presets: presets,
+    telegram_linked: tg[0] ? { linked_at: tg[0].linked_at } : null,
+  };
+}
+
 function generateLinkCode(): string {
   // 10 caratteri esadecimali maiuscoli: abbastanza corti da scrivere a
   // mano in una chat Telegram ("/start A1B2C3D4E5"), abbastanza lunghi da
