@@ -335,7 +335,7 @@ export default function Toolbar({
           </button>
         </div>
 
-        <div className="min-w-0 w-full grid grid-cols-1 md:grid-cols-2 gap-3 lg:w-auto lg:flex lg:flex-row">
+        <div className="min-w-0 w-full grid grid-cols-2 gap-2 md:gap-3 lg:w-auto lg:flex lg:flex-row">
           <div className="min-w-0 w-full lg:w-auto flex items-center gap-1">
             <FilterDropdown
               reserveSpace
@@ -386,7 +386,7 @@ export default function Toolbar({
             value={sortBy}
             onChange={(e) => onSortChange(e.target.value as SortOption)}
             aria-label="Ordina carte"
-            className="min-w-0 w-full lg:w-auto bg-base-surface border border-base-border rounded-card px-3 py-2.5 text-sm text-ink-primary outline-none focus:border-accent/60 lg:max-w-[13rem]"
+            className="min-w-0 w-full lg:w-auto bg-base-surface border border-base-border rounded-card pl-3 pr-1 py-2.5 text-[13px] sm:text-sm text-ink-primary outline-none focus:border-accent/60 lg:max-w-[13rem]"
           >
             <option value="expansion">Ordina: espansione</option>
             <option value="price_asc">Prezzo: dal più basso</option>
@@ -400,7 +400,7 @@ export default function Toolbar({
 
       {/* Rarità e Prezzo sono i filtri piu' usati: sempre in vista, 2 tocchi
           (apri, scegli) invece di 4 dietro "Filtri". */}
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:items-start">
+      <div className="grid grid-cols-3 gap-2 md:flex md:flex-row md:items-start md:gap-3">
         <FilterDropdown
           reserveSpace
           label="Rarità"
@@ -421,21 +421,21 @@ export default function Toolbar({
           open={activeFilter === "price"}
           onOpenChange={(open) => setActiveFilter(open ? "price" : null)}
         />
+        <button
+          type="button"
+          onClick={() => setMoreFiltersOpen((v) => !v)}
+          aria-expanded={moreFiltersOpen}
+          aria-controls="home-filters"
+          className="md:hidden w-full min-w-0 min-h-11 flex items-center justify-between gap-1 rounded-card border border-base-border bg-base-surface/45 px-3 text-sm text-ink-muted active:scale-[0.99]"
+        >
+          <span className="truncate">Filtri{secondaryFilterCount > 0 ? ` (${secondaryFilterCount})` : ""}</span>
+          <span aria-hidden>{moreFiltersOpen ? "▲" : "▼"}</span>
+        </button>
       </div>
 
       {/* Su telefono i filtri secondari stanno dietro un pulsante (chiusi di
           default) cosi' le carte entrano nel primo schermo; le selezioni attive
           restano visibili come chip qui sotto. Da md in su il pannello e' sempre aperto. */}
-      <button
-        type="button"
-        onClick={() => setMoreFiltersOpen((v) => !v)}
-        aria-expanded={moreFiltersOpen}
-        aria-controls="home-filters"
-        className="md:hidden w-full min-h-11 flex items-center justify-between rounded-card border border-base-border bg-base-surface/45 px-4 text-sm text-ink-muted active:scale-[0.99]"
-      >
-        <span>Filtri{secondaryFilterCount > 0 ? ` (${secondaryFilterCount} attivi)` : ""}</span>
-        <span aria-hidden>{moreFiltersOpen ? "▲" : "▼"}</span>
-      </button>
       <div id="home-filters" className={`filter-toolbar ${moreFiltersOpen ? "flex" : "hidden"} md:flex flex-row flex-wrap items-start gap-x-5 gap-y-2 rounded-card border border-base-border bg-base-surface/45 px-4 py-2.5`}>
         {/* Pochi artisti scelti (non tutti gli illustratori): lista corta con
             ricerca, il numero di carte accanto al nome. */}

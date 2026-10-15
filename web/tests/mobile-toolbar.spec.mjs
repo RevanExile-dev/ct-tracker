@@ -213,6 +213,10 @@ test.describe("desktop", () => {
     const expansion = expansionTrigger(page);
     const sort = page.getByRole("combobox", { name: "Ordina carte" });
     await expect(expansion).toBeVisible({ timeout: 30_000 });
+    // La riga "N carte trovate" compare sopra la ricerca appena arriva il
+    // conteggio e sposta tutto di ~28 px: misurare prima di allora confronta
+    // posizioni prese in momenti diversi (test instabile).
+    await expect(page.getByText(/carte? trovat/).first()).toBeVisible({ timeout: 30_000 });
 
     const searchBox = await search.boundingBox();
     const expansionBox = await expansion.boundingBox();

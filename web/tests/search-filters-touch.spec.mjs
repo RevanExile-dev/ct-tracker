@@ -95,3 +95,16 @@ test("API prezzo con filtro lingua: coerente con l'elenco", async ({ page }) => 
   const list = await (await page.request.get(`${base}?languages=it&minPriceCents=100&maxPriceCents=500&limit=200`)).json();
   expect(list.length).toBe(a.count);
 });
+
+test("barra filtri compatta: su 390x664 Rarità, Prezzo e Filtri stanno su una riga e la maniglia sale sopra i 480 px", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 664 });
+  await ready(page);
+  const y = async (loc) => (await loc.boundingBox()).y;
+  const rarity = await y(page.getByRole("button", { name: /Rarità/i }));
+  const price = await y(page.getByRole("button", { name: /^Prezzo/ }));
+  const more = await y(page.getByRole("button", { name: /^Filtri/ }));
+  expect(Math.abs(rarity - price)).toBeLessThan(4);
+  expect(Math.abs(rarity - more)).toBeLessThan(4);
+  const handle = await y(page.getByRole("button", { name: "Nascondi filtri" }));
+  expect(handle).toBeLessThan(480);
+});
