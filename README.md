@@ -1,4 +1,4 @@
-# CartaViva — CardTrader Tracker
+# CartaViva — tracker di carte Pokémon TCG
 
 Traccia prezzi, andamento e immagini delle tue carte Pokémon TCG (Illustration
 Rare, Special Illustration Rare, full art, promo...) da CardTrader.
