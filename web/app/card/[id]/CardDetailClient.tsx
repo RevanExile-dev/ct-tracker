@@ -388,6 +388,11 @@ function CardDetailContent() {
                 }`}
               >
                 {formatCents(headlinePriceCents, headlineCurrency)}
+                {card.best_price_cents !== null && card.best_language && (
+                  <span className="ml-2 text-xs font-mono font-normal text-ink-muted" data-testid="headline-language">
+                    {languageFlag(card.best_language)} {card.best_language.toUpperCase()}
+                  </span>
+                )}
               </div>
               {trend && (
                 <div
@@ -412,7 +417,14 @@ function CardDetailContent() {
                   italiana, quindi puo' differire davvero da questo valore.
                   Mostrato sempre, "nessuna offerta" incluso - il criterio lo
                   chiede esplicitamente, non solo per le carte italiane. */}
-              <div className="text-xs font-mono text-ink-faint mt-1">
+              <div
+                className={`text-xs font-mono mt-1 ${
+                  card.it_nm_zero_price_cents !== null && card.it_nm_zero_price_cents !== headlinePriceCents
+                    ? "text-ink-primary font-medium"
+                    : "text-ink-faint"
+                }`}
+                data-testid="it-nm-zero-line"
+              >
                 🇮🇹 NM · Zero: {card.it_nm_zero_price_cents !== null
                   ? formatCents(card.it_nm_zero_price_cents, card.it_nm_zero_price_currency ?? currency)
                   : "nessuna offerta rilevata"}
