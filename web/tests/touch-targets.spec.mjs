@@ -36,3 +36,13 @@ test.describe("bersagli di tocco - PC", () => {
     for (const x of all) expect(x.h, x.t).toBeGreaterThanOrEqual(24);
   });
 });
+
+test.describe("bersagli di tocco - /movers", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test("link \"Torna al catalogo\" alto almeno 44 px", async ({ page }) => {
+    await page.goto(`${BASE_URL}/movers`);
+    const link = page.getByTestId("back-link");
+    await link.waitFor();
+    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  });
+});
