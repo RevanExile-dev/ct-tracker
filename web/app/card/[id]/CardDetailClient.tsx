@@ -331,7 +331,7 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
                 setPopping(true);
               }}
               onAnimationEnd={() => setPopping(false)}
-              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+              className={`inline-flex items-center [@media(min-height:700px)]:min-h-11 sm:min-h-0 text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
                 popping ? "pop-on-toggle" : ""
               } ${
                 inBinder
@@ -347,7 +347,7 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
                 setPoppingWishlist(true);
               }}
               onAnimationEnd={() => setPoppingWishlist(false)}
-              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+              className={`inline-flex items-center [@media(min-height:700px)]:min-h-11 sm:min-h-0 text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
                 poppingWishlist ? "pop-on-toggle" : ""
               } ${
                 inWishlist
@@ -366,7 +366,7 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
                   manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 9000);
                 }
               }}
-              className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              className="inline-flex items-center [@media(min-height:700px)]:min-h-11 sm:min-h-0 text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
             >
               🔔 crea allarme
             </button>
@@ -492,7 +492,7 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
                   <button
                     type="button"
                     onClick={() => setOnlyZeroListings((v) => !v)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+                    className={`inline-flex items-center min-h-11 sm:min-h-0 text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
                       onlyZeroListings
                         ? "bg-accent/10 border-accent/60 text-accent-bright"
                         : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
