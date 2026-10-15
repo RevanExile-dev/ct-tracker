@@ -9,6 +9,7 @@ import type { PriceAlert, PriceAlertFireMode, PriceAlertTargetType } from "@/lib
 import SiteHeader from "@/components/SiteHeader";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import AlertLanguagePicker from "@/components/AlertLanguagePicker";
+import { alertStatus } from "@/lib/alertStatus";
 
 const ANY_OPTION = ""; // select vuoto = "qualunque" (profilo non vincolato su quel campo)
 
@@ -62,6 +63,7 @@ type AlertListItemProps = {
 };
 
 function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }: AlertListItemProps) {
+  const status = alertStatus(alert, formatCents);
   return (
     <li
       className={`rounded-card border px-5 py-4 ${
@@ -82,6 +84,14 @@ function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }:
             {" · "}creato il {formatDateLong(alert.createdAt)}
             {alert.firedAt && <> · scattato il {formatDateLong(alert.firedAt)}</>}
           </div>
+          {status && (
+            <div
+              data-testid="alert-status"
+              className={`text-sm mt-1.5 ${status.tone === "ok" ? "text-signal-up" : status.tone === "wait" ? "text-ink-primary" : "text-ink-faint"}`}
+            >
+              {status.text}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className={`text-xs font-mono uppercase tracking-wider ${STATE_CLASSES[alert.state]}`}>{STATE_LABELS[alert.state]}</span>
@@ -119,6 +129,8 @@ export default function PriceAlertsPage() {
   const [languageOptions, setLanguageOptions] = useState<string[]>([]);
   const [conditionOptions, setConditionOptions] = useState<string[]>([]);
   const [editingAlert, setEditingAlert] = useState<PriceAlert | null>(null);
+  // null = non ancora saputo (nessun avviso finche' non e' certo che manca il collegamento).
+  const [telegramLinked, setTelegramLinked] = useState<boolean | null>(null);
 
   // --- Ricerca carta per il form "nuovo allarme" (stesso pattern di /lots) ---
   const [search, setSearch] = useState("");
@@ -167,6 +179,16 @@ export default function PriceAlertsPage() {
       })
       .then((data: PriceAlert[]) => { if (!cancelled) setAlerts(data); })
       .catch(() => { if (!cancelled) setError("Non riesco a caricare gli allarmi. Riprova tra poco."); });
+    return () => { cancelled = true; };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    fetch("/api/account/telegram")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { linked?: boolean } | null) => { if (!cancelled && data) setTelegramLinked(Boolean(data.linked)); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [session]);
 
@@ -297,10 +319,19 @@ export default function PriceAlertsPage() {
       <SiteHeader compact />
       <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink-primary mb-1">Allarmi prezzo</h1>
       <p className="text-ink-muted mb-6">
-        Ricevi un avviso quando il prezzo di una carta, in un profilo esatto (lingua/condizione/CardTrader Zero), scende sotto una soglia o cala di una percentuale rispetto al prezzo di oggi. L&apos;invio effettivo delle notifiche (Telegram) arriva con un passo successivo — qui puoi già creare e gestire gli allarmi.
+        Ricevi un avviso quando il prezzo di una carta, in un profilo esatto (lingua/condizione/CardTrader Zero), scende sotto una soglia o cala di una percentuale rispetto al prezzo di oggi. Per ogni allarme qui sotto vedi il prezzo di adesso e quanto manca alla soglia.
       </p>
 
       {error && <p role="alert" className="mb-4 text-sm text-signal-down">{error}</p>}
+
+      {telegramLinked === false && (
+        <div data-testid="telegram-missing" className="mb-6 rounded-card border border-accent/30 bg-accent/5 px-4 py-3 text-sm text-ink-muted">
+          Telegram non è collegato: gli allarmi scattano e li vedi qui, ma non ricevi nessun messaggio.{" "}
+          <Link href="/account/telegram" className="inline-flex items-center min-h-11 text-accent-bright underline underline-offset-2">
+            Collega Telegram
+          </Link>
+        </div>
+      )}
 
       <form onSubmit={submitAlert} className="mb-8 rounded-card border border-base-border bg-base-surface/70 px-5 py-5">
         <h2 className="font-display text-lg font-bold text-ink-primary mb-4">Nuovo allarme</h2>
