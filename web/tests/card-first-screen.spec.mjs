@@ -55,14 +55,17 @@ for (const { name, device } of phones) {
       await expect(page.getByRole("button", { name: /nella lista desideri/i })).toBeVisible();
     });
 
-    test("scheletro di caricamento: stessa disposizione compatta, nessun overflow", async ({ page }) => {
+    test("primo disegno dal server (API lente): disposizione compatta, nessun overflow", async ({ page }) => {
+      // La scheda arriva gia' nell'HTML: anche con le API ferme per 4 s il
+      // titolo c'e' subito e l'immagine resta la miniatura accanto al titolo.
       await page.route(/\/api\/cards\/903001$/, async (route) => {
         await new Promise((r) => setTimeout(r, 4000));
         await route.continue();
       });
       await page.goto(`${BASE_URL}/card/903001`, { waitUntil: "domcontentloaded" });
-      const img = page.locator("main .skeleton.aspect-\\[5\\/7\\]");
-      await expect(img).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 3_000 });
+      const img = page.locator("main [class*='aspect-[5/7]']").first();
+      await expect(img).toBeVisible();
       const box = await img.boundingBox();
       const vw = page.viewportSize().width;
       expect(box.width).toBeLessThan(vw * 0.5); // non piu' a tutta larghezza

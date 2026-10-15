@@ -41,8 +41,9 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
     ? requestedReturn
     : "/";
 
-  // Scheda gia' letta dal server (stessa carta della route): niente attesa
-  // delle API per il primo disegno.
+  // Scheda gia' letta dal server (stessa carta della route): serve per il primo
+  // disegno, senza aspettare le API. Il client la rilegge comunque (risposta in
+  // cache CDN) e quella piu' recente, o l'errore di rete, ha la precedenza.
   const [fetchedCard, setCard] = useState<CardDetail | null | undefined>(undefined);
   const card = fetchedCard?.id === id || initialCard?.id !== id ? fetchedCard : initialCard;
   // Errore di rete/server: diverso da "carta inesistente" (card === null).
@@ -90,8 +91,7 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    // Con la scheda del server e senza un "Riprova" richiesto non serve rileggerla.
-    if (!(initialCard?.id === id && reloadTick === 0)) fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch((e) => { if (!cancelled) setLoadError(String(e?.message ?? e)); });
+    fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch((e) => { if (!cancelled) setLoadError(String(e?.message ?? e)); });
     fetchPriceHistory(id).then((value) => { if (!cancelled) setHistory(value); }).catch(() => {});
     fetchBestListings(id).then((value) => { if (!cancelled) setListings(value); }).catch(() => {});
     const frame = requestAnimationFrame(() => {
@@ -105,7 +105,7 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
       setImgError(false);
     });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [id, reloadTick, initialCard]);
+  }, [id, reloadTick]);
 
   // Prezzo piu' basso per lingua tra le migliori inserzioni gia' scaricate
   // (fetchBestListings): confronto "a colpo d'occhio", non un'analisi
