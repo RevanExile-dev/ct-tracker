@@ -14,6 +14,11 @@ const cardNames = (page) =>
 
 test("mew: pertinenza prima, poi Nome esatto esclude Mewtwo", async ({ page }) => {
   await page.goto(BASE_URL);
+  // Stessa attesa dell'idratazione del test sotto: scrivere prima perde i tasti.
+  await page.waitForFunction(() => {
+    const el = document.querySelector("input[role=combobox]");
+    return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps"));
+  });
   await page.getByLabel("Cerca una carta per nome o numero").tap();
   await page.keyboard.type("mew");
   await expect(page.locator("body")).toContainText("4 carte trovate", { timeout: 20_000 });
