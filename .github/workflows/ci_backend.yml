@@ -76,6 +76,9 @@ jobs:
       - name: Test sync prezzi Cardmarket (sync_cardmarket_prices)
         run: python scripts/test_sync_cardmarket_prices.py
 
+      - name: Test rarita' dal catalogo (db._blueprint_rarity)
+        run: python scripts/test_blueprint_rarity.py
+
       - name: Test avvio catalogo notturno (dispatch_night_catalog)
         run: python scripts/test_dispatch_night_catalog.py
 
