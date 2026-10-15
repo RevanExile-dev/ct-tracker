@@ -45,8 +45,8 @@ for (const variant of [
       await expect(page.getByRole("button", { name: "30 giorni" })).toHaveAttribute("aria-pressed", "true");
       await expect(visible(page.getByText(/Mover Card/), page).first()).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText("Vecchio Confronto")).toHaveCount(0);
-      // L'etichetta dice quanto e' vecchio il confronto (seed: 5 giorni).
-      await expect(visible(page.getByText("in 5 gg"), page).first()).toBeVisible();
+      // L'etichetta dice quanto e' vecchio il confronto (seed: 5 giorni; 6 se il test gira dopo la mezzanotte UTC rispetto al seed).
+      await expect(visible(page.getByText(/in [56] gg/), page).first()).toBeVisible();
     });
 
     test("scegliendo Tutto compaiono i confronti vecchi, con la loro eta'", async ({ page }) => {
@@ -54,7 +54,7 @@ for (const variant of [
       await expect(visible(page.getByText(/Mover Card/), page).first()).toBeVisible({ timeout: 15_000 });
       await press(page, page.getByRole("button", { name: "Tutto" }));
       await expect(visible(page.getByText(/Vecchio Confronto 1/), page).first()).toBeVisible({ timeout: 15_000 });
-      await expect(visible(page.getByText("in 45 gg"), page).first()).toBeVisible();
+      await expect(visible(page.getByText(/in (45|46) gg/), page).first()).toBeVisible();
       await expect(page).toHaveURL(/period=all/);
     });
 

@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
+import { cache } from "react";
+import { preload } from "react-dom";
 import { fetchCardDetail } from "@/lib/db.server";
+import { cardImageSources } from "@/lib/cardImage";
 import { formatCents } from "@/lib/format";
 import CardDetailClient from "./CardDetailClient";
 
+// Una sola lettura per richiesta: la usano sia i metadati sia la pagina.
+const getCard = cache((cardId: number) => fetchCardDetail(cardId));
+
 // Titolo, descrizione e immagine di anteprima specifici per carta: prima
 // ogni scheda aveva lo stesso titolo generico della home e la condivisione
-// di un link mostrava sempre la stessa anteprima. Il contenuto della pagina
-// resta renderizzato dal client (CardDetailClient): qui serve solo il
-// <head>, quindi un errore del database non deve mai rompere la pagina.
+// di un link mostrava sempre la stessa anteprima. Un errore del database
+// non deve mai rompere la pagina: qui si ricade sul <head> di default.
 export async function generateMetadata({
   params,
 }: {
@@ -19,7 +24,7 @@ export async function generateMetadata({
 
   let card;
   try {
-    card = await fetchCardDetail(cardId);
+    card = await getCard(cardId);
   } catch {
     return {};
   }
@@ -46,6 +51,21 @@ export async function generateMetadata({
   };
 }
 
-export default function CardDetailPage() {
-  return <CardDetailClient />;
+// La scheda arriva gia' nell'HTML (prima il client la chiedeva alle API dopo
+// l'idratazione: LCP ~4,3 s) e l'immagine grande parte in preload subito,
+// con lo stesso URL che usera' <img>. In caso di errore o carta assente la
+// pagina si comporta come prima: il client la cerca da solo.
+export default async function CardDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const cardId = Number(id);
+  let initialCard;
+  if (Number.isSafeInteger(cardId) && cardId > 0) {
+    try {
+      initialCard = (await getCard(cardId)) ?? undefined;
+    } catch {
+      initialCard = undefined;
+    }
+  }
+  if (initialCard?.image_url) preload(cardImageSources(initialCard.image_url).src, { as: "image", fetchPriority: "high" });
+  return <CardDetailClient initialCard={initialCard} />;
 }
