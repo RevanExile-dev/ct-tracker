@@ -4,7 +4,7 @@ import { useId, useMemo, useRef, useState } from "react";
 import type { BinderValuePoint } from "@/lib/types";
 import { formatCents, formatDate, formatDateLong, formatPercent } from "@/lib/format";
 import { areaPath, monotonePath, xForDate, yForValue } from "@/lib/chartGeometry";
-import { collectionHistoryCsv, historyInRange, normalizeCollectionHistory } from "@/lib/collectionHistory";
+import { collectionHistoryCsv, historyInRange, normalizeCollectionHistory, periodChange } from "@/lib/collectionHistory";
 
 const DAY_MS = 86_400_000;
 const PRESETS = [
@@ -23,6 +23,8 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
   const [baselineDate, setBaselineDate] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const history = useMemo(() => normalizeCollectionHistory(points), [points]);
+  const changes = useMemo(() => [{ days: 7, label: "7 giorni" }, { days: 30, label: "30 giorni" }]
+    .map((p) => ({ ...p, change: periodChange(history, p.days) })), [history]);
   const oldest = history[0]?.captured_at ?? "";
   const newest = history.at(-1)?.captured_at ?? "";
   const from = range?.from ?? oldest;
@@ -118,6 +120,18 @@ export default function CollectionValueChart({ points }: { points: BinderValuePo
       {history.length === 0 ? <p className="py-7 text-center text-sm text-ink-muted" role="status">
         Nessuna rilevazione disponibile. Lo storico comparirà dopo un sync completato con carte nel binder dell’account.
       </p> : <>
+        <div className="grid grid-cols-2 gap-3 mb-4" aria-label="Variazione recente del valore">
+          {changes.map(({ days, label, change }) => <div key={days} data-testid={`variazione-${days}`}
+            className="rounded-lg border border-base-border bg-base-surface2 p-3">
+            <p className="text-xs text-ink-muted">Ultimi {label}</p>
+            {change ? <>
+              <p className={`font-mono text-base ${change.delta_cents >= 0 ? "text-signal-up" : "text-signal-down"}`}>
+                {change.delta_cents >= 0 ? "+" : ""}{formatCents(change.delta_cents, change.currency ?? "EUR")}
+              </p>
+              {change.pct !== null && <p className="text-xs text-ink-faint">{change.pct >= 0 ? "+" : ""}{formatPercent(change.pct, 1)}</p>}
+            </> : <p className="text-xs text-ink-faint mt-1">Servono più giorni di storico</p>}
+          </div>)}
+        </div>
         <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Periodo storico">
           {PRESETS.map((preset) => <button key={preset.days} type="button" onClick={() => selectRange(preset.days)}
             aria-pressed={rangeDays === preset.days}

@@ -37,3 +37,23 @@ export function collectionHistoryCsv(points: BinderValuePoint[]): string {
       point.cards_count, point.priced_count].map((value) => cell(value ?? "")).join(",")),
   ].join("\r\n");
 }
+
+export type PeriodChange = { from: string; to: string; delta_cents: number; pct: number | null; currency: string | null };
+
+/** Variazione dell'ultimo valore rispetto all'ultima rilevazione di almeno
+ * `days` giorni prima. Se lo storico non e' abbastanza lungo (o le valute
+ * differiscono) torna null: niente stime, niente punti inventati.
+ * `points` deve venire da normalizeCollectionHistory (ordinato, 1 per data). */
+export function periodChange(points: BinderValuePoint[], days: number): PeriodChange | null {
+  const last = points.at(-1);
+  if (!last) return null;
+  const target = new Date(Date.parse(last.captured_at) - days * 86_400_000).toISOString().slice(0, 10);
+  const base = points.findLast((p) => p.captured_at <= target);
+  if (!base || (base.currency ?? "EUR") !== (last.currency ?? "EUR")) return null;
+  const delta = last.total_cents - base.total_cents;
+  return {
+    from: base.captured_at, to: last.captured_at, delta_cents: delta,
+    pct: base.total_cents > 0 ? delta / base.total_cents * 100 : null,
+    currency: last.currency,
+  };
+}
