@@ -38,12 +38,14 @@ class PriorityOrder(unittest.TestCase):
         cls.conn.close()
 
     def _setup(self, rows):
-        """rows: {offset: (best_price_cents o None, ore dall'ultimo tentativo o None)}"""
+        """rows: {offset: (best_price_cents o None, ore dall'ultimo tentativo o None[, it_nm_zero_price_cents])}"""
         c = self.conn.cursor()
         ids = [BASE + k for k in rows]
         c.execute("DELETE FROM blueprints WHERE id = ANY(%s)", (ids,))
         c.execute("INSERT INTO expansions (id, game_id, code, name) VALUES (9999, 5, 'tst', 'Test') ON CONFLICT DO NOTHING")
-        for k, (cents, hours) in rows.items():
+        for k, row in rows.items():
+            cents, hours = row[0], row[1]
+            itz = row[2] if len(row) > 2 else None
             c.execute(
                 "INSERT INTO blueprints (id, name, expansion_id, expansion_code, expansion_name, category_id) "
                 "VALUES (%s, %s, 9999, 'tst', 'Test', 73)", (BASE + k, f"Carta {k}"),
@@ -51,8 +53,9 @@ class PriorityOrder(unittest.TestCase):
             if hours is not None:
                 c.execute(
                     "INSERT INTO latest_prices (blueprint_id, best_price_cents, min_price_cents, "
-                    "captured_at_ts, last_attempted_at) VALUES (%s, %s, %s, now() - make_interval(hours => %s), "
-                    "now() - make_interval(hours => %s))", (BASE + k, cents, cents, hours, hours),
+                    "it_nm_zero_price_cents, captured_at_ts, last_attempted_at) VALUES (%s, %s, %s, %s, "
+                    "now() - make_interval(hours => %s), now() - make_interval(hours => %s))",
+                    (BASE + k, cents, cents, itz, hours, hours),
                 )
         self.conn.commit()
 
@@ -65,19 +68,27 @@ class PriorityOrder(unittest.TestCase):
             1: (None, None),    # mai tentata: per prima
             2: (2500, 30),      # 25 euro, 30 h (obiettivo 24 h): ritardo 1,25
             3: (500, 30),       # 5 euro, 30 h (obiettivo 72 h): 0,42
-            4: (20, 30),        # 0,20 euro, 30 h (obiettivo 168 h): 0,18
-            5: (20, 24 * 20),   # 0,20 euro, 20 giorni (obiettivo 7 gg): 2,86 -> prima della 25 euro
+            4: (20, 30),        # 0,20 euro, 30 h (obiettivo 240 h): 0,125
+            5: (20, 24 * 20),   # 0,20 euro, 20 giorni (obiettivo 10 gg): 2,0 -> prima della 25 euro
         }
         self._setup(rows)
         self.assertEqual(self._order(rows), [1, 5, 2, 3, 4])
 
     def test_senza_prezzo_e_come_economica(self):
         rows = {
-            11: (None, 24 * 8),   # nessuna offerta, 8 gg (obiettivo 7): 1,14
+            11: (None, 24 * 11),  # nessuna offerta, 11 gg (obiettivo 10): 1,1
             12: (2500, 24),       # 25 euro, 24 h: 1,0
         }
         self._setup(rows)
         self.assertEqual(self._order(rows), [11, 12])
+
+    def test_conta_il_prezzo_italiano_non_solo_il_minimo(self):
+        rows = {
+            31: (261, 30, 3284),   # min 2,61 EUR ma IT NM Zero 32,84 EUR (come Aromatisse): fascia >= 20 EUR, ritardo 1,25
+            32: (261, 30, None),   # stesso minimo senza prezzo italiano: fascia 0,50-3 EUR, ritardo 0,21
+        }
+        self._setup(rows)
+        self.assertEqual(self._order(rows), [31, 32])
 
     def test_fasce_non_catalogo_restano_per_eta_e_prima_del_catalogo(self):
         rows = {21: (2500, 1), 22: (2500, 2000)}
