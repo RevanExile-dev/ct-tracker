@@ -264,3 +264,41 @@ export function removeBinderEntry(blueprintId: number): BinderEntry[] {
   pushDelete(blueprintId);
   return next;
 }
+
+/** Importazione in blocco da CSV (vedi web/lib/binderCsv.ts): unisce le
+ * entry importate a quelle locali (lingua/quantita'/condizione/finitura
+ * importate sostituiscono quelle della stessa carta, addedAt resta; nessuna
+ * carta viene mai rimossa) e, se si e' loggati, le spinge al server con UNA
+ * sola richiesta bulk invece di una per carta (limite di richieste/10 s). */
+export function importBinderEntries(
+  imported: Array<{ id: number; language: string | null; condition: string | null; finish: BinderFinish; quantity: number }>,
+): BinderEntry[] {
+  if (typeof window === "undefined") return [];
+  const entries = readEntries();
+  const byId = new Map(entries.map((entry) => [entry.blueprintId, entry]));
+  const now = new Date().toISOString();
+  const touched: BinderEntry[] = [];
+  for (const item of imported) {
+    const current = byId.get(item.id);
+    const entry: BinderEntry = {
+      blueprintId: item.id,
+      language: item.language,
+      quantity: isValidQuantity(item.quantity) ? item.quantity : 1,
+      condition: item.condition ?? undefined,
+      finish: item.finish,
+      addedAt: current?.addedAt ?? now,
+    };
+    byId.set(item.id, entry);
+    touched.push(entry);
+  }
+  const next = Array.from(byId.values());
+  writeEntries(next);
+  if (syncEnabled && touched.length) {
+    fetch("/api/account/binder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(touched),
+    }).catch(() => {});
+  }
+  return next;
+}

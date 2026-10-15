@@ -39,6 +39,8 @@ function CardTile({
   onLogPurchase,
   hasPurchaseInfo,
   horizontalScroll,
+  hasAlert,
+  onCreateAlert,
 }: {
   card: CardRow;
   index?: number;
@@ -52,6 +54,11 @@ function CardTile({
   inWishlist?: boolean;
   onToggleWishlist?: (card: CardRow) => void;
   returnTo?: string;
+  /** Solo /wishlist, da loggati: true = la carta ha gia' un allarme (la
+   * campanella porta a /account/alerts), false = non ce l'ha e la
+   * campanella apre l'overlay per crearlo senza uscire dalla lista. */
+  hasAlert?: boolean;
+  onCreateAlert?: (card: CardRow) => void;
   // "best": prezzo a cascata (Near Mint + CardTrader Zero quando esiste,
   // qualunque lingua, altrimenti il piu' economico salvato) - usato SOLO dal
   // binder, dove la domanda e' "quanto vale la mia collezione" e serve
@@ -170,7 +177,7 @@ function CardTile({
   const [imgError, setImgError] = useState(false);
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
-  const hasActions = Boolean(onToggleBinder || onToggleWishlist);
+  const hasActions = Boolean(onToggleBinder || onToggleWishlist || onCreateAlert);
 
   return (
     <div
@@ -330,6 +337,24 @@ function CardTile({
                   {inWishlist ? "♥" : "♡"}
                 </button>
               )}
+              {onCreateAlert && (hasAlert ? (
+                <Link
+                  href="/account/alerts"
+                  aria-label="Allarme attivo su questa carta: apri i tuoi allarmi"
+                  className="w-9 h-9 rounded-full flex items-center justify-center border bg-accent/15 border-accent/50 text-accent-bright"
+                >
+                  🔔
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onCreateAlert(card)}
+                  aria-label="Crea allarme di prezzo per questa carta"
+                  className="w-9 h-9 rounded-full flex items-center justify-center border bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40 transition-colors active:scale-90"
+                >
+                  🔕
+                </button>
+              ))}
               {onToggleBinder && (
                 <button
                   type="button"

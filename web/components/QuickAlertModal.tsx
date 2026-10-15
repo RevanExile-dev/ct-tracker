@@ -34,17 +34,15 @@ function withCurrent(options: string[], current: string): string[] {
 /** Overlay rapida per creare (o, con `alert`, MODIFICARE)  un allarme prezzo su UNA carta gia' nota (id +
  * nome + prezzo attuale), senza passare dalla ricerca di /account/alerts.
  * Stessi controlli di profilo (lingua/condizione/CardTrader Zero) della
- * pagina completa, qui senza bisogno di cercare la carta - fireMode resta
- * sempre "once" (chi vuole un allarme ripetibile con cooldown usa comunque
- * /account/alerts). Aperta da due punti diversi (vedi
+ * pagina completa, qui senza bisogno di cercare la carta - "Quando scatta"
+ * (una volta / ripetibile con attesa) e' scelto qui, default una volta. Aperta da due punti diversi (vedi
  * useWishlistAlertPrompt.tsx e la pagina carta): il chiamante decide cosa
  * fare dopo submit/skip/chiudi, questo componente non tocca mai i desideri.
  *
  * Modalita' modifica (`alert` presente, usata da /account/alerts): campi
- * precompilati dall'allarme, PATCH invece di POST, e in piu' "Quando scatta"
- * (una volta / ripetibile) che in creazione rapida resta sempre "once" -
- * senza, modificare un allarme ripetibile ne azzererebbe in silenzio la
- * modalita'. `card` puo' mancare (la lista allarmi la carica in modo
+ * precompilati dall'allarme (anche "Quando scatta": senza, modificare un
+ * allarme ripetibile ne azzererebbe in silenzio la modalita'), PATCH invece
+ * di POST. `card` puo' mancare (la lista allarmi la carica in modo
  * asincrono): in quel caso titolo e valuta ripiegano sui dati dell'allarme. */
 export default function QuickAlertModal({
   card,
@@ -84,6 +82,8 @@ export default function QuickAlertModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // null = non ancora saputo: nel dubbio si mantiene il testo con Telegram.
+  const [telegramLinked, setTelegramLinked] = useState<boolean | null>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
   useEffect(() => {
@@ -93,6 +93,16 @@ export default function QuickAlertModal({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  useEffect(() => {
+    if (editing) return;
+    let cancelled = false;
+    fetch("/api/account/telegram")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { linked?: boolean } | null) => { if (!cancelled && data) setTelegramLinked(Boolean(data.linked)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [editing]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,7 +142,7 @@ export default function QuickAlertModal({
     }
 
     let rearmHours: number | undefined;
-    if (editing && fireMode === "rearm") {
+    if (fireMode === "rearm") {
       const parsed = Number(rearmCooldownHours);
       if (!Number.isInteger(parsed) || parsed < 1) { setError("Ore di attesa (cooldown) non valide."); return; }
       rearmHours = parsed;
@@ -150,7 +160,7 @@ export default function QuickAlertModal({
           canSellViaHub: canSellViaHub === "any" ? null : canSellViaHub === "only" ? 1 : 0,
           targetType,
           targetValue,
-          fireMode: editing ? fireMode : "once",
+          fireMode,
           rearmCooldownHours: rearmHours,
         }),
       });
@@ -181,7 +191,9 @@ export default function QuickAlertModal({
           <>
             <div className="text-ink-primary font-medium">🔔 Allarme creato</div>
             <p className="text-sm text-ink-muted mt-2">
-              Ti avviseremo su Telegram quando il prezzo di <span className="text-ink-primary">{cardName}</span> raggiunge la soglia impostata.
+              {telegramLinked === false
+                ? <>Quando il prezzo di <span className="text-ink-primary">{cardName}</span> raggiunge la soglia lo vedrai in <a href="/account/alerts" className="text-accent-bright underline underline-offset-2">Allarmi prezzo</a>. Per ricevere anche un messaggio, <a href="/account/telegram" className="text-accent-bright underline underline-offset-2">collega Telegram</a>.</>
+                : <>Ti avviseremo su Telegram quando il prezzo di <span className="text-ink-primary">{cardName}</span> raggiunge la soglia impostata.</>}
             </p>
             <button
               type="button"
@@ -197,7 +209,7 @@ export default function QuickAlertModal({
             <p className="text-sm text-ink-muted mt-1">
               {editing
                 ? <>Cambia profilo e soglia dell&apos;allarme su <span className="text-ink-primary">{cardName}</span>.</>
-                : <>Ricevi un avviso su Telegram quando il prezzo di <span className="text-ink-primary">{cardName}</span> scende sotto una soglia.</>}
+                : <>{telegramLinked === false ? "Ti segnaliamo in Allarmi prezzo" : "Ricevi un avviso su Telegram"} quando il prezzo di <span className="text-ink-primary">{cardName}</span> scende sotto una soglia.</>}
             </p>
             {currentCents !== null && (
               <p className="text-xs font-mono text-ink-faint mt-2">
@@ -299,7 +311,7 @@ export default function QuickAlertModal({
                 </div>
               </div>
 
-              {editing && (
+              <div>
                 <div>
                   <div className="text-xs font-mono uppercase tracking-wider text-ink-faint mb-2">Quando scatta</div>
                   <label className="sr-only" htmlFor="quick-alert-fire-mode">Quando scatta</label>
@@ -327,7 +339,7 @@ export default function QuickAlertModal({
                     </div>
                   )}
                 </div>
-              )}
+              </div>
 
               {error && <p role="alert" className="text-xs text-signal-down">{error}</p>}
 
