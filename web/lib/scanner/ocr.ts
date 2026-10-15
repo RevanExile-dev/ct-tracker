@@ -285,7 +285,19 @@ function makeCrop(image: HTMLImageElement, spec: CropSpec) {
   return canvas.toDataURL("image/png");
 }
 
-async function runField(worker: TesseractWorker, image: string, psm: string, numeric: boolean) {
+// Un solo job alla volta per worker: setParameters + recognize sono una coppia,
+// e con la lettura della lingua in parallelo sul worker multilingua due coppie
+// non devono intrecciarsi.
+const workerLocks = new WeakMap<TesseractWorker, Promise<unknown>>();
+
+function runField(worker: TesseractWorker, image: string, psm: string, numeric: boolean) {
+  const previous = workerLocks.get(worker) ?? Promise.resolve();
+  const job = previous.then(() => runFieldUnlocked(worker, image, psm, numeric));
+  workerLocks.set(worker, job.then(() => undefined, () => undefined));
+  return job;
+}
+
+async function runFieldUnlocked(worker: TesseractWorker, image: string, psm: string, numeric: boolean) {
   try {
     if (worker.setParameters) {
       await worker.setParameters({
@@ -340,14 +352,15 @@ export function recognizeText(image: string, check: FieldCheck = {}): Promise<Oc
     const source = await loadImage(image);
     // Fallisce subito (e con il messaggio giusto) se il motore non si carica.
     await getLatinWorker();
+    // La lingua si legge sul worker multilingua mentre nome e numero sono sul
+    // worker latino: stessi risultati, in parallelo (e' gia' un Web Worker).
+    const bodyJob = getBodyWorker()
+      .then((worker) => runField(worker, makeCrop(source, BODY), "6", false))
+      .catch(() => ({ text: "", confidence: 0 }));
     const name = await readField(source, NAME_READS, false, check.name);
     const number = await readField(source, NUMBER_READS, true, check.number);
-    let body = { text: "", confidence: 0 };
-    try {
-      body = await runField(await getBodyWorker(), makeCrop(source, BODY), "6", false);
-    } catch {
-      // La lingua e' un di piu': senza, il match di nome e numero resta valido.
-    }
+    // La lingua e' un di piu': senza, il match di nome e numero resta valido.
+    const body = await bodyJob;
 
     return {
       text: [name.text, number.text, body.text].filter(Boolean).join("\n"),
