@@ -110,7 +110,7 @@ function WishlistContent() {
 
       <Link
         href="/"
-        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-8"
+        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 min-h-11 md:min-h-9 mb-4 md:mb-8"
       >
         ← Torna al catalogo
       </Link>

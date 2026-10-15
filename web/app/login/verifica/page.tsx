@@ -16,7 +16,7 @@ export default function VerifyRequestPage() {
 
       <Link
         href="/"
-        className="text-sm text-accent-bright hover:text-accent transition-colors inline-flex items-center gap-1.5 mt-8"
+        className="text-sm text-accent-bright hover:text-accent transition-colors inline-flex items-center gap-1.5 min-h-11 md:min-h-9 mt-4 md:mt-8"
       >
         ← Torna al catalogo
       </Link>
