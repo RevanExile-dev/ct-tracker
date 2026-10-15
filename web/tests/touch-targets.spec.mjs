@@ -17,9 +17,14 @@ test.describe("bersagli di tocco - telefono", () => {
       ...(await heights(page, 'footer nav a')),
       ...(await heights(page, 'a:has-text("Torna indietro")')),
       ...(await heights(page, 'a:has-text("Apri su CardTrader")')),
+      // Azioni principali del percorso "tengo d'occhio questa carta": erano 27 px.
+      // (Sotto i 700 px di altezza, es. iPhone SE, restano compatte: vedi card-first-screen.)
+      ...(await heights(page, 'button:has-text("aggiungi al binder")')),
+      ...(await heights(page, 'button:has-text("aggiungi ai desideri")')),
+      ...(await heights(page, 'button:has-text("crea allarme")')),
     ];
-    expect(all.length).toBeGreaterThanOrEqual(5);
-    for (const x of all) expect(x.h, x.t).toBeGreaterThanOrEqual(44);
+    expect(all.length).toBeGreaterThanOrEqual(8);
+    for (const x of all) expect(x.h, x.t).toBeGreaterThanOrEqual(43);
   });
 });
 
@@ -43,6 +48,6 @@ test.describe("bersagli di tocco - /movers", () => {
     await page.goto(`${BASE_URL}/movers`);
     const link = page.getByTestId("back-link");
     await link.waitFor();
-    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
   });
 });

@@ -799,8 +799,13 @@ function toPriceAlert(row: {
   baseline_captured_at: Date | string | null; fire_mode: PriceAlertFireMode;
   rearm_cooldown_hours: number | null; state: PriceAlertState; fired_at: Date | string | null;
   created_at: Date | string;
+  matching_price_cents?: number | null; matching_price_currency?: string | null;
 }): PriceAlert {
   return {
+    ...(row.matching_price_cents !== undefined && {
+      matchingPriceCents: row.matching_price_cents,
+      matchingPriceCurrency: row.matching_price_currency ?? null,
+    }),
     id: Number(row.id),
     blueprintId: row.blueprint_id,
     languages: row.languages ?? (row.language ? [row.language] : []),
@@ -861,7 +866,25 @@ async function findMatchingListingPrice(
 export async function getPriceAlerts(userId: string): Promise<PriceAlert[]> {
   const pool = getPgPool();
   const { rows } = await pool.query(
-    "SELECT * FROM price_alerts WHERE user_id = $1 ORDER BY created_at DESC",
+    // m.* = offerta piu' economica ADESSO per lo stesso profilo dell'allarme
+    // (stessa regola di find_matching_listing_price in scripts/db.py), per
+    // dire in pagina "ora X, soglia Y" senza una chiamata per allarme.
+    `SELECT a.*, m.price_cents AS matching_price_cents, m.price_currency AS matching_price_currency
+     FROM price_alerts a
+     CROSS JOIN LATERAL (
+       SELECT CASE WHEN cardinality(a.languages) > 0 THEN a.languages
+                   WHEN a.language IS NOT NULL THEN ARRAY[a.language]
+                   ELSE ARRAY[]::text[] END AS langs
+     ) la
+     LEFT JOIN LATERAL (
+       SELECT pl.price_cents, pl.price_currency FROM price_listings pl
+       WHERE pl.blueprint_id = a.blueprint_id
+         AND (cardinality(la.langs) = 0 OR pl.language = ANY(la.langs))
+         AND (a.condition IS NULL OR pl.condition = a.condition)
+         AND (a.can_sell_via_hub IS NULL OR pl.can_sell_via_hub = a.can_sell_via_hub)
+       ORDER BY pl.price_cents ASC LIMIT 1
+     ) m ON a.state <> 'disabled'
+     WHERE a.user_id = $1 ORDER BY a.created_at DESC`,
     [userId]
   );
   return rows.map(toPriceAlert);

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { cardImageSources } from "@/lib/cardImage";
 import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import {
@@ -32,7 +32,7 @@ import { countryFlag, formatCents, formatPercent, languageFlag, trendVsMovingAve
 // del client finche' non serve davvero.
 const ThreeCardHero = dynamic(() => import("@/components/ThreeCardHero"), { ssr: false });
 
-function CardDetailContent() {
+function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const id = Number(params.id);
@@ -41,7 +41,11 @@ function CardDetailContent() {
     ? requestedReturn
     : "/";
 
-  const [card, setCard] = useState<CardDetail | null | undefined>(undefined);
+  // Scheda gia' letta dal server (stessa carta della route): serve per il primo
+  // disegno, senza aspettare le API. Il client la rilegge comunque (risposta in
+  // cache CDN) e quella piu' recente, o l'errore di rete, ha la precedenza.
+  const [fetchedCard, setCard] = useState<CardDetail | null | undefined>(undefined);
+  const card = fetchedCard?.id === id || initialCard?.id !== id ? fetchedCard : initialCard;
   // Errore di rete/server: diverso da "carta inesistente" (card === null).
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
@@ -253,13 +257,15 @@ function CardDetailContent() {
           >
             <div className="relative aspect-[5/7] bg-base-surface2">
               {card.image_url && !imgError ? (
-                <Image
-                  src={card.image_url}
+                // <img> semplice (le immagini non passano da next/image, vedi
+                // next.config.js): stesso URL del preload fatto dal server.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={cardImageSources(card.image_url).src}
                   alt={card.name}
-                  fill
-                  sizes="(max-width: 767px) 40vw, 400px"
-                  className="object-cover"
-                  priority
+                  fetchPriority="high"
+                  decoding="async"
+                  className="absolute inset-0 w-full h-full object-cover"
                   onError={() => setImgError(true)}
                 />
               ) : (
@@ -325,7 +331,7 @@ function CardDetailContent() {
                 setPopping(true);
               }}
               onAnimationEnd={() => setPopping(false)}
-              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+              className={`inline-flex items-center [@media(min-height:700px)]:min-h-11 sm:min-h-0 text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
                 popping ? "pop-on-toggle" : ""
               } ${
                 inBinder
@@ -341,7 +347,7 @@ function CardDetailContent() {
                 setPoppingWishlist(true);
               }}
               onAnimationEnd={() => setPoppingWishlist(false)}
-              className={`text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+              className={`inline-flex items-center [@media(min-height:700px)]:min-h-11 sm:min-h-0 text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
                 poppingWishlist ? "pop-on-toggle" : ""
               } ${
                 inWishlist
@@ -360,7 +366,7 @@ function CardDetailContent() {
                   manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 9000);
                 }
               }}
-              className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
+              className="inline-flex items-center [@media(min-height:700px)]:min-h-11 sm:min-h-0 text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
             >
               🔔 crea allarme
             </button>
@@ -486,7 +492,7 @@ function CardDetailContent() {
                   <button
                     type="button"
                     onClick={() => setOnlyZeroListings((v) => !v)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
+                    className={`inline-flex items-center min-h-11 sm:min-h-0 text-xs px-3 py-1.5 rounded-full border transition-colors active:scale-95 ${
                       onlyZeroListings
                         ? "bg-accent/10 border-accent/60 text-accent-bright"
                         : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -561,10 +567,10 @@ function CardDetailContent() {
   );
 }
 
-export default function CardDetailClient() {
+export default function CardDetailClient({ initialCard }: { initialCard?: CardDetail }) {
   return (
     <Suspense fallback={null}>
-      <CardDetailContent />
+      <CardDetailContent initialCard={initialCard} />
     </Suspense>
   );
 }

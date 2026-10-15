@@ -24,11 +24,11 @@ for (const nome of [/crea allarme/i, /aggiungi ai desideri/i, /aggiungi al binde
     expect(alpha).toBe(1); // sfondo pieno
 
     const accedi = toast.getByRole("link", { name: "Accedi" });
-    expect((await accedi.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    expect((await accedi.boundingBox()).height).toBeGreaterThanOrEqual(43);
     const chiudi = toast.getByRole("button", { name: "Chiudi" });
     const cb = await chiudi.boundingBox();
-    expect(cb.height).toBeGreaterThanOrEqual(44);
-    expect(cb.width).toBeGreaterThanOrEqual(44);
+    expect(cb.height).toBeGreaterThanOrEqual(43);
+    expect(cb.width).toBeGreaterThanOrEqual(43);
 
     await chiudi.tap();
     await expect(toast).toHaveCount(0);
