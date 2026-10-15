@@ -42,6 +42,7 @@ function CardTile({
   imagePriority,
   hasAlert,
   onCreateAlert,
+  alertTarget,
 }: {
   card: CardRow;
   index?: number;
@@ -60,6 +61,8 @@ function CardTile({
    * campanella apre l'overlay per crearlo senza uscire dalla lista. */
   hasAlert?: boolean;
   onCreateAlert?: (card: CardRow) => void;
+  /** Solo /wishlist: prezzo obiettivo (soglia dell'allarme) e quanto manca. */
+  alertTarget?: { thresholdText: string; missingText: string | null; met: boolean } | null;
   // "best": prezzo a cascata (Near Mint + CardTrader Zero quando esiste,
   // qualunque lingua, altrimenti il piu' economico salvato) - usato SOLO dal
   // binder, dove la domanda e' "quanto vale la mia collezione" e serve
@@ -325,6 +328,16 @@ function CardTile({
             {staleLabel && priceCents != null && (
               <div className="text-[11px] leading-tight text-ink-faint mt-0.5" data-testid="price-age">
                 {staleLabel}
+              </div>
+            )}
+            {alertTarget && (
+              <div
+                className={`text-[11px] leading-tight mt-0.5 ${alertTarget.met ? "text-signal-down" : "text-ink-faint"}`}
+                data-testid="wishlist-target"
+              >
+                {alertTarget.met
+                  ? `Sotto il tuo prezzo (${alertTarget.thresholdText})`
+                  : `Obiettivo ${alertTarget.thresholdText}: mancano ${alertTarget.missingText}`}
               </div>
             )}
             {delta !== null && (

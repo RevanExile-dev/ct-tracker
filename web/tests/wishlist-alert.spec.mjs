@@ -14,7 +14,7 @@ const card = (id, name, cents) => ({
 
 test("desideri: campanella crea l'allarme in 3 tocchi", async ({ page }) => {
   const posts = [];
-  const alerts = [{ id: 1, blueprintId: 903001, state: "armed" }];
+  const alerts = [{ id: 1, blueprintId: 903001, state: "armed", targetType: "absolute_cents", targetValue: 1500, baselinePriceCents: 2000, baselineCurrency: "EUR", matchingPriceCents: 2000, matchingPriceCurrency: "EUR" }];
   await page.addInitScript(() => localStorage.setItem("ct-tracker:wishlist", JSON.stringify([903001, 903002])));
   await page.route("**/api/**", async (route) => {
     const req = route.request();
@@ -26,6 +26,7 @@ test("desideri: campanella crea l'allarme in 3 tocchi", async ({ page }) => {
     if (path === "/api/account/alerts" && req.method() === "GET") return route.fulfill({ json: alerts });
     if (path === "/api/account/alerts" && req.method() === "POST") {
       posts.push(req.postDataJSON());
+      alerts.push({ id: 2, blueprintId: 903002, state: "armed" }); // come farebbe il server
       return route.fulfill({ status: 201, json: { id: 2, blueprintId: 903002, state: "armed" } });
     }
     return route.continue();
@@ -33,6 +34,9 @@ test("desideri: campanella crea l'allarme in 3 tocchi", async ({ page }) => {
   await page.goto(`${BASE}/wishlist`);
   await expect(page.getByTestId("wishlist-no-alert")).toHaveText("1", { timeout: 20_000 });
   await expect(page.getByRole("link", { name: /Allarme attivo/ })).toHaveCount(1);
+  // Prezzo obiettivo = soglia dell'allarme: 20 € adesso, obiettivo 15 € -> mancano 5 €.
+  await expect(page.getByTestId("wishlist-target")).toHaveCount(1);
+  await expect(page.getByTestId("wishlist-target")).toContainText(/Obiettivo 15,00\s€: mancano 5,00\s€/);
 
   await page.getByRole("button", { name: /Crea allarme di prezzo/ }).tap(); // tocco 1
   await page.getByRole("button", { name: /Affare/ }).tap(); // tocco 2
