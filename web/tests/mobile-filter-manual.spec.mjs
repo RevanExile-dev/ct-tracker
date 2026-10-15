@@ -35,7 +35,7 @@ test.describe("mobile filters: scroll touch non cambia apertura", () => {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
     const wrap = page.locator('[data-testid="toolbar-collapse"]');
-    const handle = page.getByRole("button", { name: /Nascondi filtri|Mostra filtri/i });
+    const handle = page.getByRole("button", { name: /(Nascondi|Mostra) ricerca e filtri/i });
     await expect(wrap).toBeVisible({ timeout: 30_000 });
     await expect(handle).toBeVisible();
 

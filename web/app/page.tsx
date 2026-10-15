@@ -421,7 +421,7 @@ function HomeContent() {
           type="button"
           onClick={() => setToolbarVisible((v) => !v)}
           aria-expanded={toolbarVisible}
-          aria-label={toolbarVisible ? "Nascondi filtri" : "Mostra filtri"}
+          aria-label={toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
           className="w-full min-h-9 sm:min-h-10 flex items-center justify-center gap-2 text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
         >
           <span
@@ -431,7 +431,7 @@ function HomeContent() {
             ▲
           </span>
           {/* Su telefono la freccia da sola sembrava un pannello vuoto: serve
-              un'etichetta. Il nome accessibile resta quello dell'aria-label. */}
+              un'etichetta. Il nome accessibile (aria-label) ripete lo stesso testo: WCAG 2.5.3. */}
           <span aria-hidden className="sm:hidden text-xs">
             {toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
           </span>

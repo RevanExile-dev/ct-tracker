@@ -190,7 +190,7 @@ test.describe("barra filtri: si nasconde scrollando giu, torna scrollando su", (
     expect(shownHeight).toBeGreaterThan(100);
 
     // Maniglia manuale, indipendente dallo scroll.
-    const handle = page.getByRole("button", { name: /Nascondi filtri|Mostra filtri/i });
+    const handle = page.getByRole("button", { name: /(Nascondi|Mostra) ricerca e filtri/i });
     await handle.tap();
     await page.waitForTimeout(400);
     expect((await wrap.boundingBox()).height).toBeLessThan(40);
