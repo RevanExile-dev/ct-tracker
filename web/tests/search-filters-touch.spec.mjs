@@ -61,13 +61,13 @@ test("suggerimenti: un tap fuori dal campo li chiude", async ({ page }) => {
 
 test("Prezzo: 2 tocchi dalla pagina, filtra, chip, URL e conteggio coerente", async ({ page }) => {
   await ready(page);
-  await expect(page.locator("body")).toContainText("85 carte trovate", { timeout: 20_000 });
+  await expect(page.locator("body")).toContainText("87 carte trovate", { timeout: 20_000 });
   let taps = 0;
   await page.getByRole("button", { name: /^Prezzo/ }).tap(); taps++;
   await page.getByRole("button", { name: "1 – 5 €" }).tap(); taps++;
   expect(taps).toBe(2);
   await expect(page).toHaveURL(/price=1-5/);
-  await expect(page.locator("body")).not.toContainText("85 carte trovate");
+  await expect(page.locator("body")).not.toContainText("87 carte trovate");
   const count = await (await page.request.get(`${BASE_URL}/api/cards/count?minPriceCents=100&maxPriceCents=500`)).json();
   await expect(page.locator("body")).toContainText(`${count.count} carte trovate`);
   // il pannello si e' chiuso da solo (closeOnSelect) e la fascia e' rimovibile dalla pillola

@@ -204,8 +204,8 @@ ON CONFLICT DO NOTHING;
 -- storico (minimo 1000, attuale 1400 = +40%) e inserzioni Zero in IT/DE/FR/US
 -- piu' una non-Zero piu' economica; 950002 ha 1 sola rilevazione (nessun verdetto).
 INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium) VALUES
-  (950001, 'Buy Test Card', '1/1', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/buy-test.jpg', 'Rare', 0),
-  (950002, 'Short History Card', '2/2', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/short-history.jpg', 'Rare', 0)
+  (950001, 'Conviene Prova', '1/1', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/conviene-prova.jpg', 'Rare', 0),
+  (950002, 'Storico Corto', '2/2', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/short-history.jpg', 'Rare', 0)
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, best_price_cents, best_price_currency, best_can_sell_via_hub) VALUES
   (950001, CURRENT_DATE, now(), 900, 'EUR', 5, 1400, 'EUR', 1),
