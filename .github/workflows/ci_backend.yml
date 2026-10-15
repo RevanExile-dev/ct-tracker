@@ -69,6 +69,11 @@ jobs:
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/ct_tracker_backend_test
         run: python scripts/test_weekly_digest.py
 
+      - name: Test sospensione Neon a fine sync (neon_suspend, Postgres vero, API finta)
+        env:
+          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/ct_tracker_backend_test
+        run: python scripts/test_neon_suspend.py
+
       - name: Verifica configurazioni JSON
         run: |
           python -m json.tool config/tracked_sets.json >/dev/null

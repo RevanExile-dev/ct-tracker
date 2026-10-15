@@ -85,4 +85,7 @@ jobs:
           # coda (telegram_outbox) finche' non verra' impostato - stesso
           # interruttore "silenziosamente disattivato" di notify_telegram.yml.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          # Facoltativo: se presente, a fine giro il sync spegne subito il
+          # compute Neon (risparmia ~5 minuti di ore di calcolo per giro).
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
         run: python scripts/sync_prices_priority.py --tracked
