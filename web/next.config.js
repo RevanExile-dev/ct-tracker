@@ -29,12 +29,7 @@ const contentSecurityPolicy = [
   // gia' whitelisted in images.remotePatterns qui sotto.
   "img-src 'self' data: https://cardtrader.com https://*.cardtrader.com https://d2rq8wty021h6h.cloudfront.net https://*.googleusercontent.com",
   "font-src 'self' data:",
-  // connect-src include gli host immagine: il service worker (public/sw.js)
-  // le legge con fetch() per tenerle in cache, e per la CSP quella richiesta
-  // dipende da connect-src, non da img-src. Senza, ogni immagine passata dal
-  // worker falliva e le tile mostravano "immagine non disponibile"
-  // (tests/sw-csp.test.mjs).
-  "connect-src 'self' https://cdn.jsdelivr.net https://cardtrader.com https://*.cardtrader.com https://d2rq8wty021h6h.cloudfront.net",
+  "connect-src 'self' https://cdn.jsdelivr.net",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -84,8 +79,9 @@ const nextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
-      // Il service worker deve ricontrollarsi a ogni visita: un aggiornamento
-      // non deve restare bloccato nella cache del browser.
+      // /sw.js e' solo lo script di pulizia che rimuove il vecchio service
+      // worker (app offline tolta il 15/10/2026): deve ricontrollarsi a ogni
+      // visita, cosi' chi lo ha ancora installato lo perde subito.
       {
         source: "/sw.js",
         headers: [
