@@ -10,9 +10,22 @@ import HomeClient from "./HomeClient";
 // idratazione + tre chiamate API (misurato: immagini a ~3,5 s su rete lenta).
 export const revalidate = 60;
 
+// Tetto di attesa sul database: un Neon lento o irraggiungibile non deve bloccare
+// la generazione della pagina (build o rigenerazione): dopo il tetto il client
+// ripiega sulle API come se il server non avesse letto nulla.
+const READ_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("lettura righe in evidenza troppo lenta")), READ_TIMEOUT_MS);
+  });
+  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
+}
+
 async function readHighlights(): Promise<InitialHighlights | undefined> {
   try {
-    const rows = await Promise.all(HIGHLIGHT_ROWS.map((def) => fetchCards(def.opts)));
+    const rows = await withTimeout(Promise.all(HIGHLIGHT_ROWS.map((def) => fetchCards(def.opts))));
     return Object.fromEntries(HIGHLIGHT_ROWS.map((def, i) => [def.key, rows[i]]));
   } catch {
     // DB irraggiungibile (o build senza database): il client ripiega sulle API.
