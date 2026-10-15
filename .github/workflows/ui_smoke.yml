@@ -108,6 +108,7 @@ jobs:
             tests/card-image-fallback.spec.mjs \
             tests/touch-targets.spec.mjs \
             tests/chart-period-buttons.spec.mjs \
+            tests/price-age.spec.mjs \
             tests/login-toast.spec.mjs \
             tests/card-headline-language.spec.mjs \
             tests/a11y.spec.mjs \

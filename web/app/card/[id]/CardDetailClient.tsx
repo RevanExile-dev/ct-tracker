@@ -25,6 +25,7 @@ import CardmarketReferenceBox from "@/components/CardmarketReferenceBox";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import LoginToTrackToast from "@/components/LoginToTrackToast";
 import { countryFlag, formatCents, formatPercent, languageFlag, trendVsMovingAverage } from "@/lib/format";
+import { formatPriceAge } from "@/lib/moversPeriods";
 
 // Spike Three.js isolato (PR #6): mai importato/scaricato nel percorso di
 // default (nessun flag ?three=1) - ssr:false + import dinamico tengono
@@ -400,7 +401,13 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
                   </span>
                 )}
               </div>
-              {trend && (
+              {formatPriceAge(card.price_age_days) && (
+                <div className="text-xs font-mono text-ink-faint mt-1" data-testid="price-age"
+                  title="L'ultimo aggiornamento di questo prezzo risale a più di una settimana fa">
+                  {formatPriceAge(card.price_age_days)}
+                </div>
+              )}
+              {trend && !formatPriceAge(card.price_age_days) && (
                 <div
                   className={`text-xs font-mono mt-1 ${
                     trend.deltaPct >= 0 ? "text-signal-up" : "text-signal-down"

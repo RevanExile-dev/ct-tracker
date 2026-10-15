@@ -29,3 +29,9 @@ export function formatCompareAge(days: number | null | undefined): string | null
   if (days === 1) return "da ieri";
   return `in ${days} gg`;
 }
+
+/** Etichetta discreta per un prezzo non aggiornato da tempo (null se fresco o ignoto). */
+export function formatPriceAge(days: number | null | undefined, staleDays = 7): string | null {
+  if (days == null || !Number.isFinite(days) || days < staleDays) return null;
+  return `prezzo di ${days} gg fa`;
+}

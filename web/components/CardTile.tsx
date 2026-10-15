@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cardImageSources } from "@/lib/cardImage";
 import InteractiveCard from "./InteractiveCard";
 import { CardRow } from "@/lib/db";
-import { formatCompareAge } from "@/lib/moversPeriods";
+import { formatCompareAge, formatPriceAge } from "@/lib/moversPeriods";
 import { formatCents, formatPercent, languageFlag, priceDeltaPct } from "@/lib/format";
 
 const STAGGER_MS = 25;
@@ -169,7 +169,10 @@ function CardTile({
         ? card.best_can_sell_via_hub
         : priceCents != null ? 1 : undefined;
   const isNmZero = shownZero === 1 && shownCondition === "Near Mint";
-  const delta = priceDeltaPct(priceCents, prevPriceCents);
+  // Prezzo non aggiornato da oltre una settimana: etichetta discreta e niente
+  // variazione (confrontare un prezzo vecchio con uno piu' vecchio non e' un ribasso).
+  const staleLabel = formatPriceAge(card.price_age_days);
+  const delta = staleLabel ? null : priceDeltaPct(priceCents, prevPriceCents);
   // Il catalogo si aggiorna a rotazione: il prezzo "precedente" puo' essere di
   // settimane fa, quindi la variazione dice sempre di quanti giorni e' (stessa
   // serie del prezzo precedente scelto sopra).
@@ -317,6 +320,11 @@ function CardTile({
             {ownedLanguageMatch && ownedLanguageMatch.cents == null && (
               <div className="text-[11px] text-ink-faint mt-0.5">
                 Nessuna inserzione in {languageFlag(ownedLanguageMatch.language)} {ownedLanguageMatch.language.toUpperCase()}: prezzo generale
+              </div>
+            )}
+            {staleLabel && priceCents != null && (
+              <div className="text-[11px] leading-tight text-ink-faint mt-0.5" data-testid="price-age">
+                {staleLabel}
               </div>
             )}
             {delta !== null && (

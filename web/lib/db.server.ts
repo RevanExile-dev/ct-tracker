@@ -7,7 +7,7 @@ import type { CardmarketPrices, CardmarketReference } from "./cardmarket";
 import topArtists from "@/config/top_artists.json";
 import {
   MIN_MOVER_LISTINGS, MOVERS_PAGE_SIZE,
-  OCCASIONI_MIN_PCT, OCCASIONI_MIN_CENTS, OCCASIONI_MIN_LISTINGS, OCCASIONI_MAX_COMPARE_DAYS, OCCASIONI_MAX_PRICE_AGE_DAYS,
+  OCCASIONI_MIN_PCT, OCCASIONI_MIN_CENTS, OCCASIONI_MIN_LISTINGS, OCCASIONI_MAX_COMPARE_DAYS, OCCASIONI_MAX_PRICE_AGE_DAYS, STALE_PRICE_DAYS,
   type ArtistOption, type CardRow, type CardsFilterOpts, type CardsSummary, type CardDetail, type ExpansionInfo,
   type Listing, type MoversPageOpts, type MoversPageResult, type PricePoint, type ScannerCatalogRow,
   type SortOption,
@@ -58,7 +58,8 @@ function cardRowSelect(): string {
   lp.it_nm_zero_listings_count AS it_nm_zero_listings_count,
   lp.prev_it_nm_zero_price_cents AS prev_it_nm_zero_price_cents,
   (CURRENT_DATE - lp.prev_it_nm_zero_captured_at) AS prev_it_nm_zero_age_days,
-  (CURRENT_DATE - lp.prev_captured_at) AS prev_age_days
+  (CURRENT_DATE - lp.prev_captured_at) AS prev_age_days,
+  FLOOR(EXTRACT(EPOCH FROM (now() - lp.captured_at_ts)) / 86400)::int AS price_age_days
 `;
 }
 
@@ -566,6 +567,10 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
     // finestra: meglio non mostrarla che mostrarla senza sapere da quando.
     where.push(`lp.prev_it_nm_zero_captured_at >= CURRENT_DATE - ${p.add(Math.max(1, Math.floor(opts.maxAgeDays)))}::int`);
   }
+  // Un ribasso/rialzo calcolato su un prezzo non aggiornato da oltre una
+  // settimana non e' una notizia: fuori dalle liste (le Occasioni sono piu'
+  // severe, vedi sotto).
+  where.push(`lp.captured_at_ts >= now() - make_interval(days => ${p.add(STALE_PRICE_DAYS)}::int)`);
   if (opts.occasioni) {
     // Solo variazioni solide (vedi OCCASIONI_*): percentuale minima, prezzo e
     // liquidita' minimi, confronto non vecchio e prezzo rilevato di recente.
