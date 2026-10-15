@@ -73,6 +73,7 @@ import requests
 
 from api_client import CardTraderClient
 import db
+import weekly_digest
 
 # ~50 minuti di richieste per run (~3000 carte a 1 richiesta/secondo), con
 # cron ogni 3 ore: il vecchio budget di 4 minuti con cron a 15 minuti
@@ -152,10 +153,11 @@ def drain_telegram_outbox(conn, token: str) -> tuple[int, int]:
     problema con l'immagine non fa mai perdere l'avviso."""
     pending = db.fetch_pending_outbox(conn)
     sent, failed = 0, 0
-    for outbox_id, chat_id, payload, image_url, alert_id in pending:
+    for outbox_id, chat_id, payload, image_url, alert_id, dedup_key in pending:
         ok_response = False
         photo_error = None
-        reply_markup = db.alert_reply_markup(alert_id)
+        reply_markup = (weekly_digest.digest_reply_markup() if dedup_key.startswith("digest:")
+                        else db.alert_reply_markup(alert_id))
         extra = {"reply_markup": reply_markup} if reply_markup else {}
 
         # Con immagine si prova prima sendPhoto (foto + didascalia): un
@@ -393,6 +395,17 @@ def main():
     conn.commit()
     if rearmed:
         print(f"Ri-armati {rearmed} allarmi 'rearm' con cooldown scaduto.")
+
+    # Riepilogo settimanale (opt-in): fuori dalla finestra della domenica non
+    # fa nessuna query; in finestra prepara un blocco di utenti per giro.
+    # Un errore qui non deve mai fermare il sync prezzi.
+    try:
+        digests, digests_skipped = weekly_digest.queue_weekly_digests(conn)
+        if digests or digests_skipped:
+            print(f"Riepilogo settimanale: {digests} accodati, {digests_skipped} senza novita'.")
+    except Exception as exc:
+        conn.rollback()
+        print(f"[ATTENZIONE] riepilogo settimanale non preparato: {exc}", file=sys.stderr)
 
     # Svuota la coda di invio Telegram degli allarmi scattati in questo
     # batch (e in eventuali batch precedenti rimasti in coda per un

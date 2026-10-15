@@ -1073,7 +1073,7 @@ def fetch_pending_outbox(conn, limit: int = OUTBOX_BATCH_SIZE):
     non inviato piuttosto che intasare la coda all'infinito)."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, chat_id, payload, image_url, alert_id
+            """SELECT id, chat_id, payload, image_url, alert_id, dedup_key
                FROM telegram_outbox
                WHERE sent_at IS NULL
                  AND retry_count < %s

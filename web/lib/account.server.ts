@@ -574,10 +574,24 @@ const LINK_CODE_MAX_ATTEMPTS = 5; // ritenta solo su collisione di codice (rara,
 
 export async function getTelegramLinkStatus(userId: string): Promise<TelegramLinkStatus> {
   const pool = getPgPool();
-  const { rows } = await pool.query("SELECT linked_at FROM telegram_links WHERE user_id = $1", [userId]);
-  if (rows.length === 0) return { linked: false, linkedAt: null };
+  const { rows } = await pool.query("SELECT linked_at, weekly_digest FROM telegram_links WHERE user_id = $1", [userId]);
+  if (rows.length === 0) return { linked: false, linkedAt: null, weeklyDigest: false };
   const linkedAt = rows[0].linked_at;
-  return { linked: true, linkedAt: linkedAt instanceof Date ? linkedAt.toISOString() : linkedAt };
+  return {
+    linked: true,
+    linkedAt: linkedAt instanceof Date ? linkedAt.toISOString() : linkedAt,
+    weeklyDigest: Boolean(rows[0].weekly_digest),
+  };
+}
+
+/** Accende/spegne il riepilogo settimanale. Ritorna false se l'utente non ha
+ * Telegram collegato (niente riga da aggiornare). last_digest_week non si
+ * tocca: spegni+riaccendi nella stessa domenica non fa partire un secondo
+ * messaggio. */
+export async function setWeeklyDigest(userId: string, enabled: boolean): Promise<boolean> {
+  const pool = getPgPool();
+  const { rowCount } = await pool.query("UPDATE telegram_links SET weekly_digest = $2 WHERE user_id = $1", [userId, enabled]);
+  return (rowCount ?? 0) > 0;
 }
 
 export async function unlinkTelegram(userId: string): Promise<void> {

@@ -233,7 +233,7 @@ export type Listing = {
 
 export type ExpansionInfo = { code: string; name: string; cardCount: number };
 
-export type TelegramLinkStatus = { linked: boolean; linkedAt: string | null };
+export type TelegramLinkStatus = { linked: boolean; linkedAt: string | null; weeklyDigest: boolean };
 
 export type PriceAlertTargetType = "absolute_cents" | "percent_drop";
 export type PriceAlertFireMode = "once" | "rearm";
