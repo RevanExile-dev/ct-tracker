@@ -38,7 +38,7 @@ function Pocket({ card, returnTo }: { card: CardRow | undefined; returnTo: strin
   const href = `/card/${card.id}?from=${encodeURIComponent(returnTo)}`;
   return (
     <Link href={href} className="binder-pocket group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/80" aria-label={`Apri ${card.name}`}>
-      <InteractiveCard level="binder" className="h-full w-full overflow-hidden rounded-[4px]">
+      <InteractiveCard level="binder" className="binder-card overflow-hidden">
         <div className="relative w-full h-full">
           {card.image_url && !imgError ? (
             <Image

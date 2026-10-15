@@ -605,6 +605,21 @@ body::after {
   border: 0;
   background: transparent;
 }
+.binder-pocket:not(.binder-pocket-empty) {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Forma reale di una carta Pokemon (63x88 mm, angoli ~3 mm): la tasca puo'
+   essere piu' larga o piu' alta della carta, ma la carta resta nel suo
+   rapporto e con angoli piccoli (non il raggio 14px di rounded-card). */
+.binder-pocket .binder-card {
+  aspect-ratio: 63 / 88;
+  width: min(100cqw, calc(100cqh * 63 / 88));
+  height: auto;
+  border-radius: 4.5% / 3.2%;
+}
 .binder-pocket-empty {
   overflow: hidden;
   border: 1px dashed rgba(255, 255, 255, 0.09);
