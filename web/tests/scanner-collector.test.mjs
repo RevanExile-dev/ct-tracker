@@ -395,3 +395,31 @@ test('la carta scelta e quella giudicata: mai una versione giapponese in cima su
   assert.equal(resolved.candidates[0].id, 2);
   assert.equal(resolved.candidates.at(-1).id, 1);
 });
+
+test('promo con la sigla illeggibile: il numero letto batte la stessa illustrazione di un\'altra espansione', () => {
+  // Caso reale (foto simulata): Zarude SVP 199 (immagine di catalogo assente)
+  // scambiato per Zarude 011/191 con la stessa illustrazione. L'OCR leggeva
+  // "svro 199": numero giusto, sigla no.
+  const entries = [card(1, 'Zarude', '011/191', 'ssp'), card(2, 'Zarude', 'SVP 199', 'svpromo')];
+  const ranked = catalog.rankScannerCandidates({ name: 'Zarude', number: 'svro 199\nMEL 199' }, entries);
+  assert.equal(ranked[0].id, 2);
+  assert.ok(ranked[0].numberScore >= catalog.PROMO_NUMBER_HINT && ranked[0].numberScore < 0.68);
+  const same = { score: 0.45, nameScore: 1, numberScore: 0 };
+  const art = { ...entries[0], ...same, visualScore: 0.78 };
+  const promo = { ...entries[1], score: 0.8, nameScore: 1, numberScore: catalog.PROMO_NUMBER_HINT, visualScore: 0.2 };
+  assert.notEqual(catalog.assessScan([art, promo], { complete: true }), 'certain');
+  // Senza un numero che indichi un'altra carta l'immagine decide come prima.
+  assert.equal(catalog.assessScan([art, { ...promo, numberScore: 0, visualScore: 0.2 }], { complete: true }), 'certain');
+});
+
+test('nome latino + immagine non bastano per una carta di un\'espansione giapponese', () => {
+  const base = { score: 0.45, nameScore: 1, numberScore: 0 };
+  const jp = { ...card(1, 'Horsea', '112/SV-P', 'promosv'), ...base, visualScore: 0.76 };
+  const en = { ...card(2, 'Horsea', 'Cosmos Holo | SVP 137', 'svpromo'), ...base, visualScore: 0.58 };
+  assert.equal(catalog.assessScan([jp, en], { complete: true }), 'probable');
+  // Con una lingua latina riconosciuta la giapponese e' gia' esclusa, come prima.
+  assert.equal(catalog.assessScan([jp, en], { complete: true, language: 'en' }), 'certain');
+  // Una carta inglese con lo stesso punteggio resta certa.
+  const enTop = { ...en, visualScore: 0.76 };
+  assert.equal(catalog.assessScan([enTop, { ...jp, visualScore: 0.4 }], { complete: true }), 'certain');
+});
