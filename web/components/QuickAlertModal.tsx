@@ -34,17 +34,15 @@ function withCurrent(options: string[], current: string): string[] {
 /** Overlay rapida per creare (o, con `alert`, MODIFICARE)  un allarme prezzo su UNA carta gia' nota (id +
  * nome + prezzo attuale), senza passare dalla ricerca di /account/alerts.
  * Stessi controlli di profilo (lingua/condizione/CardTrader Zero) della
- * pagina completa, qui senza bisogno di cercare la carta - fireMode resta
- * sempre "once" (chi vuole un allarme ripetibile con cooldown usa comunque
- * /account/alerts). Aperta da due punti diversi (vedi
+ * pagina completa, qui senza bisogno di cercare la carta - "Quando scatta"
+ * (una volta / ripetibile con attesa) e' scelto qui, default una volta. Aperta da due punti diversi (vedi
  * useWishlistAlertPrompt.tsx e la pagina carta): il chiamante decide cosa
  * fare dopo submit/skip/chiudi, questo componente non tocca mai i desideri.
  *
  * Modalita' modifica (`alert` presente, usata da /account/alerts): campi
- * precompilati dall'allarme, PATCH invece di POST, e in piu' "Quando scatta"
- * (una volta / ripetibile) che in creazione rapida resta sempre "once" -
- * senza, modificare un allarme ripetibile ne azzererebbe in silenzio la
- * modalita'. `card` puo' mancare (la lista allarmi la carica in modo
+ * precompilati dall'allarme (anche "Quando scatta": senza, modificare un
+ * allarme ripetibile ne azzererebbe in silenzio la modalita'), PATCH invece
+ * di POST. `card` puo' mancare (la lista allarmi la carica in modo
  * asincrono): in quel caso titolo e valuta ripiegano sui dati dell'allarme. */
 export default function QuickAlertModal({
   card,
@@ -144,7 +142,7 @@ export default function QuickAlertModal({
     }
 
     let rearmHours: number | undefined;
-    if (editing && fireMode === "rearm") {
+    if (fireMode === "rearm") {
       const parsed = Number(rearmCooldownHours);
       if (!Number.isInteger(parsed) || parsed < 1) { setError("Ore di attesa (cooldown) non valide."); return; }
       rearmHours = parsed;
@@ -162,7 +160,7 @@ export default function QuickAlertModal({
           canSellViaHub: canSellViaHub === "any" ? null : canSellViaHub === "only" ? 1 : 0,
           targetType,
           targetValue,
-          fireMode: editing ? fireMode : "once",
+          fireMode,
           rearmCooldownHours: rearmHours,
         }),
       });
@@ -313,7 +311,7 @@ export default function QuickAlertModal({
                 </div>
               </div>
 
-              {editing && (
+              <div>
                 <div>
                   <div className="text-xs font-mono uppercase tracking-wider text-ink-faint mb-2">Quando scatta</div>
                   <label className="sr-only" htmlFor="quick-alert-fire-mode">Quando scatta</label>
@@ -341,7 +339,7 @@ export default function QuickAlertModal({
                     </div>
                   )}
                 </div>
-              )}
+              </div>
 
               {error && <p role="alert" className="text-xs text-signal-down">{error}</p>}
 

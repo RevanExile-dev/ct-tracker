@@ -88,3 +88,33 @@ test('lista allarmi: ogni riga dice prezzo di ora, soglia e cosa succede dopo', 
   const link = await page.getByTestId('telegram-missing').getByRole('link').boundingBox();
   expect(link.height).toBeGreaterThanOrEqual(44);
 });
+
+test('allarme ripetibile dalla scheda: 3 tocchi (apri, Ripetibile, Traccia)', async ({ page }) => {
+  const posts = await mock(page, { linked: true });
+  await page.goto(`${BASE}/card/903001`);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30_000 });
+  let taps = 0;
+  await page.getByRole('button', { name: /crea allarme/i }).tap(); taps++;
+  const dialog = page.getByRole('dialog', { name: 'Crea allarme di prezzo' });
+  await dialog.getByPlaceholder('es. 10,00').fill('3,50');
+  // Default invariato: una volta sola.
+  await expect(dialog.getByLabel('Quando scatta')).toHaveValue('once');
+  await dialog.getByLabel('Quando scatta').selectOption('rearm'); taps++;
+  await expect(dialog.getByLabel('Attesa minima tra due avvisi (ore)')).toHaveValue('24');
+  await dialog.getByRole('button', { name: 'Traccia' }).tap(); taps++;
+  await expect(dialog.getByText('Allarme creato')).toBeVisible();
+  expect(taps).toBe(3);
+  expect(posts[0]).toMatchObject({ fireMode: 'rearm', rearmCooldownHours: 24 });
+});
+
+test('creazione senza toccare "Quando scatta": resta una volta sola', async ({ page }) => {
+  const posts = await mock(page, { linked: true });
+  await page.goto(`${BASE}/card/903001`);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /crea allarme/i }).tap();
+  const dialog = page.getByRole('dialog', { name: 'Crea allarme di prezzo' });
+  await dialog.getByPlaceholder('es. 10,00').fill('3,50');
+  await dialog.getByRole('button', { name: 'Traccia' }).tap();
+  await expect(dialog.getByText('Allarme creato')).toBeVisible();
+  expect(posts[0].fireMode).toBe('once');
+});
