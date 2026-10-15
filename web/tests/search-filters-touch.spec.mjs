@@ -105,6 +105,6 @@ test("barra filtri compatta: su 390x664 Rarità, Prezzo e Filtri stanno su una r
   const more = await y(page.getByRole("button", { name: /^Filtri/ }));
   expect(Math.abs(rarity - price)).toBeLessThan(4);
   expect(Math.abs(rarity - more)).toBeLessThan(4);
-  const handle = await y(page.getByRole("button", { name: "Nascondi filtri" }));
+  const handle = await y(page.getByRole("button", { name: "Nascondi ricerca e filtri" }));
   expect(handle).toBeLessThan(480);
 });
