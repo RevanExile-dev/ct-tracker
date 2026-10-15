@@ -19,8 +19,9 @@ test("mew: pertinenza prima, poi Nome esatto esclude Mewtwo", async ({ page }) =
     const el = document.querySelector("input[role=combobox]");
     return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps"));
   });
-  await page.getByLabel("Cerca una carta per nome o numero").tap();
-  await page.keyboard.type("mew");
+  const mewInput = page.getByLabel("Cerca una carta per nome o numero");
+  await mewInput.tap();
+  await mewInput.fill("mew");
   await expect(page.locator("body")).toContainText("4 carte trovate", { timeout: 20_000 });
   expect(await cardNames(page)).toEqual(["Mew", "Mew ex", "Mewtwo", "Mewtwo ex"]);
 
@@ -45,7 +46,7 @@ test("suggerimenti: \"char\" propone i nomi, tap e Invio filtrano", async ({ pag
   });
   const input = page.getByLabel("Cerca una carta per nome o numero");
   await input.tap();
-  await page.keyboard.type("char");
+  await input.fill("char");
   const options = page.getByRole("listbox").getByRole("option");
   await expect(options).toHaveText(["Charizard", "Charmeleon", "Charizard ex"], { timeout: 20_000 });
 
