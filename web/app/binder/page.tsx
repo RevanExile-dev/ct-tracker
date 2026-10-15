@@ -12,6 +12,7 @@ import type { BinderValuePoint, Lot } from "@/lib/types";
 import { primaryLotFor, summarizeLotEconomics } from "@/lib/lotSummary";
 import BinderBook from "@/components/BinderBook";
 import BinderTable from "@/components/BinderTable";
+import BinderCsvPanel from "@/components/BinderCsvPanel";
 import CardTile from "@/components/CardTile";
 import CollectionValueChart from "@/components/CollectionValueChart";
 import LogPurchaseModal from "@/components/LogPurchaseModal";
@@ -247,6 +248,18 @@ function BinderContent() {
     };
   }, [cards, quantityById, priceInfoById]);
 
+  // Righe del CSV: stessa fonte di prezzo (priceInfoById) del "Valore stimato",
+  // cosi' il totale del file coincide con quello mostrato nella pagina.
+  const csvRows = useMemo(() => (cards ?? []).map((card) => {
+    const info = priceInfoById.get(card.id);
+    const entry = entryById.get(card.id);
+    return {
+      id: card.id, name: card.name, version: card.version, setName: card.expansion_name,
+      language: entry?.language ?? null, condition: entry?.condition ?? null, finish: entry?.finish ?? "unknown",
+      quantity: entry?.quantity ?? 1, unitCents: info?.cents ?? null, currency: info?.currency ?? "EUR",
+    };
+  }), [cards, priceInfoById, entryById]);
+
   // Plusvalenza non realizzata sui soli lotti con costo dichiarato - stessa
   // funzione usata da web/app/lots/page.tsx (web/lib/lotSummary.ts), qui sul
   // sottoinsieme di lotti le cui carte sono nel binder attualmente caricato
@@ -308,6 +321,14 @@ function BinderContent() {
           <Link href="/binder?view=book" aria-current={view === "book" ? "page" : undefined} className={`min-h-11 inline-flex items-center rounded-lg px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${view === "book" ? "bg-accent/15 text-accent-bright shadow-sm" : "text-ink-muted hover:text-ink-primary"}`}>◫ Sfoglia Binder</Link>
         </nav>
       </div>
+
+      {cards && (
+        <BinderCsvPanel
+          rows={csvRows}
+          entries={entries}
+          onImported={(next) => { setEntries(next); setCards(null); setReloadTick((t) => t + 1); }}
+        />
+      )}
 
       {summary && cards && cards.length > 0 && (
         <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-card border border-base-border bg-base-surface/70 px-5 py-4">
