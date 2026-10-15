@@ -330,6 +330,7 @@ export default function FilterDropdown({
           id={panelId}
           role="dialog"
           aria-modal="false"
+          aria-label={label}
           aria-hidden={!open}
           // Il useLayoutEffect qui sopra scrive --tw-translate-x
           // direttamente sul nodo (stessa variabile che Tailwind usa per

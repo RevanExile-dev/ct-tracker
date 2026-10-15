@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { cardImageSources } from "@/lib/cardImage";
 import InteractiveCard from "./InteractiveCard";
@@ -39,6 +39,7 @@ function CardTile({
   onLogPurchase,
   hasPurchaseInfo,
   horizontalScroll,
+  imagePriority,
   hasAlert,
   onCreateAlert,
 }: {
@@ -99,6 +100,10 @@ function CardTile({
    * non lo spazio vuoto intorno. Assente ovunque la tile stia in una
    * griglia normale, dove pan-y resta il default. */
   horizontalScroll?: boolean;
+  /** Priorita' di rete dell'immagine: le prime tile sopra la piega passano
+   * davanti, le altre (anche solo di una riga piu' sotto o fuori schermo nello
+   * swipe) non rubano banda a quelle che definiscono il primo disegno. */
+  imagePriority?: "high" | "low";
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -175,6 +180,33 @@ function CardTile({
   const [poppingWishlist, setPoppingWishlist] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  // Se la variante a misura (/api/img o preview_) non carica, la tile ripiega
+  // sull'immagine intera di CardTrader prima di arrendersi: mai un riquadro
+  // vuoto per un problema della sola miniatura.
+  const [useFullImage, setUseFullImage] = useState(false);
+  const hasSizedVariant = Boolean(card.image_url && cardImageSources(card.image_url).srcSet);
+  const triedFullImage = useRef(false);
+  const imageFailed = useCallback(() => {
+    if (hasSizedVariant && !triedFullImage.current) {
+      triedFullImage.current = true;
+      setUseFullImage(true);
+    } else {
+      setImgError(true);
+    }
+  }, [hasSizedVariant]);
+  // Caricata prima dell'idratazione (cache, SSR): onLoad non scatta piu'. Ref
+  // stabile (non inline): rieseguita ad ogni render vedrebbe `complete` ancora
+  // vero con la sorgente appena cambiata e darebbe subito per fallita anche
+  // l'immagine intera di ripiego.
+  const imageRef = useCallback(
+    (el: HTMLImageElement | null) => {
+      if (el?.complete) {
+        if (el.naturalWidth > 0) setImgLoaded(true);
+        else imageFailed();
+      }
+    },
+    [imageFailed],
+  );
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
   const hasActions = Boolean(onToggleBinder || onToggleWishlist || onCreateAlert);
@@ -215,20 +247,15 @@ function CardTile({
               // (schermi 1x) e file intero (retina).
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                {...cardImageSources(card.image_url)}
+                {...(useFullImage ? { src: cardImageSources(card.image_url).src } : cardImageSources(card.image_url))}
                 alt={card.name}
                 sizes={horizontalScroll ? "174px" : "(min-width: 1024px) 20vw, 45vw"}
-                // Caricata prima dell'idratazione (cache, SSR): onLoad non scatta piu'.
-                ref={(el) => {
-                  if (el?.complete) {
-                    if (el.naturalWidth > 0) setImgLoaded(true);
-                    else setImgError(true);
-                  }
-                }}
+                ref={imageRef}
                 loading="lazy"
+                fetchPriority={imagePriority}
                 decoding="async"
                 onLoad={() => setImgLoaded(true)}
-                onError={() => setImgError(true)}
+                onError={imageFailed}
                 className={`absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${
                   imgLoaded ? "opacity-100" : "opacity-0"
                 }`}

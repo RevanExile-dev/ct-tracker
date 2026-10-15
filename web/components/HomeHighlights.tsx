@@ -11,13 +11,19 @@
 
 import { useEffect, useState } from "react";
 import { CardRow, MIN_MOVER_LISTINGS, fetchCards } from "@/lib/db";
+import { HIGHLIGHT_ROWS, type InitialHighlights } from "@/lib/homeHighlights";
 import { useProgressiveCount } from "@/lib/useProgressiveCount";
 import CardTile from "./CardTile";
 
-const ROW_LIMIT = 10;
 // Montaggio a scaglioni delle tile delle tre righe (stesso motivo e stessa
 // tecnica della griglia in app/page.tsx): quante per riga subito, quante in piu' per frame.
-const ROW_INITIAL = 4;
+const ROW_INITIAL = 3;
+// Le tile oltre le prime ROW_INITIAL (fuori schermo nello swipe, o nelle righe
+// piu' in basso) aspettano questo tempo dopo il caricamento della pagina: il
+// browser carica le immagini `lazy` entro ~1250 px dal bordo, quindi montarle
+// subito faceva partire ~24 scaricamenti insieme che si dividevano la banda e
+// ritardavano la prima carta (misurato: primo disegno a 7 s su rete lenta).
+const REST_DELAY_MS = 1200;
 const ROW_STEP = 3;
 
 type Row = {
@@ -28,9 +34,11 @@ type Row = {
 };
 
 function HighlightRow({
-  row, mountedCount, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
+  row, rowIndex, mountedCount, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
 }: {
   row: Row;
+  /** Posizione della riga: solo le prime tile della prima hanno priorita' alta. */
+  rowIndex: number;
   /** Quante tile montare ora (le altre seguono a scaglioni). */
   mountedCount: number;
   binderIds: Set<number>;
@@ -61,6 +69,7 @@ function HighlightRow({
                 card={card}
                 index={i}
                 horizontalScroll
+                imagePriority={rowIndex === 0 && i < 3 ? "high" : "low"}
                 inBinder={binderIds.has(card.id)}
                 onToggleBinder={onToggleBinder}
                 inWishlist={wishlistIds.has(card.id)}
@@ -84,12 +93,16 @@ function HighlightRow({
 }
 
 export default function HomeHighlights({
-  active, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
+  active, initial, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
 }: {
   /** Mostra le righe solo quando l'utente non ha ancora impostato filtri
    * propri (vedi hasActiveFilters in app/page.tsx) - una volta che cerca o
    * filtra, queste righe non sono piu' pertinenti alla vista corrente. */
   active: boolean;
+  /** Righe gia' lette dal server (pagina statica rigenerata ogni minuto): con
+   * queste le tile si disegnano subito all'idratazione, senza il giro di API
+   * che prima ritardava le immagini di ~0,5 s e il preload parte dall'HTML. */
+  initial?: InitialHighlights;
   binderIds: Set<number>;
   onToggleBinder: (card: CardRow) => void;
   wishlistIds: Set<number>;
@@ -97,9 +110,9 @@ export default function HomeHighlights({
   returnTo: string;
 }) {
   const [rows, setRows] = useState<Row[]>([
-    { key: "trending", title: "In tendenza", subtitle: `Maggior rialzo di prezzo giorno su giorno, su carte con almeno ${MIN_MOVER_LISTINGS} inserzioni`, cards: null },
-    { key: "it-premium", title: "Full art italiane", subtitle: "Illustration/secret/alternate art, prezzo piu' alto prima", cards: null },
-    { key: "new-premium", title: "Ultime uscite, full art", subtitle: "Dalle espansioni piu' recenti tracciate", cards: null },
+    { key: "trending", title: "In tendenza", subtitle: `Maggior rialzo di prezzo giorno su giorno, su carte con almeno ${MIN_MOVER_LISTINGS} inserzioni`, cards: initial?.trending ?? null },
+    { key: "it-premium", title: "Full art italiane", subtitle: "Illustration/secret/alternate art, prezzo piu' alto prima", cards: initial?.["it-premium"] ?? null },
+    { key: "new-premium", title: "Ultime uscite, full art", subtitle: "Dalle espansioni piu' recenti tracciate", cards: initial?.["new-premium"] ?? null },
   ]);
 
   // Una sola volta al montaggio: queste righe non dipendono dai filtri del
@@ -121,25 +134,44 @@ export default function HomeHighlights({
         }
       }
     };
-    load("trending", () => fetchCards({ sortBy: "rise_first", limit: ROW_LIMIT }));
-    load("it-premium", () =>
-      fetchCards({ onlyPremium: true, languages: ["it"], sortBy: "price_desc", limit: ROW_LIMIT })
-    );
-    load("new-premium", () => fetchCards({ onlyPremium: true, sortBy: "expansion", limit: ROW_LIMIT }));
+    // Solo le righe che il server non ha potuto leggere (DB irraggiungibile).
+    for (const def of HIGHLIGHT_ROWS) {
+      if (!initial?.[def.key]) load(def.key, () => fetchCards(def.opts));
+    }
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` e' fisso per la vita della pagina
+  }, []);
+
+  // Prima le tile visibili, il resto dopo REST_DELAY_MS (o al primo gesto).
+  const [restOpen, setRestOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setRestOpen(true);
+    const timer = window.setTimeout(open, REST_DELAY_MS);
+    window.addEventListener("pointerdown", open, { once: true, passive: true });
+    window.addEventListener("scroll", open, { once: true, passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", open);
+      window.removeEventListener("scroll", open);
+    };
   }, []);
 
   const longestRow = rows.reduce((max, r) => Math.max(max, r.cards?.length ?? 0), 0);
-  const { count: mountedCount } = useProgressiveCount(longestRow, ROW_INITIAL, ROW_STEP);
+  const { count: mountedCount } = useProgressiveCount(
+    restOpen ? longestRow : Math.min(longestRow, ROW_INITIAL),
+    ROW_INITIAL,
+    ROW_STEP,
+  );
 
   if (!active) return null;
 
   return (
     <div className="mt-8">
-      {rows.map((row) => (
+      {rows.map((row, rowIndex) => (
         <HighlightRow
           key={row.key}
           row={row}
+          rowIndex={rowIndex}
           mountedCount={mountedCount}
           binderIds={binderIds}
           onToggleBinder={onToggleBinder}

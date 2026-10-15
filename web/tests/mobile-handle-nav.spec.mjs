@@ -9,7 +9,7 @@ test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }
 
 test("maniglia filtri con etichetta, anche con ricerca attiva", async ({ page }) => {
   await page.goto(BASE_URL);
-  const handle = page.getByRole("button", { name: /Nascondi filtri|Mostra filtri/i });
+  const handle = page.getByRole("button", { name: /(Nascondi|Mostra) ricerca e filtri/i });
   await expect(handle).toBeVisible({ timeout: 30_000 });
   await expect(handle).toContainText("Nascondi ricerca e filtri");
 

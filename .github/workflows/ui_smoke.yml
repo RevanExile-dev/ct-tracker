@@ -51,7 +51,7 @@ jobs:
 
       - name: Installa Playwright solo per il test CI
         run: |
-          npm install --no-save --package-lock=false @playwright/test
+          npm install --no-save --package-lock=false @playwright/test axe-core@4.11.0
           npx playwright install --with-deps chromium
 
       - name: Schema + dati minimi di test su Postgres
@@ -105,11 +105,13 @@ jobs:
             tests/load-errors.spec.mjs \
             tests/card-first-screen.spec.mjs \
             tests/card-image-lightbox.spec.mjs \
+            tests/card-image-fallback.spec.mjs \
             tests/touch-targets.spec.mjs \
             tests/chart-period-buttons.spec.mjs \
             tests/login-toast.spec.mjs \
             tests/card-headline-language.spec.mjs \
             tests/a11y.spec.mjs \
+            tests/axe.spec.mjs \
             tests/api-cache.spec.mjs \
             tests/alert-edit.spec.mjs \
             tests/scroll-bottom-stability.spec.mjs \
