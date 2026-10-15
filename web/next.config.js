@@ -79,6 +79,15 @@ const nextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      // Il service worker deve ricontrollarsi a ogni visita: un aggiornamento
+      // non deve restare bloccato nella cache del browser.
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+        ],
+      },
       // Gli elenchi (espansioni, rarita', lingue, condizioni, artisti,
       // statistiche, meta) mandano gia' il proprio Cache-Control da
       // lib/apiCache.ts: qui restano le rotte che non lo facevano.
