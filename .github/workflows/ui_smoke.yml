@@ -126,7 +126,7 @@ jobs:
             tests/weekly-digest-toggle.spec.mjs \
             tests/account-delete.spec.mjs \
             tests/search-filters-touch.spec.mjs \
-            tests/offline-pwa.spec.mjs \
+            tests/pwa-cleanup.spec.mjs \
             tests/share-link.spec.mjs \
             --reporter=line
 

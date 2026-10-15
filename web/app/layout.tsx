@@ -5,7 +5,6 @@ import BackToTop from "@/components/BackToTop";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
 import AccountSync from "@/components/AccountSync";
 import SiteFooter from "@/components/SiteFooter";
-import OfflineSupport from "@/components/OfflineSupport";
 import { getSiteUrl } from "@/lib/siteUrl";
 
 const display = Space_Grotesk({
@@ -56,7 +55,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-body antialiased min-h-screen">
         <AuthSessionProvider>
           <AccountSync />
-          <OfflineSupport />
           {/* Il contenuto occupa almeno uno schermo: durante lo scheletro di
               caricamento il footer resta sotto la piega e non salta in vista
               quando arrivano i dati (CLS 0,23 su PC misurato il 14/10). */}

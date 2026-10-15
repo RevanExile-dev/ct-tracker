@@ -1,7 +1,7 @@
-// I test non registrano il service worker (public/sw.js): con il worker
-// attivo le richieste passano da lui e page.route() non le intercetta piu',
-// quindi i test che simulano API o immagini rotte non funzionerebbero.
-// Solo offline-pwa.spec.mjs lo riabilita per provare proprio quello.
+// Il sito non usa piu' un service worker (public/sw.js e' solo lo script di
+// pulizia). I test lo bloccano comunque: con un worker attivo page.route()
+// non intercetterebbe piu' le richieste.
+// Solo pwa-cleanup.spec.mjs lo riabilita per provare proprio la pulizia.
 export default {
   use: { serviceWorkers: "block" },
 };
