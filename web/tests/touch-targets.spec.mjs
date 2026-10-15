@@ -70,4 +70,10 @@ test.describe("bersagli di tocco - altre pagine con \"Torna al catalogo\"", () =
       expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
     });
   }
+  test("/binder: link \"← Catalogo\" alto almeno 44 px", async ({ page }) => {
+    await page.goto(`${BASE_URL}/binder`);
+    const link = page.getByRole("link", { name: /← Catalogo/ }).first();
+    await link.waitFor();
+    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
+  });
 });
