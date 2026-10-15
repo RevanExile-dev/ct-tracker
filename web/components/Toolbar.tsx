@@ -183,7 +183,7 @@ export default function Toolbar({
         const sets = setMatches.sets.map((e): SuggestionItem => ({ kind: "set", key: `s:${e.code}`, name: e.name, code: e.code }));
         // Una parola che e' il nome intero di un set ("151") mette il set in
         // cima: dopo 8 nomi finirebbe fuori dalla parte visibile dell'elenco.
-        return setMatches.exactSet ? [...sets, ...names] : [...names, ...sets];
+        return setMatches.exactSet && names.length === 0 ? [...sets, ...names] : [...names, ...sets];
       })()
     : [];
   const suggestionsFresh = suggestionsFor === trimmedSearch;
@@ -267,7 +267,8 @@ export default function Toolbar({
             onBlur={() => setSuggestOpen(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") { setSuggestOpen(false); return; }
-              if (shownSuggestions.length === 0 || !suggestionsFresh) return;
+              if (shownSuggestions.length === 0) return;
+              if (e.key !== "Enter" && !suggestionsFresh) return;
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setActiveSuggestion((i) => (i + 1) % shownSuggestions.length);
@@ -276,7 +277,14 @@ export default function Toolbar({
                 setActiveSuggestion((i) => (i <= 0 ? shownSuggestions.length - 1 : i - 1));
               } else if (e.key === "Enter") {
                 e.preventDefault();
-                chooseSuggestion(shownSuggestions[Math.max(activeSuggestion, 0)]);
+                // Con una voce evidenziata si sceglie quella. Senza: il nome piu'
+                // vicino, ma mai un'espansione e mai quando il testo ha un numero
+                // ("pikachu 25/165"): li' Invio tiene quello che hai scritto.
+                const picked = !suggestionsFresh ? undefined
+                  : activeSuggestion >= 0 ? shownSuggestions[activeSuggestion]
+                  : /\d/.test(trimmedSearch) ? undefined : shownSuggestions.find((x) => x.kind === "name");
+                if (picked) chooseSuggestion(picked);
+                else { setSuggestOpen(false); setActiveSuggestion(-1); }
               }
             }}
             placeholder="Nome o numero (es. 12/98)"
