@@ -6,6 +6,7 @@
  * nella home bastano ~5 MB di JPG a 70 miniature.
  */
 const CT_HOST = /^https:\/\/(?:www\.)?cardtrader\.com\//;
+const BLUEPRINT_FILE = /^https:\/\/www\.cardtrader\.com\/uploads\/blueprints\/image\/(\d+\/[\w.()%+-]+\.(?:jpe?g|png|webp))$/i;
 
 function withFilePrefix(url: string, prefix: string): string {
   const slash = url.lastIndexOf("/");
@@ -20,5 +21,12 @@ export type CardImageSources = { src: string; srcSet?: string };
 export function cardImageSources(url: string): CardImageSources {
   if (!CT_HOST.test(url)) return { src: url };
   const full = url.replace(/^https:\/\/cardtrader\.com\//, "https://www.cardtrader.com/");
-  return { src: full, srcSet: `${withFilePrefix(full, "preview_")} 180w, ${full} 734w` };
+  const preview = `${withFilePrefix(full, "preview_")} 180w`;
+  const blueprint = BLUEPRINT_FILE.exec(full)?.[1];
+  // Per gli schermi 2x/3x una variante a misura (360/540 px) al posto
+  // dell'intera da 734 px: tre volte meno byte per la stessa nitidezza.
+  const sized = blueprint
+    ? [360, 540].map((w) => `/api/img?p=${encodeURIComponent(blueprint)}&w=${w} ${w}w`)
+    : [`${full} 734w`];
+  return { src: full, srcSet: [preview, ...sized].join(", ") };
 }
