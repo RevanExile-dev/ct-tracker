@@ -28,8 +28,14 @@ export type CardQuad = {
 };
 
 const CARD_ASPECT = 63 / 88;
-const MAX_TILT = Math.tan((12 * Math.PI) / 180);
-const TILT_STEPS = 13;
+// Inclinazione massima dei lati (gradi) e passo della ricerca. Sotto i 12 gradi
+// la ricerca e' quella storica; oltre, vedi detectCardQuad.
+const BASE_TILT_DEG = 12;
+const WIDE_TILT_DEG = 32;
+// Quanto possono differire (gradi) la rotazione letta dai lati verticali e da
+// quelli orizzontali: la prospettiva li sposta poco, una cornice inventata no.
+const WIDE_CONSISTENT_DEG = 8;
+const TILT_STEP_DEG = 2;
 
 type Line = { offset: number; slope: number; votes: number };
 
@@ -87,7 +93,10 @@ function houghLines(
   width: number,
   height: number,
   vertical: boolean,
+  maxTiltDeg: number,
 ): Line[] {
+  const MAX_TILT = Math.tan((maxTiltDeg * Math.PI) / 180);
+  const TILT_STEPS = Math.round((2 * maxTiltDeg) / TILT_STEP_DEG) + 1;
   const along = vertical ? height : width;
   const across = vertical ? width : height;
   const margin = Math.ceil(along * MAX_TILT) + 2;
@@ -188,18 +197,141 @@ function polygonArea(corners: Point[]) {
   return Math.abs(area) / 2;
 }
 
-/** La carta piu' grande con quattro lati dritti visibili, o null. */
-export function detectCardQuad(rgba: Uint8ClampedArray, width: number, height: number): CardQuad | null {
-  if (width < 48 || height < 48) return null;
-  const { gx, gy, mag } = gradients(rgba, width, height);
-  const threshold = edgeThreshold(mag);
-  const edges = new Int32Array(width * height);
-  let edgeCount = 0;
-  for (let p = 0; p < mag.length; p += 1) if (mag[p] >= threshold) edges[edgeCount++] = p;
-  const verticals = houghLines(edges, edgeCount, gx, gy, width, height, true);
-  const horizontals = houghLines(edges, edgeCount, gx, gy, width, height, false);
 
-  let best: (CardQuad & { area: number; rank: number }) | null = null;
+// Retta per due punti (forma implicita a*x + b*y = c, con (a,b) unitario).
+type Side = { a: number; b: number; c: number };
+
+function sideLine(p: Point, q: Point): Side {
+  const dx = q[0] - p[0];
+  const dy = q[1] - p[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const a = -dy / length;
+  const b = dx / length;
+  return { a, b, c: a * p[0] + b * p[1] };
+}
+
+function intersectSides(l1: Side, l2: Side): Point | null {
+  const det = l1.a * l2.b - l2.a * l1.b;
+  if (Math.abs(det) < 1e-6) return null;
+  return [(l1.c * l2.b - l2.c * l1.b) / det, (l1.a * l2.c - l2.a * l1.c) / det];
+}
+
+/**
+ * Affina i quattro lati: la ricerca di Hough ha passo di 2 gradi, che su una
+ * carta inclinata sposta gli angoli di diversi pixel. Per ogni lato si
+ * riadatta una retta (minimi quadrati totali, pesata sul gradiente) ai pixel
+ * di bordo vicini al lato attuale, con il gradiente perpendicolare. Se un lato
+ * ha pochi punti resta com'e'.
+ */
+function refineQuad(
+  corners: [Point, Point, Point, Point],
+  mag: Float32Array,
+  gx: Float32Array,
+  gy: Float32Array,
+  threshold: number,
+  width: number,
+  height: number,
+): [Point, Point, Point, Point] {
+  let current = corners;
+  for (const reach of [4, 2.5]) {
+    const lines: Side[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const p = current[i];
+      const q = current[(i + 1) % 4];
+      const line = sideLine(p, q);
+      const dx = q[0] - p[0];
+      const dy = q[1] - p[1];
+      const length = Math.hypot(dx, dy) || 1;
+      const ux = dx / length;
+      const uy = dy / length;
+      const x0 = Math.max(1, Math.floor(Math.min(p[0], q[0]) - reach - 1));
+      const x1 = Math.min(width - 2, Math.ceil(Math.max(p[0], q[0]) + reach + 1));
+      const y0 = Math.max(1, Math.floor(Math.min(p[1], q[1]) - reach - 1));
+      const y1 = Math.min(height - 2, Math.ceil(Math.max(p[1], q[1]) + reach + 1));
+      let sw = 0;
+      let sx = 0;
+      let sy = 0;
+      let sxx = 0;
+      let sxy = 0;
+      let syy = 0;
+      let points = 0;
+      for (let y = y0; y <= y1; y += 1) {
+        for (let x = x0; x <= x1; x += 1) {
+          const m = mag[y * width + x];
+          if (m < threshold * 0.6) continue;
+          const dist = line.a * x + line.b * y - line.c;
+          if (Math.abs(dist) > reach) continue;
+          const t = ((x - p[0]) * ux + (y - p[1]) * uy) / length;
+          // Solo la parte centrale: gli angoli della carta sono arrotondati.
+          if (t < 0.1 || t > 0.9) continue;
+          const idx = y * width + x;
+          if (Math.abs(gx[idx] * line.a + gy[idx] * line.b) < 0.8 * m) continue;
+          sw += m;
+          sx += m * x;
+          sy += m * y;
+          sxx += m * x * x;
+          sxy += m * x * y;
+          syy += m * y * y;
+          points += 1;
+        }
+      }
+      if (points < length * 0.3 || sw <= 0) {
+        lines.push(line);
+        continue;
+      }
+      const mx = sx / sw;
+      const my = sy / sw;
+      const cxx = sxx / sw - mx * mx;
+      const cxy = sxy / sw - mx * my;
+      const cyy = syy / sw - my * my;
+      // Direzione principale della nuvola di punti = direzione del lato.
+      const angle = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+      let dirX = Math.cos(angle);
+      let dirY = Math.sin(angle);
+      if (dirX * ux + dirY * uy < 0) {
+        dirX = -dirX;
+        dirY = -dirY;
+      }
+      const a = -dirY;
+      const b = dirX;
+      lines.push({ a, b, c: a * mx + b * my });
+    }
+    const next: Point[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const corner = intersectSides(lines[(i + 3) % 4], lines[i]);
+      if (!corner) return current;
+      next.push(corner);
+    }
+    current = next as [Point, Point, Point, Point];
+  }
+  return current;
+}
+
+type Best = CardQuad & { area: number; rank: number };
+
+type Gradients = ReturnType<typeof gradients>;
+
+/**
+ * Miglior quadrilatero con lati inclinati al massimo `maxTiltDeg`. Con
+ * `consistent` si scartano i quadrilateri i cui lati verticali e orizzontali
+ * non ruotano nello stesso verso: una carta ruotata di T gradi ha i lati
+ * orizzontali a +T e quelli verticali a -T (la prospettiva sposta poco).
+ */
+function searchQuad(
+  g: Gradients,
+  threshold: number,
+  edges: Int32Array,
+  edgeCount: number,
+  width: number,
+  height: number,
+  maxTiltDeg: number,
+  consistentDeg: number | null,
+): Best | null {
+  const { gx, gy, mag } = g;
+  const verticals = houghLines(edges, edgeCount, gx, gy, width, height, true, maxTiltDeg);
+  const horizontals = houghLines(edges, edgeCount, gx, gy, width, height, false, maxTiltDeg);
+  const maxMismatch = consistentDeg === null ? Infinity : Math.tan((consistentDeg * Math.PI) / 180);
+  let best: Best | null = null;
   for (let i = 0; i < verticals.length; i += 1) {
     for (let j = 0; j < verticals.length; j += 1) {
       const left = verticals[i];
@@ -210,6 +342,11 @@ export function detectCardQuad(rgba: Uint8ClampedArray, width: number, height: n
           const top = horizontals[k];
           const bottom = horizontals[l];
           if (top.offset + top.slope * width / 2 >= bottom.offset + bottom.slope * width / 2) continue;
+          if (consistentDeg !== null) {
+            const rotV = -(left.slope + right.slope) / 2;
+            const rotH = (top.slope + bottom.slope) / 2;
+            if (Math.abs(rotV - rotH) > maxMismatch) continue;
+          }
           const corners: [Point, Point, Point, Point] = [
             intersect(left, top),
             intersect(right, top),
@@ -244,8 +381,43 @@ export function detectCardQuad(rgba: Uint8ClampedArray, width: number, height: n
       }
     }
   }
+  return best;
+}
+
+/** La carta piu' grande con quattro lati dritti visibili, o null. */
+export function detectCardQuad(rgba: Uint8ClampedArray, width: number, height: number): CardQuad | null {
+  if (width < 48 || height < 48) return null;
+  const g = gradients(rgba, width, height);
+  const threshold = edgeThreshold(g.mag);
+  const edges = new Int32Array(width * height);
+  let edgeCount = 0;
+  for (let p = 0; p < g.mag.length; p += 1) if (g.mag[p] >= threshold) edges[edgeCount++] = p;
+  // Prima la ricerca larga (fino a WIDE_TILT_DEG, lati coerenti tra loro): su
+  // una carta inclinata oltre 12 gradi quella stretta aggancia una cornice
+  // interna al posto della carta. La stretta resta per i casi in cui la larga
+  // non trova nulla (es. prospettiva forte, lati verticali e orizzontali
+  // ruotati in modo diverso).
+  const best =
+    searchQuad(g, threshold, edges, edgeCount, width, height, WIDE_TILT_DEG, WIDE_CONSISTENT_DEG) ??
+    searchQuad(g, threshold, edges, edgeCount, width, height, BASE_TILT_DEG, null);
   if (!best) return null;
-  return { corners: best.corners, support: best.support, minSupport: best.minSupport };
+  const corners = refineQuad(best.corners, g.mag, g.gx, g.gy, threshold, width, height);
+  return { corners, support: best.support, minSupport: best.minSupport };
+}
+
+/**
+ * Quanto i quattro lati di un quadrilatero seguono bordi veri dell'immagine
+ * (lato meno coperto, 0..1). Serve a confrontare quadrilateri trovati da
+ * metodi diversi (linee di Hough, macchia su sfondo uniforme).
+ */
+export function quadMinSupport(rgba: Uint8ClampedArray, width: number, height: number, corners: [Point, Point, Point, Point]): number {
+  const { gx, gy, mag } = gradients(rgba, width, height);
+  const threshold = edgeThreshold(mag);
+  let min = 1;
+  for (let i = 0; i < 4; i += 1) {
+    min = Math.min(min, sideSupport(corners[i], corners[(i + 1) % 4], mag, gx, gy, threshold, width, height));
+  }
+  return min;
 }
 
 // Omografia che porta il rettangolo (0,0)-(w,h) sui quattro angoli dati.

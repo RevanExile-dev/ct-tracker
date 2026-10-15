@@ -10,6 +10,11 @@ export type ScanRegion = {
   // dell'immagine, quando il rilevatore a quadrilatero li ha trovati: il
   // ritaglio viene raddrizzato invece di essere un semplice rettangolo.
   quad?: [number, number][];
+  // Rettangolo orientato attorno alla macchia su sfondo uniforme (stesso
+  // formato di quad), se la macchia ha proporzioni da carta in piedi.
+  blobQuad?: [number, number][];
+  // Frazione dell'immagine coperta dai pixel della macchia (non dal suo rettangolo).
+  blobFill?: number;
 };
 
 export type ScanQuality = {

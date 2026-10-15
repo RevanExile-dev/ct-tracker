@@ -1,5 +1,5 @@
 import type { ScanQuality, ScanRegion } from "./types";
-import { detectCardQuad, expandQuad, warpQuad, type Point } from "./quad";
+import { detectCardQuad, expandQuad, quadMinSupport, warpQuad, type Point } from "./quad";
 
 const CARD_ASPECT = 63 / 88;
 const MAX_REGIONS = 12;
@@ -500,6 +500,84 @@ function detectConnectedComponents(
   return kept;
 }
 
+
+/**
+ * Rettangolo orientato di area minima attorno a un blob (estremi per riga),
+ * letto come carta in piedi: lato lungo quasi verticale, proporzioni da carta,
+ * blob che riempie il rettangolo (una carta tiene ~95%, gli angoli sono
+ * arrotondati). Restituisce i quattro angoli (alto-sx, alto-dx, basso-dx,
+ * basso-sx) in pixel, o null. Serve quando la carta e' molto inclinata: il
+ * rettangolo contenitore dritto includerebbe tanto sfondo, e il rilevatore a
+ * lati dritti (quad.ts) puo' fermarsi su una cornice interna.
+ */
+function orientedCardRect(
+  rowMin: Int32Array,
+  rowMax: Int32Array,
+  minY: number,
+  maxY: number,
+  count: number,
+): [Point, Point, Point, Point] | null {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let y = minY; y <= maxY; y += 1) {
+    if (rowMax[y] < 0) continue;
+    xs.push(rowMin[y], rowMax[y] + 1);
+    ys.push(y, y);
+  }
+  if (xs.length < 8) return null;
+  let bestArea = Infinity;
+  let bestAngle = 0;
+  const STEP = 0.5;
+  for (let deg = -45; deg < 45; deg += STEP) {
+    const a = (deg * Math.PI) / 180;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    let minU = Infinity;
+    let maxU = -Infinity;
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (let i = 0; i < xs.length; i += 1) {
+      const u = xs[i] * c + ys[i] * s;
+      const v = -xs[i] * s + ys[i] * c;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    const area = (maxU - minU) * (maxV - minV);
+    if (area < bestArea) {
+      bestArea = area;
+      bestAngle = a;
+    }
+  }
+  const c = Math.cos(bestAngle);
+  const s = Math.sin(bestAngle);
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (let i = 0; i < xs.length; i += 1) {
+    const u = xs[i] * c + ys[i] * s;
+    const v = -xs[i] * s + ys[i] * c;
+    if (u < minU) minU = u;
+    if (u > maxU) maxU = u;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+  }
+  const du = maxU - minU;
+  const dv = maxV - minV;
+  if (du < 8 || dv < 8) return null;
+  if (count / (du * dv) < 0.85) return null;
+  // Asse "larghezza" (u) e asse "altezza" (v) della carta: quello piu' corto e'
+  // la larghezza. Con il lato lungo sull'asse u la carta e' girata di ~90 gradi
+  // (landscape): non gestita, come nel rilevatore a lati dritti.
+  const aspect = Math.min(du, dv) / Math.max(du, dv);
+  if (aspect < 0.62 || aspect > 0.82) return null;
+  if (du > dv) return null;
+  const point = (u: number, v: number): Point => [u * c - v * s, u * s + v * c];
+  return [point(minU, minV), point(maxU, minV), point(maxU, maxV), point(minU, maxV)];
+}
+
 /**
  * Caso piu' comune di una foto vera: una o piu' carte appoggiate su un piano
  * uniforme (tavolo, tappetino). Il colore dello sfondo si stima dalla cornice
@@ -554,6 +632,9 @@ export function detectOnUniformBackground(
   const visited = new Uint8Array(width * height);
   const regions: ScanRegion[] = [];
   const totalArea = width * height;
+  // Estremi di ogni riga del blob in corso (per il rettangolo orientato).
+  const rowMin = new Int32Array(height).fill(width);
+  const rowMax = new Int32Array(height).fill(-1);
   for (let start = 0; start < mask.length; start += 1) {
     if (!mask[start] || visited[start]) continue;
     const stack = [start];
@@ -570,6 +651,8 @@ export function detectOnUniformBackground(
       const x = p % width;
       const y = (p - x) / width;
       if (inRing(x, y)) touchesRing = true;
+      if (x < rowMin[y]) rowMin[y] = x;
+      if (x > rowMax[y]) rowMax[y] = x;
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
       if (y < minY) minY = y;
@@ -578,6 +661,11 @@ export function detectOnUniformBackground(
       if (x < width - 1 && mask[p + 1] && !visited[p + 1]) { visited[p + 1] = 1; stack.push(p + 1); }
       if (y > 0 && mask[p - width] && !visited[p - width]) { visited[p - width] = 1; stack.push(p - width); }
       if (y < height - 1 && mask[p + width] && !visited[p + width]) { visited[p + width] = 1; stack.push(p + width); }
+    }
+    const blobQuad = touchesRing || count < totalArea * 0.01 ? null : orientedCardRect(rowMin, rowMax, minY, maxY, count);
+    for (let y = minY; y <= maxY; y += 1) {
+      rowMin[y] = width;
+      rowMax[y] = -1;
     }
     if (touchesRing) continue;
     const boxW = maxX - minX + 1;
@@ -597,10 +685,34 @@ export function detectOnUniformBackground(
       width: boxW / width,
       height: boxH / height,
       score: 0.9,
+      blobQuad: blobQuad ? blobQuad.map(([x, y]) => [x / width, y / height]) : undefined,
+      blobFill: count / totalArea,
     });
     if (regions.length >= MAX_REGIONS) break;
   }
   return regions;
+}
+
+function polygonAreaNorm(points: [number, number][]) {
+  let area = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area) / 2;
+}
+
+// Regione con il rettangolo orientato della macchia come quadrilatero.
+function regionFromBlob(region: ScanRegion): ScanRegion {
+  const quad = region.blobQuad as [number, number][];
+  const xs = quad.map(([x]) => x);
+  const ys = quad.map(([, y]) => y);
+  const minX = Math.max(0, Math.min(...xs));
+  const minY = Math.max(0, Math.min(...ys));
+  const maxX = Math.min(1, Math.max(...xs));
+  const maxY = Math.min(1, Math.max(...ys));
+  return { id: "region-blob", x: minX, y: minY, width: maxX - minX, height: maxY - minY, score: region.score, quad };
 }
 
 export async function detectCardRegions(src: string): Promise<ScanRegion[]> {
@@ -651,15 +763,31 @@ export function detectCardRegionsFromPixels(rgba: Uint8ClampedArray, width: numb
     if (filled && Math.abs(frameAspect - CARD_ASPECT) < 0.08) {
       return [{ id: "region-frame", x: 0, y: 0, width: 1, height: 1, score: quadRegion.score }];
     }
-    // Una sola macchia su fondo uniforme: vince solo se contiene il
-    // quadrilatero ed e' nettamente piu' grande (il quadrilatero era una
-    // cornice interna). Una macchia dentro il quadrilatero e' un pezzo della
-    // carta (illustrazione, riquadro testo) e va ignorata.
+    // Una sola macchia su fondo uniforme che contiene il quadrilatero ed e'
+    // nettamente piu' grande: il quadrilatero era una cornice interna. Si guarda
+    // l'AREA del rettangolo orientato della macchia, non il suo rettangolo
+    // contenitore dritto: su una carta inclinata quest'ultimo e' molto piu'
+    // grande della carta anche quando il quadrilatero e' quello giusto. Una
+    // macchia dentro il quadrilatero e' un pezzo della carta (illustrazione,
+    // riquadro testo) e va ignorata.
     const uniform = uniformRegions[0];
-    const uniformContainsQuad = uniform && overlapCoverage(uniform, quadRegion) > 0.85
-      && uniform.width * uniform.height > quadRegion.width * quadRegion.height * 1.15;
-    return [uniformContainsQuad ? uniform : quadRegion];
+    if (uniform && overlapCoverage(uniform, quadRegion) > 0.85) {
+      const quadFill = polygonAreaNorm(quadRegion.quad as [number, number][]);
+      if (quadFill < (uniform.blobFill ?? 0) * 0.85) {
+        // Il rettangolo della macchia vale solo se i suoi lati seguono bordi
+        // veri: una macchia gonfiata da un riflesso o da un'ombra lo sposta
+        // fuori dalla carta, e il quadrilatero a lati dritti era quello giusto.
+        if (!uniform.blobQuad) return [quadRegion];
+        const blobCorners = uniform.blobQuad.map(([x, y]) => [x * width, y * height]) as [Point, Point, Point, Point];
+        return [quadMinSupport(rgba, width, height, blobCorners) >= 0.6 ? regionFromBlob(uniform) : quadRegion];
+      }
+    }
+    return [quadRegion];
   }
+
+  // Nessun quadrilatero a lati dritti: su fondo uniforme il rettangolo
+  // orientato della macchia raddrizza comunque la carta inclinata.
+  if (uniformRegions.length === 1 && uniformRegions[0].blobQuad) return [regionFromBlob(uniformRegions[0])];
 
   const borderRegions = detectBorderRectangles(rgba, width, height);
   // Foto gia' ritagliata sulla carta (proporzioni carta, la carta riempie il
