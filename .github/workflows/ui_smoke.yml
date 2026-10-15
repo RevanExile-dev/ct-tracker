@@ -37,6 +37,10 @@ jobs:
           --health-retries 10
     env:
       POSTGRES_URL: postgres://postgres:postgres@localhost:5432/ct_tracker_ui_smoke
+      # Serve solo a tests/share-link.spec.mjs, che entra con una sessione vera
+      # (riga seminata in smoke-seed.sql): senza segreto Auth.js non legge il cookie.
+      AUTH_SECRET: ci-only-secret-not-used-anywhere-else
+      AUTH_TRUST_HOST: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +125,7 @@ jobs:
             tests/account-delete.spec.mjs \
             tests/search-filters-touch.spec.mjs \
             tests/offline-pwa.spec.mjs \
+            tests/share-link.spec.mjs \
             --reporter=line
 
       - name: Log server in caso di errore

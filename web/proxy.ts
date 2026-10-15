@@ -27,6 +27,21 @@ const RATE_LIMIT_RULES: RateLimitRule[] = [
     windowMs: 60_000,
     shared: true,
   },
+  // Creazione/rigenerazione di un link di condivisione: azione rara, il
+  // contatore e' condiviso tra le istanze. GET e DELETE (elenco, revoca) no.
+  {
+    id: "share-create",
+    matches: (req) => req.method === "POST" && req.nextUrl.pathname === "/api/account/share",
+    limit: 10,
+    windowMs: 60_000,
+    shared: true,
+  },
+  // Pagine pubbliche dei link condivisi (/s/<token>, anteprima compresa):
+  // sono aperte a chiunque abbia il link, quindi un limite per IP evita che
+  // qualcuno le martelli (ogni apertura puo' costare query su Neon). Limite
+  // largo: una persona vera ne apre una alla volta, un crawler di anteprime
+  // poche. Risponde 429 anche alla pagina, mai una pagina in cache.
+  { id: "share-view", matches: (req) => req.nextUrl.pathname.startsWith("/s/"), limit: 40, windowMs: 10_000 },
   // Resto delle API pubbliche (catalogo/prezzi/binder/wishlist/alert...):
   // limite alto apposta - misurato con Playwright che una singola apertura
   // della home fa gia' ~10 fetch quasi simultanei (expansions/rarities/
@@ -64,5 +79,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: ["/api/:path*", "/s/:path*"],
 };

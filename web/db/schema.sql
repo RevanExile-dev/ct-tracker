@@ -649,3 +649,20 @@ CREATE TABLE IF NOT EXISTS user_plans (
   valid_until TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Link di sola lettura al proprio binder o alla propria lista desideri
+-- (web/lib/share.server.ts, pagina pubblica /s/<token>). Il token e' casuale
+-- (24 byte, base64url) ed e' l'unica cosa che da' accesso: nessun dato
+-- personale (email, nome) e' mai mostrato. Un solo link per utente e tipo:
+-- rigenerarlo sostituisce la riga (il vecchio token smette subito di
+-- funzionare), revocarlo la cancella. web/lib/share.server.ts crea la
+-- tabella anche da solo alla prima richiesta (stesso DDL, IF NOT EXISTS),
+-- cosi' il deploy non dipende dal prossimo sync che riapplica questo file.
+CREATE TABLE IF NOT EXISTS share_links (
+  token TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('binder', 'wishlist')),
+  title TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, kind)
+);

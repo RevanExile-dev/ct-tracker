@@ -607,7 +607,7 @@ export async function exportAccountData(userId: string): Promise<Record<string, 
   const pool = getPgPool();
   const q = async (sql: string) => (await pool.query(sql, [userId])).rows;
   const card = "b.name AS card_name, b.expansion_name, b.expansion_code";
-  const [user, binder, wishlist, lots, lotEvents, alerts, presets, tg, plan] = await Promise.all([
+  const [user, binder, wishlist, lots, lotEvents, alerts, presets, tg, plan, shares] = await Promise.all([
     q('SELECT email, name FROM users WHERE id = $1'),
     q(`SELECT c.blueprint_id, ${card}, c.added_at, c.data FROM binder_cards c LEFT JOIN blueprints b ON b.id = c.blueprint_id WHERE c.user_id = $1 ORDER BY c.added_at`),
     q(`SELECT c.blueprint_id, ${card}, c.added_at FROM wishlist_cards c LEFT JOIN blueprints b ON b.id = c.blueprint_id WHERE c.user_id = $1 ORDER BY c.added_at`),
@@ -617,6 +617,9 @@ export async function exportAccountData(userId: string): Promise<Record<string, 
     q('SELECT scope, data, updated_at FROM filter_presets WHERE user_id = $1 ORDER BY scope'),
     q('SELECT linked_at FROM telegram_links WHERE user_id = $1'),
     q('SELECT plan, valid_until FROM user_plans WHERE user_id = $1'),
+    // Il token e' un segreto: si esporta solo che il link esiste, non il token.
+    // La tabella puo' non esistere ancora (la crea il primo uso di un link).
+    q('SELECT kind, title, created_at FROM share_links WHERE user_id = $1 ORDER BY kind').catch(() => []),
   ]);
   return {
     exported_at: new Date().toISOString(),
@@ -628,6 +631,7 @@ export async function exportAccountData(userId: string): Promise<Record<string, 
     lot_events: lotEvents,
     price_alerts: alerts,
     filter_presets: presets,
+    share_links: shares,
     telegram_linked: tg[0] ? { linked_at: tg[0].linked_at } : null,
   };
 }

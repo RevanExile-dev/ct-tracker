@@ -13,6 +13,7 @@ import { wishlistTarget, type AlertStatusInput } from "@/lib/alertStatus";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
+import ShareLinkPanel from "@/components/ShareLinkPanel";
 
 function WishlistContent() {
   const pathname = usePathname();
@@ -171,6 +172,8 @@ function WishlistContent() {
           </div>
         </div>
       )}
+
+      {sorted && sorted.length > 0 && <div className="mt-5"><ShareLinkPanel kind="wishlist" /></div>}
 
       {error && (
         <LoadError

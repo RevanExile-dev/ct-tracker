@@ -57,6 +57,12 @@ export default function PrivacyPage() {
           salvati, il valore storico della collezione e gli allarmi prezzo.
         </li>
         <li>
+          <strong>Link di condivisione (facoltativo)</strong>: se crei un link al tuo binder o alla tua
+          lista desideri, chiunque lo abbia vede le carte (quantità, lingua, finitura e prezzi di
+          mercato), ma non la tua email, il tuo nome né quanto hai speso. Lo puoi disattivare quando
+          vuoi: smette subito di funzionare.
+        </li>
+        <li>
           <strong>Telegram (facoltativo)</strong>: se colleghi il bot, conserviamo il numero della chat
           Telegram collegata e ti mandiamo i messaggi degli allarmi. Puoi scollegarlo quando vuoi dalla
           pagina Telegram del tuo account.
