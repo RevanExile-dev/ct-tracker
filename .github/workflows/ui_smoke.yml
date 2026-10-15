@@ -105,6 +105,7 @@ jobs:
             tests/load-errors.spec.mjs \
             tests/card-first-screen.spec.mjs \
             tests/card-image-lightbox.spec.mjs \
+            tests/card-image-fallback.spec.mjs \
             tests/touch-targets.spec.mjs \
             tests/chart-period-buttons.spec.mjs \
             tests/login-toast.spec.mjs \
