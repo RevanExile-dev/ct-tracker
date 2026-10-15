@@ -56,6 +56,9 @@ export default function DeleteAccountPage() {
               Vengono cancellati subito e per sempre: binder, lotti, lista desideri, filtri salvati, allarmi prezzo
               e il collegamento Telegram. Non si può annullare. Il catalogo e i prezzi non cambiano.
             </p>
+            <p className="text-sm">
+              <a href="/api/account/export" download className="underline text-accent-bright">Scarica prima una copia dei tuoi dati</a>
+            </p>
             <label className="block text-sm text-ink-muted" htmlFor="delete-confirm">
               Per confermare scrivi <strong className="text-ink-primary">{CONFIRM_WORD}</strong>
             </label>
