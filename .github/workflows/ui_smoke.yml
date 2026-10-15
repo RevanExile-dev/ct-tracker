@@ -120,6 +120,7 @@ jobs:
             tests/alert-flow.spec.mjs \
             tests/account-delete.spec.mjs \
             tests/search-filters-touch.spec.mjs \
+            tests/offline-pwa.spec.mjs \
             --reporter=line
 
       - name: Log server in caso di errore
