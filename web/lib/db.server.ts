@@ -341,6 +341,9 @@ function buildFilteredJoinSql(hasListingFilter: boolean, listingFilters: string[
      ) fl ON fl.blueprint_id = b.id AND fl.rn = 1`;
 }
 
+// Soglia (1.000 €) oltre la quale un prezzo con una sola inserzione e' sospetto.
+const SUSPECT_PRICE_CENTS = 100000;
+
 /** Elenco carte con l'ultimo prezzo noto e quello precedente (per la freccina su/giù). */
 export async function fetchCards(opts: CardsFilterOpts & {
   sortBy?: SortOption;
@@ -369,7 +372,15 @@ export async function fetchCards(opts: CardsFilterOpts & {
     if (rank) orderBy = `${rank}, ${orderBy}`;
   }
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
-  if (opts.sortBy === "price_desc") orderBy = `${priceExpr} IS NULL, ${priceExpr} DESC`;
+  if (opts.sortBy === "price_desc") {
+    // Prezzi >= 1.000 € sostenuti da UNA sola inserzione sono quasi sempre
+    // errori di inserimento (es. 126.516 €): in "dal piu' alto" finirebbero
+    // tutti in cima. Restano nell'elenco ma vanno dopo le carte con prezzo
+    // credibile; la scheda li mostra comunque. Dati mai toccati.
+    const countExpr = hasListingFilter ? "lp.listings_count" : "lp.it_nm_zero_listings_count";
+    const suspect = `(${priceExpr} >= ${SUSPECT_PRICE_CENTS} AND COALESCE(${countExpr}, 0) <= 1)`;
+    orderBy = `${priceExpr} IS NULL, CASE WHEN ${suspect} THEN 1 ELSE 0 END, ${priceExpr} DESC`;
+  }
   if (opts.sortBy === "drop_first") {
     // Piu' grande calo percentuale prima; le carte senza prezzo precedente
     // (o senza variazione) restano in fondo. La condizione qui DEVE restare

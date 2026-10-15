@@ -69,6 +69,13 @@ const publicApiCache = (sMaxAge, swr) => [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Metadati (title, description, og:*) sempre nell'<head>, per qualunque
+  // visitatore: di default Next li invia in streaming DOPO l'head ai browser
+  // normali e Lighthouse segnalava "meta description assente" sulla scheda
+  // carta (SEO 92, misurato il 15/10). I crawler social li ricevevano gia'
+  // nell'head; il costo per gli utenti e' attendere la query della scheda
+  // prima del primo byte, gia' veloce (~0,3 s in produzione).
+  htmlLimitedBots: /.*/,
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
