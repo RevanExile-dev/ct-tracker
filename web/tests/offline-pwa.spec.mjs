@@ -41,5 +41,12 @@ test("desideri: dopo una visita si riapre senza rete e avvisa", async ({ page, c
   await expect(page.getByTestId("wishlist-total")).toContainText("48,00", { timeout: 20_000 });
 
   await context.setOffline(false);
+  // Tornata la rete l'avviso "offline" sparisce. Se i dati sul video sono ancora
+  // quelli salvati resta un avviso con "Aggiorna" (dipende dai tempi della
+  // risposta salvata): lo si usa, poi non deve restare nulla.
+  await expect(page.getByText("Sei offline")).toHaveCount(0);
+  const aggiorna = page.getByRole("button", { name: "Aggiorna" });
+  if (await aggiorna.count()) await aggiorna.tap();
+  await expect(page.getByTestId("wishlist-total")).toContainText("48,00", { timeout: 20_000 });
   await expect(page.getByRole("status")).toHaveCount(0);
 });

@@ -46,7 +46,7 @@ export default function OfflineSupport() {
   }
   const text = offline
     ? `Sei offline: vedi i dati salvati${when}. I prezzi possono essere cambiati.`
-    : `Rete lenta: mostro i dati salvati${when}. I prezzi possono essere cambiati.`;
+    : `Vedi dati salvati${when} (rete lenta o appena tornata). I prezzi possono essere cambiati.`;
 
   return (
     <div
@@ -55,9 +55,14 @@ export default function OfflineSupport() {
     >
       {text}
       {!offline && (
-        <button type="button" className="ml-3 underline" onClick={() => setStaleDate(null)}>
-          Chiudi
-        </button>
+        <>
+          <button type="button" className="ml-3 min-h-11 underline" onClick={() => window.location.reload()}>
+            Aggiorna
+          </button>
+          <button type="button" className="ml-3 min-h-11 underline" onClick={() => setStaleDate(null)}>
+            Chiudi
+          </button>
+        </>
       )}
     </div>
   );
