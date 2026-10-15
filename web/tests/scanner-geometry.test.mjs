@@ -402,3 +402,41 @@ test("un'immagine con le proporzioni di una carta e' la carta intera (scansioni,
   assert.equal(regions.length, 1);
   assert.equal(regions[0].id, 'region-frame');
 });
+
+// Rettangolo w x h centrato in (cx, cy), ruotato di `deg` gradi: angoli alto-sx,
+// alto-dx, basso-dx, basso-sx.
+function rotatedRect(cx, cy, w, h, deg) {
+  const a = deg * Math.PI / 180;
+  return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([x, y]) => [
+    cx + x * Math.cos(a) - y * Math.sin(a),
+    cy + x * Math.sin(a) + y * Math.cos(a),
+  ]);
+}
+
+for (const deg of [-24, -17, 17, 24]) {
+  test(`carta inclinata di ${deg} gradi: quadrilatero giusto, non la cornice interna`, () => {
+    // Oltre i 12 gradi la ricerca stretta agganciava il riquadro dell'illustrazione.
+    const W = 400, H = 533;
+    const card = rotatedRect(200, 266, 220, 307, deg);
+    const art = rotatedRect(200, 236, 180, 130, deg);
+    const rgba = paint(W, H, [[card, [230, 200, 60]], [art, [40, 90, 160]]]);
+    const regions = image.detectCardRegionsFromPixels(rgba, W, H);
+    assert.equal(regions.length, 1);
+    assert.ok(regions[0].quad, `regione senza quadrilatero: ${regions[0].id}`);
+    const corners = regions[0].quad.map(([x, y]) => [x * W, y * H]);
+    for (let i = 0; i < 4; i += 1) {
+      assert.ok(Math.hypot(corners[i][0] - card[i][0], corners[i][1] - card[i][1]) < 8, `angolo ${i}: ${corners[i]} invece di ${card[i]}`);
+    }
+  });
+}
+
+test("carta inclinata: la macchia dell'intera carta non sostituisce il quadrilatero giusto con il rettangolo dritto", () => {
+  // Il rettangolo contenitore dritto di una carta inclinata di 20 gradi e' ~1.5
+  // volte la carta: contava come "cornice interna" e vinceva la macchia.
+  const W = 400, H = 533;
+  const card = rotatedRect(200, 266, 200, 280, 20);
+  const rgba = paint(W, H, [[card, [230, 200, 60]]]);
+  const regions = image.detectCardRegionsFromPixels(rgba, W, H);
+  assert.equal(regions.length, 1);
+  assert.ok(regions[0].quad, `regione senza quadrilatero: ${regions[0].id}`);
+});
