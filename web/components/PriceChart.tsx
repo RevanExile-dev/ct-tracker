@@ -212,7 +212,7 @@ export default function PriceChart({
               type="button"
               aria-pressed={rangeDays === preset.days}
               onClick={() => selectRange(preset.days)}
-              className={`min-h-8 text-xs px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+              className={`min-h-11 sm:min-h-8 text-xs px-3 sm:px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
                 rangeDays === preset.days
                   ? "bg-accent/10 border-accent/60 text-accent-bright"
                   : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -225,7 +225,7 @@ export default function PriceChart({
             type="button"
             aria-pressed={rangeDays === null}
             onClick={() => selectRange(null)}
-            className={`min-h-8 text-xs px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
+            className={`min-h-11 sm:min-h-8 text-xs px-3 sm:px-2.5 py-1 rounded-full border transition-colors active:scale-95 ${
               rangeDays === null
                 ? "bg-accent/10 border-accent/60 text-accent-bright"
                 : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -276,7 +276,7 @@ export default function PriceChart({
             type="button"
             onClick={() => toggleSeries("min")}
             aria-pressed={!hiddenSeries.has("min")}
-            className={`inline-flex items-center gap-1.5 transition-opacity hover:opacity-80 ${
+            className={`inline-flex items-center gap-1.5 min-h-9 transition-opacity hover:opacity-80 ${
               hiddenSeries.has("min") ? "opacity-40" : ""
             }`}
           >
@@ -287,7 +287,7 @@ export default function PriceChart({
             type="button"
             onClick={() => toggleSeries("exact")}
             aria-pressed={!hiddenSeries.has("exact")}
-            className={`inline-flex items-center gap-1.5 transition-opacity hover:opacity-80 ${
+            className={`inline-flex items-center gap-1.5 min-h-9 transition-opacity hover:opacity-80 ${
               hiddenSeries.has("exact") ? "opacity-40" : ""
             }`}
           >

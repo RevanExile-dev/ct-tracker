@@ -16,6 +16,10 @@ test("desideri: totale oggi e lista vuota", async ({ page }) => {
   const total = page.getByTestId("wishlist-total");
   await expect(total).toContainText("48,00", { timeout: 20_000 });
   await expect(page.locator("body")).toContainText("Carte in lista");
+  // "In ribasso" c'e' sempre: o il numero di carte scese o "nessuna" (prima la
+  // tessera spariva e il testo prometteva ribassi anche con 5 carte su 5 in rialzo).
+  await expect(page.getByTestId("wishlist-drops")).toHaveText(/▼ \d+|nessuna/);
+  await expect(page.locator("body")).not.toContainText("ordinate dal ribasso");
 
   // Tolta una carta (tap sul cuore) il totale scende a quello dell'altra.
   await page.getByRole("button", { name: /desideri/i }).first().tap();

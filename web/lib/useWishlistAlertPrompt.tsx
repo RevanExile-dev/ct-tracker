@@ -7,7 +7,7 @@ import { toggleWishlist } from "./wishlist";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import LoginToTrackToast from "@/components/LoginToTrackToast";
 
-const TOAST_MS = 5000;
+const TOAST_MS = 9000;
 
 /** Centralizza il comportamento "cuore -> overlay traccia carta" condiviso
  * da tutte le griglie (home, movers) e dalla pagina di dettaglio: chiama

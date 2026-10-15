@@ -119,8 +119,8 @@ function WishlistContent() {
         ♡ Lista desideri
       </h1>
       <p className="text-ink-muted mt-1 max-w-xl">
-        Carte che non hai ancora ma vuoi tenere d&apos;occhio, ordinate dal ribasso di prezzo più
-        marcato — il momento migliore per comprarle. Aggiungile dalla scheda di una carta.
+        Carte che non hai ancora ma vuoi tenere d&apos;occhio, con in cima quelle scese di più:
+        il momento migliore per comprarle. Aggiungile dalla scheda di una carta.
       </p>
 
       {sorted && sorted.length > 0 && (
@@ -146,12 +146,18 @@ function WishlistContent() {
               <div className="font-display text-xl font-bold text-ink-primary" data-testid="wishlist-no-alert">{withoutAlert}</div>
             </div>
           )}
-          {dropsCount > 0 && (
-            <div>
-              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">In ribasso</div>
-              <div className="font-display text-xl font-bold text-signal-down">▼ {dropsCount}</div>
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">In ribasso</div>
+            <div
+              className={`font-display text-xl font-bold ${dropsCount > 0 ? "text-signal-down" : "text-ink-muted"}`}
+              data-testid="wishlist-drops"
+            >
+              {dropsCount > 0 ? `▼ ${dropsCount}` : "nessuna"}
             </div>
-          )}
+            {dropsCount === 0 && (
+              <div className="text-[11px] text-ink-faint">in cima quelle che salgono meno</div>
+            )}
+          </div>
         </div>
       )}
 
