@@ -5,7 +5,7 @@ import { test, expect } from "@playwright/test";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
-test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, serviceWorkers: "allow" });
 
 test("manifest installabile: icone PNG 192/512 e maskable raggiungibili", async ({ request }) => {
   const m = await (await request.get(`${BASE_URL}/manifest.webmanifest`)).json();
