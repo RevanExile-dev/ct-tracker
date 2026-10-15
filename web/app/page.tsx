@@ -513,7 +513,31 @@ function HomeContent() {
 
       {cards && cards.length === 0 && (
         <div className="mt-16 text-center text-ink-muted">
-          Nessuna carta trovata. Prova a modificare la ricerca o i filtri.
+          <p>Nessuna carta trovata.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {(expansionCode || selectedRarities.length > 0 || selectedArtists.length > 0 || selectedLanguages.length > 0 ||
+              selectedConditions.length > 0 || onlyZero || priceBand) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setExpansionCode(""); setSelectedRarities([]); setSelectedArtists([]); setSelectedLanguages([]);
+                  setSelectedConditions([]); setOnlyZero(false); setPriceBand("");
+                }}
+                className="min-h-11 px-4 rounded-full border border-base-border bg-base-surface2 text-sm text-ink-primary active:scale-95"
+              >
+                Togli i filtri
+              </button>
+            )}
+            {search.trim().split(/\s+/).length > 1 && (
+              <button
+                type="button"
+                onClick={() => setSearch(search.trim().split(/\s+/).slice(0, -1).join(" "))}
+                className="min-h-11 px-4 rounded-full border border-base-border bg-base-surface2 text-sm text-ink-primary active:scale-95"
+              >
+                Cerca «{search.trim().split(/\s+/).slice(0, -1).join(" ")}»
+              </button>
+            )}
+          </div>
         </div>
       )}
 

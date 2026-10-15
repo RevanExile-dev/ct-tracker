@@ -108,3 +108,36 @@ test("barra filtri compatta: su 390x664 Rarità, Prezzo e Filtri stanno su una r
   const handle = await y(page.getByRole("button", { name: "Nascondi filtri" }));
   expect(handle).toBeLessThan(480);
 });
+
+test("Invio non sceglie mai un'espansione e tiene il testo se c'e' un numero", async ({ page }) => {
+  const input = await ready(page);
+  await input.tap();
+  await page.keyboard.type("smoke card 1");
+  await expect(page.getByRole("listbox")).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.press("Enter");
+  await expect(input).toHaveValue("smoke card 1");
+  await expect(page).not.toHaveURL(/exp=/);
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+
+  const fresh = page.waitForResponse((r) => /\/api\/cards\/suggest\?search=smoke(&|$)/.test(r.url()), { timeout: 20_000 });
+  await input.fill("smoke");
+  await fresh;
+  const nameOption = page.getByRole("listbox").getByRole("option").filter({ hasText: /Card/ });
+  await expect(nameOption.first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("listbox").getByRole("option").first()).not.toHaveText(/espansione/i);
+  await page.keyboard.press("Enter");
+  await expect(page).not.toHaveURL(/exp=/);
+  await expect(input).toHaveValue(/Card/);
+});
+
+test("nessun risultato: pulsanti per togliere i filtri e l'ultima parola", async ({ page }) => {
+  await page.goto(`${BASE_URL}/?exp=smoketest&q=smoke%20zzqqxx`);
+  await expect(page.getByText("Nessuna carta trovata.")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Cerca «smoke»" }).tap();
+  await expect(page.locator("body")).toContainText(/carte? trovat/);
+  await expect(page.getByText("Nessuna carta trovata.")).toHaveCount(0);
+  await page.goto(`${BASE_URL}/?exp=smoketest&q=zzqqxx`);
+  await expect(page.getByText("Nessuna carta trovata.")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Togli i filtri" }).tap();
+  await expect(page).not.toHaveURL(/exp=/);
+});
