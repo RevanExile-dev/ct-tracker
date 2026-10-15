@@ -1,5 +1,3 @@
-import sharp from "sharp";
-
 /**
  * Miniature carta a misura di schermo. CardTrader offre solo due file: il
  * `preview_` da 180 px (nitido su schermi 1x) e quello intero da 734 px
@@ -25,9 +23,17 @@ export async function GET(request: Request) {
   }
   const original = `https://www.cardtrader.com/uploads/blueprints/image/${file}`;
   try {
-    const upstream = await fetch(original, { signal: AbortSignal.timeout(8000) });
-    const buffer = upstream.ok ? Buffer.from(await upstream.arrayBuffer()) : null;
-    if (!buffer || buffer.length > MAX_SOURCE_BYTES) throw new Error("origine non disponibile");
+    // Import dinamico dentro il try: se sharp non e' disponibile nel runtime la
+    // tile riceve il redirect all'originale invece di un errore 500.
+    const sharp = (await import("sharp")).default;
+    // `redirect: "manual"`: un redirect dell'origine verso un altro host non viene
+    // seguito (niente SSRF indiretto); il tetto di dimensione si controlla prima
+    // di leggere il corpo e poi sulla lunghezza effettiva.
+    const upstream = await fetch(original, { redirect: "manual", signal: AbortSignal.timeout(8000) });
+    const declared = Number(upstream.headers.get("content-length") ?? 0);
+    if (!upstream.ok || declared > MAX_SOURCE_BYTES) throw new Error("origine non disponibile");
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > MAX_SOURCE_BYTES) throw new Error("origine troppo grande");
     const body = await sharp(buffer).resize({ width, withoutEnlargement: true }).webp({ quality: 70 }).toBuffer();
     return new Response(new Uint8Array(body), {
       headers: {
