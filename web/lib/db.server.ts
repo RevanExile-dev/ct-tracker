@@ -1,5 +1,6 @@
 import "server-only";
 import { getPgPool } from "./pgPool";
+import { createImageUrlLookup, type ImageUrlRow } from "./imageUrlLookup";
 import { expandRarityFilters, normalizeRarity } from "./rarity";
 import { compareExpansions } from "./expansions";
 import { MIN_TREND_POINTS } from "./format";
@@ -983,11 +984,15 @@ export async function fetchScannerCatalog(): Promise<ScannerCatalogRow[]> {
   return rows;
 }
 
-export async function fetchBlueprintImageUrl(id: number): Promise<string | null> {
+// Una query per istanza all'ora invece di una per carta: vedi imageUrlLookup.ts.
+const blueprintImageUrl = createImageUrlLookup(async () => {
   const pool = getPgPool();
-  const { rows } = await pool.query<{ image_url: string | null }>(
-    `SELECT image_url FROM blueprints WHERE id = $1`,
-    [id]
+  const { rows } = await pool.query<ImageUrlRow>(
+    `SELECT id, image_url FROM blueprints WHERE image_url IS NOT NULL`
   );
-  return rows[0]?.image_url ?? null;
+  return rows;
+});
+
+export function fetchBlueprintImageUrl(id: number): Promise<string | null> {
+  return blueprintImageUrl(id);
 }
