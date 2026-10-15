@@ -73,6 +73,7 @@ import requests
 
 from api_client import CardTraderClient
 import db
+import neon_suspend
 import weekly_digest
 
 # ~50 minuti di richieste per run (~3000 carte a 1 richiesta/secondo), con
@@ -451,6 +452,9 @@ def main():
     db.set_meta(conn, "last_price_sync", finished.isoformat())
     conn.commit()
     conn.close()
+    # Spegne subito il compute Neon invece di lasciarlo acceso 5 minuti (vedi
+    # neon_suspend.py): no-op senza NEON_API_KEY, non fa mai fallire il sync.
+    print(neon_suspend.suspend_after_sync())
 
     print(f"\nCompletato in {(finished - start).total_seconds():.0f}s: "
           f"{ok} carte aggiornate, {errors} errori "
