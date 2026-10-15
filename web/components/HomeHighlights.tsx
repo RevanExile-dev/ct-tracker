@@ -17,7 +17,13 @@ import CardTile from "./CardTile";
 const ROW_LIMIT = 10;
 // Montaggio a scaglioni delle tile delle tre righe (stesso motivo e stessa
 // tecnica della griglia in app/page.tsx): quante per riga subito, quante in piu' per frame.
-const ROW_INITIAL = 4;
+const ROW_INITIAL = 3;
+// Le tile oltre le prime ROW_INITIAL (fuori schermo nello swipe, o nelle righe
+// piu' in basso) aspettano questo tempo dopo il caricamento della pagina: il
+// browser carica le immagini `lazy` entro ~1250 px dal bordo, quindi montarle
+// subito faceva partire ~24 scaricamenti insieme che si dividevano la banda e
+// ritardavano la prima carta (misurato: primo disegno a 7 s su rete lenta).
+const REST_DELAY_MS = 1200;
 const ROW_STEP = 3;
 
 type Row = {
@@ -132,8 +138,26 @@ export default function HomeHighlights({
     return () => { cancelled = true; };
   }, []);
 
+  // Prima le tile visibili, il resto dopo REST_DELAY_MS (o al primo gesto).
+  const [restOpen, setRestOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setRestOpen(true);
+    const timer = window.setTimeout(open, REST_DELAY_MS);
+    window.addEventListener("pointerdown", open, { once: true, passive: true });
+    window.addEventListener("scroll", open, { once: true, passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", open);
+      window.removeEventListener("scroll", open);
+    };
+  }, []);
+
   const longestRow = rows.reduce((max, r) => Math.max(max, r.cards?.length ?? 0), 0);
-  const { count: mountedCount } = useProgressiveCount(longestRow, ROW_INITIAL, ROW_STEP);
+  const { count: mountedCount } = useProgressiveCount(
+    restOpen ? longestRow : Math.min(longestRow, ROW_INITIAL),
+    ROW_INITIAL,
+    ROW_STEP,
+  );
 
   if (!active) return null;
 
