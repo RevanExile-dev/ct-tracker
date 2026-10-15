@@ -175,3 +175,27 @@ INSERT INTO external_prices (blueprint_id, source, variant, currency, price_cent
   (900103, 'cardmarket', '',     'EUR',  555,  300,  500,  550,  560,  540, now() - interval '10 days', now() - interval '10 days'),
   (900105, 'cardmarket', '',     'EUR',  250,  100,  240,  250,  255,  245, now() - interval '6 days', now() - interval '5 days')
 ON CONFLICT (blueprint_id, source, variant) DO NOTHING;
+
+-- Account di prova per tests/share-link.spec.mjs (link di condivisione):
+-- una sessione vera nel database (cookie authjs.session-token =
+-- 'share-smoke-session'), un binder e una lista desideri, e un link gia'
+-- creato sul binder. Nome ed email sono volutamente riconoscibili: il test
+-- verifica che non compaiano MAI nella pagina pubblica ne' nell'anteprima.
+INSERT INTO users (id, name, email, "emailVerified") VALUES
+  ('00000000-0000-4000-8000-0000000000a1', 'Mario Segretissimo', 'mario.segretissimo@example.invalid', now())
+ON CONFLICT DO NOTHING;
+INSERT INTO sessions ("userId", expires, "sessionToken") VALUES
+  ('00000000-0000-4000-8000-0000000000a1', now() + interval '10 years', 'share-smoke-session')
+ON CONFLICT DO NOTHING;
+INSERT INTO binder_cards (user_id, blueprint_id, data) VALUES
+  ('00000000-0000-4000-8000-0000000000a1', 900101, '{"quantity": 2, "language": null, "finish": "foil"}'),
+  ('00000000-0000-4000-8000-0000000000a1', 900105, '{"quantity": 1, "language": null, "finish": "normal"}'),
+  ('00000000-0000-4000-8000-0000000000a1', 900110, '{"quantity": 3, "language": null, "finish": "unknown"}')
+ON CONFLICT DO NOTHING;
+INSERT INTO wishlist_cards (user_id, blueprint_id) VALUES
+  ('00000000-0000-4000-8000-0000000000a1', 900120),
+  ('00000000-0000-4000-8000-0000000000a1', 900121)
+ON CONFLICT DO NOTHING;
+INSERT INTO share_links (token, user_id, kind, title) VALUES
+  ('SmokeBinderShareTokenAAAAAAAAA12', '00000000-0000-4000-8000-0000000000a1', 'binder', 'Il binder di prova')
+ON CONFLICT DO NOTHING;

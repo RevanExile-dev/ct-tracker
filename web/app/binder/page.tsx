@@ -13,6 +13,7 @@ import { primaryLotFor, summarizeLotEconomics } from "@/lib/lotSummary";
 import BinderBook from "@/components/BinderBook";
 import BinderTable from "@/components/BinderTable";
 import BinderCsvPanel from "@/components/BinderCsvPanel";
+import ShareLinkPanel from "@/components/ShareLinkPanel";
 import CardTile from "@/components/CardTile";
 import CollectionValueChart from "@/components/CollectionValueChart";
 import LogPurchaseModal from "@/components/LogPurchaseModal";
@@ -329,6 +330,8 @@ function BinderContent() {
           onImported={(next) => { setEntries(next); setCards(null); setReloadTick((t) => t + 1); }}
         />
       )}
+
+      {cards && cards.length > 0 && <ShareLinkPanel kind="binder" />}
 
       {summary && cards && cards.length > 0 && (
         <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-card border border-base-border bg-base-surface/70 px-5 py-4">
