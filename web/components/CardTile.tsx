@@ -39,6 +39,7 @@ function CardTile({
   onLogPurchase,
   hasPurchaseInfo,
   horizontalScroll,
+  imagePriority,
   hasAlert,
   onCreateAlert,
 }: {
@@ -99,6 +100,10 @@ function CardTile({
    * non lo spazio vuoto intorno. Assente ovunque la tile stia in una
    * griglia normale, dove pan-y resta il default. */
   horizontalScroll?: boolean;
+  /** Priorita' di rete dell'immagine: le prime tile sopra la piega passano
+   * davanti, le altre (anche solo di una riga piu' sotto o fuori schermo nello
+   * swipe) non rubano banda a quelle che definiscono il primo disegno. */
+  imagePriority?: "high" | "low";
 }) {
   const isBest = priceProfile === "best";
   // filtered_price_cents esiste solo quando e' attivo un filtro lingua/
@@ -226,6 +231,7 @@ function CardTile({
                   }
                 }}
                 loading="lazy"
+                fetchPriority={imagePriority}
                 decoding="async"
                 onLoad={() => setImgLoaded(true)}
                 onError={() => setImgError(true)}

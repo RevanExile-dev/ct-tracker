@@ -525,6 +525,7 @@ function HomeContent() {
                   key={card.id}
                   card={card}
                   index={i}
+                  imagePriority={i >= 8 ? "low" : hasActiveFilters && i < 4 ? "high" : undefined}
                   inBinder={binderIds.has(card.id)}
                   onToggleBinder={handleToggleBinderCard}
                   inWishlist={wishlistIds.has(card.id)}

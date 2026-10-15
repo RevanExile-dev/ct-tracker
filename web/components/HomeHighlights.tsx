@@ -28,9 +28,11 @@ type Row = {
 };
 
 function HighlightRow({
-  row, mountedCount, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
+  row, rowIndex, mountedCount, binderIds, onToggleBinder, wishlistIds, onToggleWishlist, returnTo,
 }: {
   row: Row;
+  /** Posizione della riga: solo le prime tile della prima hanno priorita' alta. */
+  rowIndex: number;
   /** Quante tile montare ora (le altre seguono a scaglioni). */
   mountedCount: number;
   binderIds: Set<number>;
@@ -61,6 +63,7 @@ function HighlightRow({
                 card={card}
                 index={i}
                 horizontalScroll
+                imagePriority={rowIndex === 0 && i < 3 ? "high" : "low"}
                 inBinder={binderIds.has(card.id)}
                 onToggleBinder={onToggleBinder}
                 inWishlist={wishlistIds.has(card.id)}
@@ -136,10 +139,11 @@ export default function HomeHighlights({
 
   return (
     <div className="mt-8">
-      {rows.map((row) => (
+      {rows.map((row, rowIndex) => (
         <HighlightRow
           key={row.key}
           row={row}
+          rowIndex={rowIndex}
           mountedCount={mountedCount}
           binderIds={binderIds}
           onToggleBinder={onToggleBinder}
