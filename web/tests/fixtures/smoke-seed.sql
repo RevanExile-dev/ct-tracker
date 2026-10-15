@@ -199,3 +199,26 @@ ON CONFLICT DO NOTHING;
 INSERT INTO share_links (token, user_id, kind, title) VALUES
   ('SmokeBinderShareTokenAAAAAAAAA12', '00000000-0000-4000-8000-0000000000a1', 'binder', 'Il binder di prova')
 ON CONFLICT DO NOTHING;
+
+-- "Conviene comprare ora?" (tests/buy-now.spec.mjs): 950001 ha 25 giorni di
+-- storico (minimo 1000, attuale 1400 = +40%) e inserzioni Zero in IT/DE/FR/US
+-- piu' una non-Zero piu' economica; 950002 ha 1 sola rilevazione (nessun verdetto).
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium) VALUES
+  (950001, 'Buy Test Card', '1/1', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/buy-test.jpg', 'Rare', 0),
+  (950002, 'Short History Card', '2/2', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'https://cardtrader.com/uploads/blueprints/image/900000/short-history.jpg', 'Rare', 0)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, best_price_cents, best_price_currency, best_can_sell_via_hub) VALUES
+  (950001, CURRENT_DATE, now(), 900, 'EUR', 5, 1400, 'EUR', 1),
+  (950002, CURRENT_DATE, now(), 500, 'EUR', 1, 500, 'EUR', 1)
+ON CONFLICT (blueprint_id) DO NOTHING;
+INSERT INTO price_snapshots (blueprint_id, captured_at, captured_at_ts, min_price_cents, best_price_cents)
+  SELECT 950001, CURRENT_DATE - n, now() - n * interval '1 day', 1000, 1000 + (n % 5) * 50 FROM generate_series(1, 25) AS n;
+INSERT INTO price_snapshots (blueprint_id, captured_at, captured_at_ts, min_price_cents, best_price_cents) VALUES
+  (950002, CURRENT_DATE - 1, now() - interval '1 day', 500, 500);
+INSERT INTO price_listings (blueprint_id, captured_at, price_cents, price_currency, condition, language, quantity, seller_username, can_sell_via_hub, ships_from_country) VALUES
+  (950001, CURRENT_DATE, 900, 'EUR', 'Played', 'it', 1, 'cheap-no-hub', 0, 'DE'),
+  (950001, CURRENT_DATE, 1400, 'EUR', 'Near Mint', 'it', 1, 'zero-it', 1, 'IT'),
+  (950001, CURRENT_DATE, 1250, 'EUR', 'Near Mint', 'en', 1, 'zero-de', 1, 'DE'),
+  (950001, CURRENT_DATE, 1100, 'EUR', 'Near Mint', 'en', 1, 'zero-us', 1, 'US'),
+  (950001, CURRENT_DATE, 1500, 'EUR', 'Near Mint', 'fr', 1, 'zero-fr', 1, 'FR'),
+  (950002, CURRENT_DATE, 500, 'EUR', 'Near Mint', 'it', 1, 'solo-zero', 1, 'IT');
