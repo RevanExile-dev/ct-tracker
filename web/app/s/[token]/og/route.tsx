@@ -20,14 +20,28 @@ async function previewDataUrl(imageUrl: string): Promise<string | null> {
     const sources = cardImageSources(imageUrl);
     const url = sources.srcSet?.split(",")[0]?.trim().split(" ")[0] ?? sources.src;
     if (!/^https:\/\/(www\.)?cardtrader\.com\//.test(url)) return null;
-    const res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
-    if (!res.ok) return null;
+    // redirect: "error": un redirect (anche da un host di CardTrader) non va
+    // seguito verso un indirizzo qualunque, l'immagine in piu' si salta.
+    const res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS), redirect: "error" });
+    if (!res.ok || !res.body) return null;
     const type = res.headers.get("content-type")?.split(";")[0].trim() ?? "";
     // Satori legge solo PNG/JPEG (non WebP).
     if (type !== "image/jpeg" && type !== "image/png") return null;
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) return null;
-    return `data:${type};base64,${bytes.toString("base64")}`;
+    if (Number(res.headers.get("content-length") ?? 0) > MAX_IMAGE_BYTES) return null;
+    // Lettura a pezzi con tetto: una risposta enorme senza content-length non
+    // finisce mai tutta in memoria.
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_IMAGE_BYTES) { await reader.cancel(); return null; }
+      chunks.push(value);
+    }
+    if (total === 0) return null;
+    return `data:${type};base64,${Buffer.concat(chunks).toString("base64")}`;
   } catch {
     return null;
   }

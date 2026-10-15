@@ -121,7 +121,12 @@ const SHARE_CACHE_MAX_ENTRIES = 40;
 type CacheEntry = { expires: number; userId: string; value: Promise<SharedCollection | null> };
 const cache = new Map<string, CacheEntry>();
 
+// Contatore delle revoche/rigenerazioni: una lettura gia' partita prima di
+// una revoca non deve rimettere in cache il link appena spento.
+let invalidations = 0;
+
 function forgetCachedCollections(userId: string): void {
+  invalidations++;
   for (const [token, entry] of cache) if (entry.userId === userId) cache.delete(token);
 }
 
@@ -208,11 +213,12 @@ export function getSharedCollection(token: string): Promise<SharedCollection | n
   if (hit && hit.expires > now) return hit.value;
   cache.delete(token);
 
+  const startedAt = invalidations;
   const loading = loadSharedCollection(token);
   const value = loading.then((r) => r?.value ?? null);
   // Solo i risultati trovati restano in cache; errori e "non trovato" no.
   loading.then((r) => {
-    if (!r) return;
+    if (!r || startedAt !== invalidations) return;
     if (cache.size >= SHARE_CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
     cache.set(token, { expires: now + SHARE_CACHE_TTL_MS, userId: r.userId, value });
   }).catch(() => {});
