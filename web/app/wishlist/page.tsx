@@ -3,11 +3,13 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { CardRow, fetchCards } from "@/lib/db";
 import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
 import { formatCents, priceDeltaPct } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import CardTile from "@/components/CardTile";
+import QuickAlertModal from "@/components/QuickAlertModal";
 import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
 
@@ -18,6 +20,24 @@ function WishlistContent() {
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const { data: session } = useSession();
+  // Carte della lista che hanno gia' un allarme (null = non lo so, ad es.
+  // non loggato o richiesta fallita: in quel caso niente campanelle).
+  const [alertIds, setAlertIds] = useState<Set<number> | null>(null);
+  const [alertCard, setAlertCard] = useState<CardRow | null>(null);
+  const loggedIn = Boolean(session);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    fetch("/api/account/alerts")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((alerts: { blueprintId: number; state: string }[]) => {
+        if (!cancelled) setAlertIds(new Set(alerts.filter((a) => a.state !== "disabled").map((a) => a.blueprintId)));
+      })
+      .catch(() => { if (!cancelled) setAlertIds(null); });
+    return () => { cancelled = true; };
+  }, [loggedIn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +79,9 @@ function WishlistContent() {
     setWishlistIds(new Set(toggleWishlist(card.id)));
     setCards((current) => current?.filter((c) => c.id !== card.id) ?? current);
   }, []);
+
+  const handleCreateAlert = useCallback((card: CardRow) => setAlertCard(card), []);
+  const withoutAlert = alertIds && sorted ? sorted.filter((c) => !alertIds.has(c.id)).length : 0;
 
   const dropsCount = useMemo(() => {
     if (!sorted) return 0;
@@ -117,6 +140,12 @@ function WishlistContent() {
               </div>
             )}
           </div>
+          {alertIds && (
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">Senza allarme</div>
+              <div className="font-display text-xl font-bold text-ink-primary" data-testid="wishlist-no-alert">{withoutAlert}</div>
+            </div>
+          )}
           <div>
             <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint">In ribasso</div>
             <div
@@ -160,9 +189,18 @@ function WishlistContent() {
               inWishlist={wishlistIds.has(card.id)}
               onToggleWishlist={handleRemove}
               returnTo={returnTo}
+              hasAlert={alertIds ? alertIds.has(card.id) : undefined}
+              onCreateAlert={alertIds ? handleCreateAlert : undefined}
             />
           ))}
         </div>
+      )}
+      {alertCard && (
+        <QuickAlertModal
+          card={alertCard}
+          onClose={() => setAlertCard(null)}
+          onCreated={() => setAlertIds((cur) => new Set(cur).add(alertCard.id))}
+        />
       )}
     </main>
   );

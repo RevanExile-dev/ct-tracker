@@ -100,6 +100,7 @@ jobs:
             tests/artist-filter.spec.mjs \
             tests/name-search.spec.mjs \
             tests/wishlist-total.spec.mjs \
+            tests/wishlist-alert.spec.mjs \
             tests/mobile-handle-nav.spec.mjs \
             tests/load-errors.spec.mjs \
             tests/card-first-screen.spec.mjs \
