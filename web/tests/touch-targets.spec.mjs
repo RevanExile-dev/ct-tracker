@@ -9,7 +9,7 @@ const heights = (page, selector) =>
   page.$$eval(selector, (els) => els.map((e) => ({ t: (e.textContent || "").trim().slice(0, 30), h: Math.round(e.getBoundingClientRect().height) })));
 
 test.describe("bersagli di tocco - telefono", () => {
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test.use({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
   test("link del piede e della scheda alti almeno 44 px", async ({ page }) => {
     await page.goto(`${BASE_URL}/card/903001`);
     await page.getByRole("link", { name: /Torna indietro/ }).waitFor();
@@ -18,7 +18,7 @@ test.describe("bersagli di tocco - telefono", () => {
       ...(await heights(page, 'a:has-text("Torna indietro")')),
       ...(await heights(page, 'a:has-text("Apri su CardTrader")')),
       // Azioni principali del percorso "tengo d'occhio questa carta": erano 27 px.
-      // (Sotto i 700 px di altezza, es. iPhone SE, restano compatte: vedi card-first-screen.)
+      // (Sotto i 620 px di altezza, es. iPhone SE, restano compatte: vedi card-first-screen.)
       ...(await heights(page, 'button:has-text("aggiungi al binder")')),
       ...(await heights(page, 'button:has-text("aggiungi ai desideri")')),
       ...(await heights(page, 'button:has-text("crea allarme")')),
