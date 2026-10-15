@@ -50,6 +50,14 @@ test.describe("bersagli di tocco - /movers", () => {
     await link.waitFor();
     expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
   });
+  test("\"Come si legge\" alto almeno 44 px e si apre con un tocco", async ({ page }) => {
+    await page.goto(`${BASE_URL}/movers`);
+    const sum = page.locator("summary", { hasText: "Come si legge" });
+    await sum.waitFor();
+    expect((await sum.boundingBox()).height).toBeGreaterThanOrEqual(43);
+    await sum.tap();
+    await expect(page.getByText(/almeno \d+ inserzioni/).first()).toBeVisible();
+  });
 });
 
 test.describe("bersagli di tocco - altre pagine con \"Torna al catalogo\"", () => {
@@ -62,4 +70,10 @@ test.describe("bersagli di tocco - altre pagine con \"Torna al catalogo\"", () =
       expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
     });
   }
+  test("/binder: link \"← Catalogo\" alto almeno 44 px", async ({ page }) => {
+    await page.goto(`${BASE_URL}/binder`);
+    const link = page.getByRole("link", { name: /← Catalogo/ }).first();
+    await link.waitFor();
+    expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
+  });
 });

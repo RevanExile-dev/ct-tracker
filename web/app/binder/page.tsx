@@ -312,7 +312,7 @@ function BinderContent() {
       <SiteHeader compact />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 mb-6">
         <div>
-          <Link href="/" className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-4">← Catalogo</Link>
+          <Link href="/" className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 min-h-11 md:min-h-9 mb-1 md:mb-4">← Catalogo</Link>
           <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink-primary">Il mio Binder</h1>
           <p className="text-ink-muted mt-1">La stessa collezione, da consultare o da sfogliare come un album.</p>
         </div>
