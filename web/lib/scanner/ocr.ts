@@ -157,6 +157,15 @@ function getBodyWorker(): Promise<TesseractWorker> {
   return bodyWorkerPromise;
 }
 
+// Avvia in anticipo (idle) download e avvio dei motori OCR: chiamata quando
+// l'utente sta per scegliere una foto, cosi' il tempo del selettore/fotocamera
+// non e' sprecato. Errori ignorati: li ritrova recognizeText.
+export function warmUpOcr(): void {
+  getLatinWorker()
+    .then(() => getBodyWorker())
+    .catch(() => undefined);
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();

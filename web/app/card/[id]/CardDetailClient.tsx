@@ -190,7 +190,7 @@ function CardDetailContent() {
       <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
         <SiteHeader compact />
         <p className="text-ink-muted">Carta non trovata nel catalogo locale.</p>
-        <Link href="/" className="text-accent hover:text-accent-bright mt-4 inline-block">
+        <Link href="/" className="text-accent hover:text-accent-bright mt-2 inline-flex items-center min-h-11">
           ← Torna al catalogo
         </Link>
       </main>
@@ -220,7 +220,7 @@ function CardDetailContent() {
       <SiteHeader compact />
       <Link
         href={returnTo}
-        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-4 md:mb-8"
+        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 min-h-11 md:min-h-9 mb-1 md:mb-6"
       >
         ← Torna indietro
       </Link>
@@ -357,7 +357,7 @@ function CardDetailContent() {
                 else {
                   if (manualLoginToastTimerRef.current !== null) window.clearTimeout(manualLoginToastTimerRef.current);
                   setManualLoginToast(true);
-                  manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 5000);
+                  manualLoginToastTimerRef.current = window.setTimeout(() => setManualLoginToast(false), 9000);
                 }
               }}
               className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors active:scale-95 bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"
@@ -388,6 +388,11 @@ function CardDetailContent() {
                 }`}
               >
                 {formatCents(headlinePriceCents, headlineCurrency)}
+                {card.best_price_cents !== null && card.best_language && (
+                  <span className="ml-2 text-xs font-mono font-normal text-ink-muted" data-testid="headline-language">
+                    {languageFlag(card.best_language)} {card.best_language.toUpperCase()}
+                  </span>
+                )}
               </div>
               {trend && (
                 <div
@@ -412,13 +417,20 @@ function CardDetailContent() {
                   italiana, quindi puo' differire davvero da questo valore.
                   Mostrato sempre, "nessuna offerta" incluso - il criterio lo
                   chiede esplicitamente, non solo per le carte italiane. */}
-              <div className="text-xs font-mono text-ink-faint mt-1">
+              <div
+                className={`text-xs font-mono mt-1 ${
+                  card.it_nm_zero_price_cents !== null && card.it_nm_zero_price_cents !== headlinePriceCents
+                    ? "text-ink-primary font-medium"
+                    : "text-ink-faint"
+                }`}
+                data-testid="it-nm-zero-line"
+              >
                 🇮🇹 NM · Zero: {card.it_nm_zero_price_cents !== null
                   ? formatCents(card.it_nm_zero_price_cents, card.it_nm_zero_price_currency ?? currency)
                   : "nessuna offerta rilevata"}
               </div>
             </div>
-            <div className="rounded-card border border-base-border bg-base-surface p-4">
+            <div className="self-start rounded-card border border-base-border bg-base-surface p-4" data-testid="listings-tile">
               <div className="text-xs font-mono text-ink-faint uppercase">Inserzioni attive</div>
               <div className="font-display text-2xl font-bold text-ink-primary mt-1">
                 {card.latest_listings ?? "—"}
@@ -533,7 +545,7 @@ function CardDetailContent() {
             href={`https://www.cardtrader.com/cards/${card.id}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-block mt-6 text-sm text-accent hover:text-accent-bright transition-colors"
+            className="inline-flex items-center min-h-11 md:min-h-9 mt-4 text-sm text-accent hover:text-accent-bright transition-colors"
           >
             Apri su CardTrader ↗
           </a>
