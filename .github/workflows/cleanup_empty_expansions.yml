@@ -1,0 +1,42 @@
+name: Pulizia set vuoti non-Pokemon
+
+# Manuale: toglie i set non-Pokemon senza carte (scripts/cleanup_empty_expansions.py).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Elenca soltanto, senza cancellare"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ct-tracker-db-write
+  cancel-in-progress: false
+
+jobs:
+  cleanup-expansions:
+    runs-on: ${{ vars.CT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Pulizia
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        working-directory: scripts
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python cleanup_empty_expansions.py --dry-run
+          else
+            python cleanup_empty_expansions.py
+          fi
