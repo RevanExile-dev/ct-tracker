@@ -28,3 +28,16 @@ test("Elimina account: il tasto resta spento finche' non scrivi ELIMINA", async 
   await expect(page.getByText("Non è stato cancellato nulla")).toBeVisible();
   expect(sent).toEqual({ confirm: "ELIMINA" });
 });
+
+test("Menu account: c'è 'Scarica i miei dati' che punta all'esportazione", async ({ page }) => {
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ status: 200, json: { user: { name: "Test", email: "test@example.test", id: "x" }, expires: "2099-01-01T00:00:00Z" } }));
+  await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
+  const avatar = page.getByRole("button", { name: "Menu account" });
+  await expect(avatar).toBeVisible({ timeout: 30_000 });
+  await expect(async () => {
+    await avatar.tap();
+    await expect(page.getByRole("menuitem", { name: "Scarica i miei dati" })).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(page.getByRole("menuitem", { name: "Scarica i miei dati" })).toHaveAttribute("href", "/api/account/export");
+});
