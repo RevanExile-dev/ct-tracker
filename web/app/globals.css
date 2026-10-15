@@ -763,3 +763,17 @@ body::after {
   outline: 2px solid #2dd8c9;
   outline-offset: 2px;
 }
+
+/* Area di tocco di almeno 44x44 px attorno a un controllo piu' piccolo senza
+ * cambiarne l'aspetto: il pseudo-elemento invisibile si estende solo dove il
+ * controllo e' sotto i 44 px. Serve sul telefono, dove i tasti tondi da 36 px
+ * stanno uno accanto all'altro e un dito li scambia. */
+.tap-44:not(.absolute):not(.fixed) { position: relative; }
+.tap-44::before {
+  content: "";
+  position: absolute;
+  left: min(0px, calc((100% - 44px) / 2));
+  right: min(0px, calc((100% - 44px) / 2));
+  top: min(0px, calc((100% - 44px) / 2));
+  bottom: min(0px, calc((100% - 44px) / 2));
+}

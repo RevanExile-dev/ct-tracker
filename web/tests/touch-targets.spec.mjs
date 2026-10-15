@@ -77,3 +77,49 @@ test.describe("bersagli di tocco - altre pagine con \"Torna al catalogo\"", () =
     expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
   });
 });
+
+// I tasti tondi delle tessere (binder, desideri, allarme) sono 36 px e stanno
+// uno sopra l'altro: l'area di tocco deve arrivare a 44 px senza cambiarne
+// l'aspetto. Si misura con un punto vero (elementFromPoint), non con il rettangolo.
+test.describe("bersagli di tocco - tessere del catalogo", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test("i tasti tondi delle tessere si colpiscono a 4 px dal bordo", async ({ page }) => {
+    await page.goto(`${BASE_URL}/`);
+    const btn = page.getByRole("button", { name: /Aggiungi al binder|Rimuovi dal binder/ }).first();
+    await btn.waitFor();
+    await btn.scrollIntoViewIfNeeded();
+    const hits = await page.evaluate(() => {
+      const out = [];
+      const names = /Aggiungi al binder|Rimuovi dal binder|lista desideri|Crea allarme/;
+      for (const el of document.querySelectorAll("button[aria-label]")) {
+        if (!names.test(el.getAttribute("aria-label") || "")) continue;
+        const r = el.getBoundingClientRect();
+        // Solo i tasti interamente visibili (le file orizzontali ne hanno fuori schermo).
+        if (r.width === 0 || r.top < 8 || r.bottom > innerHeight - 8 || r.left < 8 || r.right > innerWidth - 8) continue;
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const probe = (x, y) => document.elementFromPoint(x, y)?.closest("button") === el;
+        out.push({
+          label: el.getAttribute("aria-label"),
+          w: Math.round(r.width),
+          left: probe(r.left - 3.5, cy),
+          right: probe(r.right + 3.5, cy),
+          top: probe(cx, r.top - 3.5),
+          bottom: probe(cx, r.bottom + 3.5),
+        });
+      }
+      return out;
+    });
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+    for (const h of hits) {
+      expect(h.w, h.label).toBeLessThanOrEqual(36);
+      expect(h.left && h.top, h.label).toBeTruthy();
+    }
+  });
+  test("/movers: Precedente e Successiva alti almeno 44 px", async ({ page }) => {
+    await page.goto(`${BASE_URL}/movers`);
+    const next = page.getByRole("button", { name: /Successiva/ }).first();
+    await next.waitFor();
+    expect((await next.boundingBox()).height).toBeGreaterThanOrEqual(43);
+  });
+});

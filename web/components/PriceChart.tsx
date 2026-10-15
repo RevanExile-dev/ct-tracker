@@ -308,7 +308,7 @@ export default function PriceChart({
             type="button"
             onClick={() => toggleSeries("min")}
             aria-pressed={!hiddenSeries.has("min")}
-            className={`inline-flex items-center gap-1.5 min-h-9 transition-opacity hover:opacity-80 ${
+            className={`inline-flex items-center gap-1.5 min-h-11 transition-opacity hover:opacity-80 ${
               hiddenSeries.has("min") ? "opacity-40" : ""
             }`}
           >
@@ -319,7 +319,7 @@ export default function PriceChart({
             type="button"
             onClick={() => toggleSeries("exact")}
             aria-pressed={!hiddenSeries.has("exact")}
-            className={`inline-flex items-center gap-1.5 min-h-9 transition-opacity hover:opacity-80 ${
+            className={`inline-flex items-center gap-1.5 min-h-11 transition-opacity hover:opacity-80 ${
               hiddenSeries.has("exact") ? "opacity-40" : ""
             }`}
           >
