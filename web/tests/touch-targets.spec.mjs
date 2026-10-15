@@ -51,3 +51,15 @@ test.describe("bersagli di tocco - /movers", () => {
     expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
   });
 });
+
+test.describe("bersagli di tocco - altre pagine con \"Torna al catalogo\"", () => {
+  test.use({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
+  for (const path of ["/login", "/wishlist", "/privacy", "/termini"]) {
+    test(`${path}: link alto almeno 44 px`, async ({ page }) => {
+      await page.goto(`${BASE_URL}${path}`);
+      const link = page.getByRole("link", { name: /Torna al catalogo/ }).first();
+      await link.waitFor();
+      expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(43);
+    });
+  }
+});

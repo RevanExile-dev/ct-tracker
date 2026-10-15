@@ -8,7 +8,7 @@ export default function LegalPage({ title, children }: { title: string; children
       <SiteHeader compact />
       <Link
         href="/"
-        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mt-6 mb-6"
+        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 min-h-11 md:min-h-9 mt-2 md:mt-6 mb-4 md:mb-6"
       >
         ← Torna al catalogo
       </Link>
