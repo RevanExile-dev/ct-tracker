@@ -9,6 +9,7 @@ import { getWishlistIds, toggleWishlist } from "@/lib/wishlist";
 import { formatCents, priceDeltaPct } from "@/lib/format";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import CardTile from "@/components/CardTile";
+import { wishlistTarget, type AlertStatusInput } from "@/lib/alertStatus";
 import QuickAlertModal from "@/components/QuickAlertModal";
 import LoadError from "@/components/LoadError";
 import SiteHeader from "@/components/SiteHeader";
@@ -24,20 +25,23 @@ function WishlistContent() {
   // Carte della lista che hanno gia' un allarme (null = non lo so, ad es.
   // non loggato o richiesta fallita: in quel caso niente campanelle).
   const [alertIds, setAlertIds] = useState<Set<number> | null>(null);
+  const [alertList, setAlertList] = useState<(AlertStatusInput & { blueprintId: number })[]>([]);
   const [alertCard, setAlertCard] = useState<CardRow | null>(null);
   const loggedIn = Boolean(session);
 
+  const [alertsTick, setAlertsTick] = useState(0);
   useEffect(() => {
     if (!loggedIn) return;
     let cancelled = false;
     fetch("/api/account/alerts")
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
-      .then((alerts: { blueprintId: number; state: string }[]) => {
+      .then((alerts: (AlertStatusInput & { blueprintId: number })[]) => {
+        if (!cancelled) setAlertList(alerts);
         if (!cancelled) setAlertIds(new Set(alerts.filter((a) => a.state !== "disabled").map((a) => a.blueprintId)));
       })
       .catch(() => { if (!cancelled) setAlertIds(null); });
     return () => { cancelled = true; };
-  }, [loggedIn]);
+  }, [loggedIn, alertsTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +85,13 @@ function WishlistContent() {
   }, []);
 
   const handleCreateAlert = useCallback((card: CardRow) => setAlertCard(card), []);
+  const targets = useMemo(() => {
+    const byCard = new Map<number, (AlertStatusInput & { blueprintId: number })[]>();
+    for (const a of alertList) byCard.set(a.blueprintId, [...(byCard.get(a.blueprintId) ?? []), a]);
+    const out = new Map<number, ReturnType<typeof wishlistTarget>>();
+    for (const [id, list] of byCard) out.set(id, wishlistTarget(list, formatCents));
+    return out;
+  }, [alertList]);
   const withoutAlert = alertIds && sorted ? sorted.filter((c) => !alertIds.has(c.id)).length : 0;
 
   const dropsCount = useMemo(() => {
@@ -199,6 +210,7 @@ function WishlistContent() {
               onToggleWishlist={handleRemove}
               returnTo={returnTo}
               hasAlert={alertIds ? alertIds.has(card.id) : undefined}
+              alertTarget={targets.get(card.id) ?? null}
               onCreateAlert={alertIds ? handleCreateAlert : undefined}
             />
           ))}
@@ -208,7 +220,10 @@ function WishlistContent() {
         <QuickAlertModal
           card={alertCard}
           onClose={() => setAlertCard(null)}
-          onCreated={() => setAlertIds((cur) => new Set(cur).add(alertCard.id))}
+          onCreated={() => {
+            setAlertIds((cur) => new Set(cur).add(alertCard.id));
+            setAlertsTick((n) => n + 1);
+          }}
         />
       )}
     </main>

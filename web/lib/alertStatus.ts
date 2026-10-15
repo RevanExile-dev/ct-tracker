@@ -60,3 +60,28 @@ export function alertStatus(a: AlertStatusInput, fmt: (cents: number, currency: 
   const pct = Math.round((missing / a.matchingPriceCents) * 100);
   return { text: `Ora ${nowTxt}, soglia ${thresholdTxt}: mancano ${fmt(missing, currency)} (−${pct}%).`, tone: "wait" };
 }
+
+// Riga breve per la lista desideri: il "prezzo obiettivo" di una carta e' la
+// soglia dell'allarme che ha gia' (nessun campo nuovo da tenere in due posti).
+// Tra piu' allarmi attivi sulla stessa carta vale il piu' vicino a scattare.
+// Torna null se non c'e' un allarme attivo con soglia e prezzo confrontabili.
+export type WishlistTarget = { thresholdText: string; missingText: string | null; met: boolean };
+
+export function wishlistTarget(
+  alerts: AlertStatusInput[],
+  fmt: (cents: number, currency: string) => string,
+): WishlistTarget | null {
+  let best: { threshold: number; now: number; currency: string } | null = null;
+  for (const a of alerts) {
+    if (a.state === "disabled") continue;
+    const threshold = alertThresholdCents(a);
+    if (threshold === null || !Number.isFinite(threshold) || a.matchingPriceCents == null) continue;
+    const currency = a.matchingPriceCurrency ?? a.baselineCurrency ?? "EUR";
+    const gap = a.matchingPriceCents - threshold;
+    if (!best || gap < best.now - best.threshold) best = { threshold, now: a.matchingPriceCents, currency };
+  }
+  if (!best) return null;
+  const thresholdText = fmt(best.threshold, best.currency);
+  if (best.now <= best.threshold) return { thresholdText, missingText: null, met: true };
+  return { thresholdText, missingText: fmt(best.now - best.threshold, best.currency), met: false };
+}
