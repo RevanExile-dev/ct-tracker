@@ -80,6 +80,11 @@ export type CardsFilterOpts = {
   // art, ...) - usato dagli highlight in home (vedi HomeHighlights), nessun
   // dato nuovo da raccogliere.
   onlyPremium?: boolean;
+  // Fascia di prezzo in centesimi (estremi inclusi) sul prezzo mostrato in
+  // griglia: IT NM Zero, oppure l'inserzione piu' economica che rispetta i
+  // filtri lingua/condizione/Zero se attivi. Vedi web/lib/priceBands.ts.
+  minPriceCents?: number;
+  maxPriceCents?: number;
   // Filtra su un insieme esplicito di ID invece che sull'intero catalogo -
   // usato da binder/wishlist (vedi fetchCards).
   ids?: number[];

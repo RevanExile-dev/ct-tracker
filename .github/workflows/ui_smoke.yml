@@ -115,6 +115,7 @@ jobs:
             tests/scroll-bottom-stability.spec.mjs \
             tests/cardmarket-reference.spec.mjs \
             tests/alert-flow.spec.mjs \
+            tests/search-filters-touch.spec.mjs \
             --reporter=line
 
       - name: Log server in caso di errore

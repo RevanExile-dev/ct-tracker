@@ -231,6 +231,8 @@ CREATE TABLE IF NOT EXISTS latest_prices (
 -- in fondo alla coda e lascia spazio alle altre, pur continuando ad essere
 -- ritentata periodicamente invece di essere ignorata per sempre.
 ALTER TABLE latest_prices ADD COLUMN IF NOT EXISTS last_attempted_at TIMESTAMPTZ;
+-- Filtro per fascia di prezzo in home (solo aggiunta, idempotente).
+CREATE INDEX IF NOT EXISTS idx_latest_prices_it_nm_zero ON latest_prices (it_nm_zero_price_cents);
 
 -- Giorno dello snapshot da cui viene prev_it_nm_zero_price_cents. Distinto da
 -- prev_captured_at (che data prev_price_cents, il prezzo generico): "Carte in

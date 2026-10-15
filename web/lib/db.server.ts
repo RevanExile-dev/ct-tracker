@@ -276,12 +276,32 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean, expan
   if (opts.onlyZero) listingFilters.push("pl.can_sell_via_hub = 1");
 
   const hasListingFilter = listingFilters.length > 0;
+  const hasMin = typeof opts.minPriceCents === "number";
+  const hasMax = typeof opts.maxPriceCents === "number";
   if (hasListingFilter) {
     // Solo le carte che hanno ALMENO UNA inserzione che rispetta TUTTI i
-    // criteri insieme (non una per criterio).
+    // criteri insieme (non una per criterio). Con una fascia di prezzo la
+    // condizione va sul MINIMO tra quelle inserzioni: e' il prezzo che la
+    // griglia mostra (vedi buildFilteredJoinSql), non un'inserzione qualunque.
+    const having = [
+      hasMin ? `MIN(pl.price_cents) >= ${p.add(opts.minPriceCents)}` : "",
+      hasMax ? `MIN(pl.price_cents) <= ${p.add(opts.maxPriceCents)}` : "",
+    ].filter(Boolean);
     where.push(
-      `b.id IN (SELECT pl.blueprint_id FROM price_listings pl WHERE ${listingFilters.join(" AND ")})`
+      `b.id IN (SELECT pl.blueprint_id FROM price_listings pl WHERE ${listingFilters.join(" AND ")}${
+        having.length ? ` GROUP BY pl.blueprint_id HAVING ${having.join(" AND ")}` : ""
+      })`
     );
+  } else if (hasMin || hasMax) {
+    // Senza filtri lingua/condizione/Zero il prezzo mostrato e' IT NM Zero:
+    // sottoquery su latest_prices (indice su quella colonna), cosi' il
+    // conteggio e il riepilogo, che non uniscono latest_prices, restano
+    // coerenti con l'elenco.
+    const range = [
+      hasMin ? `lpp.it_nm_zero_price_cents >= ${p.add(opts.minPriceCents)}` : "",
+      hasMax ? `lpp.it_nm_zero_price_cents <= ${p.add(opts.maxPriceCents)}` : "",
+    ].filter(Boolean);
+    where.push(`b.id IN (SELECT lpp.blueprint_id FROM latest_prices lpp WHERE ${range.join(" AND ")})`);
   }
 
   return { where, listingFilters, hasListingFilter };
