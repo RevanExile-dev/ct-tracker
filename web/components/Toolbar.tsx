@@ -333,7 +333,7 @@ export default function Toolbar({
             onClick={onToggleExactName}
             aria-pressed={exactName}
             title="Cerca il nome come parola intera: «mew» non trova «Mewtwo»"
-            className={`absolute right-1.5 top-1/2 -translate-y-1/2 min-h-8 text-xs px-3 rounded-full border transition-colors active:scale-95 ${
+            className={`tap-44 absolute right-1.5 top-1/2 -translate-y-1/2 min-h-8 text-xs px-3 rounded-full border transition-colors active:scale-95 ${
               exactName
                 ? "bg-accent/10 border-accent/60 text-accent-bright"
                 : "bg-base-surface2 border-base-border text-ink-muted hover:text-ink-primary"

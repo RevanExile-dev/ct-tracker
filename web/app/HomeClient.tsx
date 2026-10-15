@@ -431,7 +431,7 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
           onClick={() => setToolbarVisible((v) => !v)}
           aria-expanded={toolbarVisible}
           aria-label={toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
-          className="w-full min-h-9 sm:min-h-10 flex items-center justify-center gap-2 text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
+          className="tap-44 w-full min-h-9 sm:min-h-10 flex items-center justify-center gap-2 text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
         >
           <span
             aria-hidden

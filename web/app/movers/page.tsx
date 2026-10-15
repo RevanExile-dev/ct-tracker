@@ -70,7 +70,7 @@ function Pagination({
         type="button"
         disabled={page <= 1}
         onClick={() => onChange(page - 1)}
-        className="min-h-9 px-3 text-xs rounded-full border border-base-border bg-base-surface2 text-ink-muted disabled:opacity-40 disabled:cursor-not-allowed hover:text-ink-primary transition-colors active:scale-95"
+        className="min-h-11 px-4 text-xs rounded-full border border-base-border bg-base-surface2 text-ink-muted disabled:opacity-40 disabled:cursor-not-allowed hover:text-ink-primary transition-colors active:scale-95"
       >
         ← Precedente
       </button>
@@ -81,7 +81,7 @@ function Pagination({
         type="button"
         disabled={page >= totalPages}
         onClick={() => onChange(page + 1)}
-        className="min-h-9 px-3 text-xs rounded-full border border-base-border bg-base-surface2 text-ink-muted disabled:opacity-40 disabled:cursor-not-allowed hover:text-ink-primary transition-colors active:scale-95"
+        className="min-h-11 px-4 text-xs rounded-full border border-base-border bg-base-surface2 text-ink-muted disabled:opacity-40 disabled:cursor-not-allowed hover:text-ink-primary transition-colors active:scale-95"
       >
         Successiva →
       </button>

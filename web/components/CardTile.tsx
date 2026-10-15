@@ -364,7 +364,7 @@ function CardTile({
             // dall'utente su schermata reale. In riga da sm: in su, dove le
             // tile sono piu' larghe (3+ colonne) e c'e' spazio per entrambi
             // affiancati senza stringere il prezzo.
-            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
+            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
               {onToggleWishlist && (
                 <button
                   type="button"
@@ -374,7 +374,7 @@ function CardTile({
                   }}
                   onAnimationEnd={() => setPoppingWishlist(false)}
                   aria-label={inWishlist ? "Rimuovi dalla lista desideri" : "Aggiungi alla lista desideri"}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
+                  className={`tap-44 w-9 h-9 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
                     poppingWishlist ? "pop-on-toggle" : ""
                   } ${
                     inWishlist
@@ -389,7 +389,7 @@ function CardTile({
                 <Link
                   href="/account/alerts"
                   aria-label="Allarme attivo su questa carta: apri i tuoi allarmi"
-                  className="w-9 h-9 rounded-full flex items-center justify-center border bg-accent/15 border-accent/50 text-accent-bright"
+                  className="tap-44 w-9 h-9 rounded-full flex items-center justify-center border bg-accent/15 border-accent/50 text-accent-bright"
                 >
                   🔔
                 </Link>
@@ -398,7 +398,7 @@ function CardTile({
                   type="button"
                   onClick={() => onCreateAlert(card)}
                   aria-label="Crea allarme di prezzo per questa carta"
-                  className="w-9 h-9 rounded-full flex items-center justify-center border bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40 transition-colors active:scale-90"
+                  className="tap-44 w-9 h-9 rounded-full flex items-center justify-center border bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40 transition-colors active:scale-90"
                 >
                   🔕
                 </button>
@@ -412,7 +412,7 @@ function CardTile({
                   }}
                   onAnimationEnd={() => setPopping(false)}
                   aria-label={inBinder ? "Rimuovi dal binder" : "Aggiungi al binder"}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
+                  className={`tap-44 w-9 h-9 rounded-full flex items-center justify-center border transition-colors active:scale-90 ${
                     popping ? "pop-on-toggle" : ""
                   } ${
                     inBinder
