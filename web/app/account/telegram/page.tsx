@@ -78,13 +78,32 @@ export default function TelegramSettingsPage() {
     }
   }
 
+  const [savingDigest, setSavingDigest] = useState(false);
+  async function toggleDigest(next: boolean) {
+    setSavingDigest(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account/telegram", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weeklyDigest: next }),
+      });
+      if (!res.ok) throw new Error("Impossibile salvare, riprova.");
+      setLinkStatus((prev) => (prev ? { ...prev, weeklyDigest: next } : prev));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore imprevisto");
+    } finally {
+      setSavingDigest(false);
+    }
+  }
+
   async function unlink() {
     setUnlinking(true);
     setError(null);
     try {
       const res = await fetch("/api/account/telegram", { method: "DELETE" });
       if (!res.ok) throw new Error("Impossibile scollegare, riprova.");
-      setLinkStatus({ linked: false, linkedAt: null });
+      setLinkStatus({ linked: false, linkedAt: null, weeklyDigest: false });
       setLinkCode(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore imprevisto");
@@ -134,6 +153,25 @@ export default function TelegramSettingsPage() {
           {linkStatus.linkedAt && (
             <p className="text-xs font-mono text-ink-faint mb-4">dal {formatDateLong(linkStatus.linkedAt)}</p>
           )}
+          <div className="mb-4 rounded-card border border-base-border bg-base-surface2/50 px-4 py-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={linkStatus.weeklyDigest}
+                disabled={savingDigest}
+                onChange={(e) => toggleDigest(e.target.checked)}
+                className="mt-1 h-5 w-5 accent-accent"
+              />
+              <span>
+                <span className="block text-ink-primary">Riepilogo settimanale</span>
+                <span className="block text-xs text-ink-muted">
+                  Ogni domenica un solo messaggio: valore del binder e variazione, carte che hanno
+                  toccato il tuo obiettivo, maggiori rialzi e ribassi nelle tue carte. Spento finché non lo accendi.
+                </span>
+              </span>
+            </label>
+          </div>
           <button
             type="button"
             onClick={unlink}

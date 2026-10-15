@@ -570,6 +570,15 @@ CREATE INDEX IF NOT EXISTS idx_telegram_outbox_pending ON telegram_outbox (creat
 -- necessario per i database creati prima di questa colonna.
 ALTER TABLE telegram_outbox ADD COLUMN IF NOT EXISTS image_url TEXT;
 
+-- Riepilogo settimanale su Telegram (spento di default, opt-in dalla pagina
+-- notifiche o con un tocco sul bottone del messaggio stesso). weekly_digest
+-- e' l'interruttore; last_digest_week ("2026-W42", settimana ISO di Roma) e'
+-- l'ultima settimana per cui il riepilogo e' gia' stato preparato: serve a
+-- non prepararlo due volte (vedi scripts/weekly_digest.py).
+ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS weekly_digest BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS last_digest_week TEXT;
+CREATE INDEX IF NOT EXISTS idx_telegram_links_digest ON telegram_links (user_id) WHERE weekly_digest;
+
 -- Contatori del rate limiting condiviso tra istanze (web/lib/rateLimitShared.ts,
 -- che la crea comunque al primo uso): una riga per chiave e finestra fissa.
 CREATE TABLE IF NOT EXISTS rate_limits (

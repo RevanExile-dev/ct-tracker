@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   PriceAlertValidationError, consumeTelegramLinkCode, getPriceAlert, getUserIdByTelegramChat,
-  setPriceAlertEnabled, updatePriceAlertTarget,
+  setPriceAlertEnabled, setWeeklyDigest, updatePriceAlertTarget,
 } from "@/lib/account.server";
 import { answerTelegramCallback, sendTelegramMessage } from "@/lib/telegram.server";
 import { formatCents } from "@/lib/format";
@@ -125,6 +125,17 @@ export async function POST(req: NextRequest) {
   if (cb) {
     const cbChatId = cb.message?.chat?.id;
     const m = typeof cb.data === "string" ? cb.data.match(CALLBACK_RE) : null;
+    // Bottone "Spegni il riepilogo" sotto il riepilogo settimanale
+    // (scripts/weekly_digest.py, DIGEST_OFF_CALLBACK): stessa stringa.
+    if (cb.data === "wd:off" && typeof cb.id === "string" && typeof cbChatId === "number") {
+      const userId = await getUserIdByTelegramChat(cbChatId);
+      if (userId) await setWeeklyDigest(userId, false);
+      await answerTelegramCallback(cb.id, userId ? "Riepilogo spento ✅" : "Chat non collegata a un account CartaViva.");
+      if (userId) {
+        await sendTelegramMessage(cbChatId, "🔕 Riepilogo settimanale spento. Puoi riaccenderlo dalla pagina notifiche Telegram.", PLAIN);
+      }
+      return NextResponse.json({ ok: true });
+    }
     if (typeof cb.id === "string" && typeof cbChatId === "number" && m) {
       await handleAlertCallback(cb.id, cbChatId, m[1], Number(m[2]));
     } else if (typeof cb.id === "string") {
