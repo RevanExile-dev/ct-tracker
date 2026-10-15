@@ -1,5 +1,6 @@
 "use client";
 
+import BuyNowBox from "@/components/BuyNowBox";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { cardImageSources } from "@/lib/cardImage";
@@ -450,6 +451,14 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
               </div>
             </div>
           </div>
+
+          <BuyNowBox
+            history={history}
+            listings={listings}
+            currentCents={headlinePriceCents}
+            currency={headlineCurrency}
+            stale={!!formatPriceAge(card.price_age_days)}
+          />
 
           <div className="mt-8">
             <h2 className="font-display font-medium text-ink-primary mb-3">
