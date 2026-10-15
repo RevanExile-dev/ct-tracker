@@ -10,9 +10,9 @@ const LINKS = [
 export default function SiteFooter() {
   return (
     <footer className="mx-auto w-full max-w-[1600px] px-3 sm:px-8 pb-8 pt-10 text-xs text-ink-faint">
-      <nav aria-label="Informazioni legali" className="flex flex-wrap gap-x-5 gap-y-2">
+      <nav aria-label="Informazioni legali" className="flex flex-wrap gap-x-5">
         {LINKS.map((l) => (
-          <Link key={l.href} href={l.href} className="hover:text-accent-bright underline-offset-2 hover:underline">
+          <Link key={l.href} href={l.href} className="inline-flex items-center min-h-11 sm:min-h-7 hover:text-accent-bright underline-offset-2 hover:underline">
             {l.label}
           </Link>
         ))}

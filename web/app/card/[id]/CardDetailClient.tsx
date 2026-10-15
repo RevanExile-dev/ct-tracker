@@ -190,7 +190,7 @@ function CardDetailContent() {
       <main className="max-w-6xl mx-auto px-5 sm:px-8 py-10">
         <SiteHeader compact />
         <p className="text-ink-muted">Carta non trovata nel catalogo locale.</p>
-        <Link href="/" className="text-accent hover:text-accent-bright mt-4 inline-block">
+        <Link href="/" className="text-accent hover:text-accent-bright mt-2 inline-flex items-center min-h-11">
           ← Torna al catalogo
         </Link>
       </main>
@@ -220,7 +220,7 @@ function CardDetailContent() {
       <SiteHeader compact />
       <Link
         href={returnTo}
-        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 mb-4 md:mb-8"
+        className="text-sm text-ink-muted hover:text-accent-bright transition-colors inline-flex items-center gap-1.5 min-h-11 md:min-h-9 mb-1 md:mb-6"
       >
         ← Torna indietro
       </Link>
@@ -533,7 +533,7 @@ function CardDetailContent() {
             href={`https://www.cardtrader.com/cards/${card.id}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-block mt-6 text-sm text-accent hover:text-accent-bright transition-colors"
+            className="inline-flex items-center min-h-11 md:min-h-9 mt-4 text-sm text-accent hover:text-accent-bright transition-colors"
           >
             Apri su CardTrader ↗
           </a>
