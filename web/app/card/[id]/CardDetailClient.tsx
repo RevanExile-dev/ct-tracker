@@ -418,7 +418,7 @@ function CardDetailContent() {
                   : "nessuna offerta rilevata"}
               </div>
             </div>
-            <div className="rounded-card border border-base-border bg-base-surface p-4">
+            <div className="self-start rounded-card border border-base-border bg-base-surface p-4" data-testid="listings-tile">
               <div className="text-xs font-mono text-ink-faint uppercase">Inserzioni attive</div>
               <div className="font-display text-2xl font-bold text-ink-primary mt-1">
                 {card.latest_listings ?? "—"}

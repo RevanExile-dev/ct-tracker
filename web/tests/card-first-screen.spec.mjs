@@ -42,6 +42,10 @@ for (const { name, device } of phones) {
       });
       expect(priceTop).not.toBeNull();
       expect(priceTop).toBeLessThanOrEqual(vh); // il prezzo comincia nel primo schermo
+      // La tessera "Inserzioni attive" non si allunga a tutta l'altezza della
+      // tessera del prezzo (in produzione era ~190 px con ~55 px di contenuto).
+      const tileH = await page.getByTestId("listings-tile").evaluate((e) => Math.round(e.getBoundingClientRect().height));
+      expect(tileH).toBeLessThanOrEqual(110);
       const ov = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
       expect(ov.sw).toBeLessThanOrEqual(ov.cw);
 
