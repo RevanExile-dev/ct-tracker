@@ -662,7 +662,7 @@ export function detectOnUniformBackground(
       if (y > 0 && mask[p - width] && !visited[p - width]) { visited[p - width] = 1; stack.push(p - width); }
       if (y < height - 1 && mask[p + width] && !visited[p + width]) { visited[p + width] = 1; stack.push(p + width); }
     }
-    const blobQuad = touchesRing ? null : orientedCardRect(rowMin, rowMax, minY, maxY, count);
+    const blobQuad = touchesRing || count < totalArea * 0.01 ? null : orientedCardRect(rowMin, rowMax, minY, maxY, count);
     for (let y = minY; y <= maxY; y += 1) {
       rowMin[y] = width;
       rowMax[y] = -1;

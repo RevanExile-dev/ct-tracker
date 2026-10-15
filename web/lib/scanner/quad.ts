@@ -233,7 +233,7 @@ function refineQuad(
   height: number,
 ): [Point, Point, Point, Point] {
   let current = corners;
-  for (const window of [4, 2.5]) {
+  for (const reach of [4, 2.5]) {
     const lines: Side[] = [];
     for (let i = 0; i < 4; i += 1) {
       const p = current[i];
@@ -244,10 +244,10 @@ function refineQuad(
       const length = Math.hypot(dx, dy) || 1;
       const ux = dx / length;
       const uy = dy / length;
-      const x0 = Math.max(1, Math.floor(Math.min(p[0], q[0]) - window - 1));
-      const x1 = Math.min(width - 2, Math.ceil(Math.max(p[0], q[0]) + window + 1));
-      const y0 = Math.max(1, Math.floor(Math.min(p[1], q[1]) - window - 1));
-      const y1 = Math.min(height - 2, Math.ceil(Math.max(p[1], q[1]) + window + 1));
+      const x0 = Math.max(1, Math.floor(Math.min(p[0], q[0]) - reach - 1));
+      const x1 = Math.min(width - 2, Math.ceil(Math.max(p[0], q[0]) + reach + 1));
+      const y0 = Math.max(1, Math.floor(Math.min(p[1], q[1]) - reach - 1));
+      const y1 = Math.min(height - 2, Math.ceil(Math.max(p[1], q[1]) + reach + 1));
       let sw = 0;
       let sx = 0;
       let sy = 0;
@@ -260,7 +260,7 @@ function refineQuad(
           const m = mag[y * width + x];
           if (m < threshold * 0.6) continue;
           const dist = line.a * x + line.b * y - line.c;
-          if (Math.abs(dist) > window) continue;
+          if (Math.abs(dist) > reach) continue;
           const t = ((x - p[0]) * ux + (y - p[1]) * uy) / length;
           // Solo la parte centrale: gli angoli della carta sono arrotondati.
           if (t < 0.1 || t > 0.9) continue;
