@@ -31,4 +31,9 @@ test("desideri vuota: nessun totale", async ({ page }) => {
   await page.goto(`${BASE_URL}/wishlist`);
   await expect(page.locator("body")).toContainText("La lista desideri è vuota", { timeout: 20_000 });
   await expect(page.getByTestId("wishlist-total")).toHaveCount(0);
+  // Lista vuota: un tasto (44 px) porta al catalogo, dove c'e' il cuore sulle carte.
+  const cta = page.getByRole("link", { name: "Cerca una carta nel catalogo" });
+  expect((await cta.boundingBox()).height).toBeGreaterThanOrEqual(43);
+  await cta.tap();
+  await expect(page).toHaveURL(`${BASE_URL}/`);
 });

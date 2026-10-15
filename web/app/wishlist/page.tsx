@@ -175,7 +175,16 @@ function WishlistContent() {
 
       {sorted && sorted.length === 0 && (
         <div className="mt-16 text-center text-ink-muted">
-          La lista desideri è vuota. Apri una carta e tocca &quot;♡ aggiungi ai desideri&quot;.
+          <p>
+            La lista desideri è vuota. Nel catalogo tocca il cuore <span aria-hidden>♡</span> su una carta:
+            la trovi qui, con il prezzo che segue giorno per giorno.
+          </p>
+          <Link
+            href="/"
+            className="btn-lift mt-5 inline-flex items-center min-h-11 px-4 text-sm rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 transition-colors"
+          >
+            Cerca una carta nel catalogo
+          </Link>
         </div>
       )}
 
