@@ -145,10 +145,9 @@ export default function SiteHeader({
           {!onMovers && (
             <Link
               href="/movers"
-              aria-label="Carte in movimento"
               className="btn-lift whitespace-nowrap text-sm px-3 sm:px-4 min-h-11 inline-flex items-center rounded-card border border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors active:scale-95"
             >
-              📈{" "}<span className="sm:hidden">Movimenti</span><span className="hidden sm:inline">Carte in movimento</span>
+              <span aria-hidden>📈</span>{" "}<span className="sm:hidden">Movimenti</span><span className="hidden sm:inline">Carte in movimento</span>
             </Link>
           )}
           {!onBinder && (
