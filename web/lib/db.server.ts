@@ -38,10 +38,27 @@ class Params {
   }
 }
 
+// "Full art" = rarita' da carta illustrata a tutta carta (Ultra/Secret/
+// Illustration/Special Illustration Rare, Shiny Ultra Rare - incluse le
+// varianti con refuso che CardTrader ha in catalogo) E numero di collezione
+// oltre il totale del set ("168/167"): le stampe regolari stanno sempre
+// dentro il totale, le carte speciali fuori. Servono tutte e due: la sola
+// rarita' prende anche le ex normali (Ultra Rare "094/159"), il solo numero
+// anche le promo. Sostituisce il vecchio flag b.is_premium, calcolato in sync
+// da parole sul nome: "sir" trovava Pin-SIR, "promo"/"vstar" le carte
+// normali, e i set nuovi (nomi senza parole chiave) non risultavano mai.
+// Numero assente o illeggibile -> non full art (meglio una carta in meno che
+// una sbagliata). Le cifre sono limitate per non far fallire il cast a int.
+const FULL_ART_SQL = `(
+  b.rarity IN ('Ultra Rare', 'Secret Rare', 'Illustration Rare', 'Special Illustration Rare',
+               'Special Illustraion Rare', 'Special Illustration', 'Shiny Ultra Rare')
+  AND substring(b.version from '(\\d{1,6})/\\d{1,6}')::int > substring(b.version from '\\d{1,6}/(\\d{1,6})')::int
+)`;
+
 function cardRowSelect(): string {
   return `
   b.id, b.name, b.version, b.expansion_code, b.expansion_name,
-  b.image_url, b.rarity, b.is_premium,
+  b.image_url, b.rarity, CASE WHEN ${FULL_ART_SQL} THEN 1 ELSE 0 END AS is_premium,
   lp.min_price_cents AS latest_price_cents,
   lp.min_price_currency AS latest_price_currency,
   lp.listings_count AS latest_listings,
@@ -248,7 +265,7 @@ function buildCardsFilter(opts: CardsFilterOpts, p: Params, norm: boolean, expan
     where.push(`b.artist = ANY(${p.add(opts.artists)})`);
   }
   if (opts.onlyPremium) {
-    where.push("b.is_premium = 1");
+    where.push(FULL_ART_SQL);
   }
   if (opts.ids) {
     // Array vuoto (es. binder/wishlist senza ancora nessuna carta salvata):
@@ -393,6 +410,9 @@ export async function fetchCards(opts: CardsFilterOpts & {
     const rank = buildSearchRank(opts.search, p, norm);
     if (rank) orderBy = `${rank}, ${orderBy}`;
   }
+  // Righe "ultime uscite" della home: espansione piu' recente prima, dentro
+  // ogni espansione la carta piu' cara prima (non l'ordine alfabetico).
+  if (opts.sortBy === "expansion_price") orderBy = `b.expansion_id DESC, ${priceExpr} IS NULL, ${priceExpr} DESC`;
   if (opts.sortBy === "price_asc") orderBy = `${priceExpr} IS NULL, ${priceExpr} ASC`;
   if (opts.sortBy === "price_desc") {
     // Prezzi >= 1.000 € sostenuti da UNA sola inserzione sono quasi sempre

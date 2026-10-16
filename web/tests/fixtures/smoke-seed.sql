@@ -222,3 +222,26 @@ INSERT INTO price_listings (blueprint_id, captured_at, price_cents, price_curren
   (950001, CURRENT_DATE, 1100, 'EUR', 'Near Mint', 'en', 1, 'zero-us', 1, 'US'),
   (950001, CURRENT_DATE, 1500, 'EUR', 'Near Mint', 'fr', 1, 'zero-fr', 1, 'FR'),
   (950002, CURRENT_DATE, 500, 'EUR', 'Near Mint', 'it', 1, 'solo-zero', 1, 'IT');
+
+-- Riga "Ultime uscite, full art" della home (tests/home-full-art.spec.mjs):
+-- il vecchio flag is_premium (parole sul nome) segnava "Pinsir" per colpa di
+-- "sir"; il criterio vero e' rarita' speciale + numero oltre il totale del set.
+-- Set con id piu' alto di tutti: e' il "piu' recente". Nomi con prefisso
+-- "FA " per non toccare i test che cercano le altre carte.
+INSERT INTO expansions (id, game_id, code, name) VALUES (900002, 1, 'fatest', 'Prova Illustrata') ON CONFLICT (id) DO NOTHING;
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, image_url, rarity, is_premium) VALUES
+  (960001, 'FA Pinsir', '3/131', 1, 73, 900002, 'fatest', 'Prova Illustrata', 'https://cardtrader.com/uploads/blueprints/image/900000/fa-1.jpg', 'Common', 1),
+  (960002, 'FA Vera Illustration', 'Illustration Rare | 168/167', 1, 73, 900002, 'fatest', 'Prova Illustrata', 'https://cardtrader.com/uploads/blueprints/image/900000/fa-2.jpg', 'Illustration Rare', 0),
+  (960003, 'FA Ex Regolare', 'Ultra Rare | 094/159', 1, 73, 900002, 'fatest', 'Prova Illustrata', 'https://cardtrader.com/uploads/blueprints/image/900000/fa-3.jpg', 'Ultra Rare', 1),
+  (960004, 'FA Senza Prezzo IT', 'Special Illustration Rare | 120/100', 1, 73, 900002, 'fatest', 'Prova Illustrata', 'https://cardtrader.com/uploads/blueprints/image/900000/fa-4.jpg', 'Special Illustration Rare', 0),
+  (960005, 'FA Promo Fuori Numero', '120/100', 1, 73, 900002, 'fatest', 'Prova Illustrata', 'https://cardtrader.com/uploads/blueprints/image/900000/fa-5.jpg', 'Promo', 1),
+  (960006, 'FA Secret Cara', 'Secret Rare | 110/100', 1, 73, 900002, 'fatest', 'Prova Illustrata', 'https://cardtrader.com/uploads/blueprints/image/900000/fa-6.jpg', 'Secret Rare', 0)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, best_price_cents, best_price_currency, it_nm_zero_price_cents, it_nm_zero_price_currency, it_nm_zero_listings_count) VALUES
+  (960001, CURRENT_DATE, now(), 11, 'EUR', 3, 11, 'EUR', 11, 'EUR', 3),
+  (960002, CURRENT_DATE, now(), 521, 'EUR', 3, 521, 'EUR', 521, 'EUR', 3),
+  (960003, CURRENT_DATE, now(), 33, 'EUR', 3, 33, 'EUR', 33, 'EUR', 3),
+  (960004, CURRENT_DATE, now(), 1896, 'EUR', 3, 1896, 'EUR', NULL, NULL, 0),
+  (960005, CURRENT_DATE, now(), 99, 'EUR', 3, 99, 'EUR', 99, 'EUR', 3),
+  (960006, CURRENT_DATE, now(), 4000, 'EUR', 3, 4000, 'EUR', 4000, 'EUR', 3)
+ON CONFLICT (blueprint_id) DO NOTHING;

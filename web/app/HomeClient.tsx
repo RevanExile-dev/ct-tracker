@@ -13,7 +13,7 @@ import { priceBandByKey, priceBandRange } from "@/lib/priceBands";
 import { splitCsv } from "@/lib/queryParams";
 import { useBinderWishlistIds } from "@/lib/useBinderWishlistIds";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
-import { useHideOnScrollDown } from "@/lib/useHideOnScrollDown";
+import { useFiltersBarOpen } from "@/lib/useFiltersBarOpen";
 import { useProgressiveCount } from "@/lib/useProgressiveCount";
 import { useWishlistAlertPrompt } from "@/lib/useWishlistAlertPrompt";
 import { useBinderPurchasePrompt } from "@/lib/useBinderPurchasePrompt";
@@ -111,21 +111,14 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
   const filterKey = [debouncedSearch, expansionCode, selectedRarities.join(","), selectedArtists.join(","), selectedLanguages.join(","), selectedConditions.join(","), onlyZero, exactName, priceBand, sortBy].join("|");
   const previousFilterKey = useRef(filterKey);
 
-  // Barra filtri sticky: si nasconde scrollando verso il basso (piu' spazio
-  // per vedere le carte, richiesto esplicitamente dall'utente - "quando
-  // scrollo in basso il filtro scompaia"), torna scrollando verso l'alto.
-  // Anche una maniglia manuale (sotto) puo' aprirla/chiuderla in qualunque
-  // momento, indipendentemente dallo scroll.
+  // Barra ricerca/filtri: si apre e si chiude SOLO con il tasto qui sotto
+  // (stato ricordato sul dispositivo). Prima si nascondeva da sola scorrendo
+  // in basso e si riapriva scorrendo in alto: chi la chiudeva a mano e poi
+  // tornava su veloce se la ritrovava riaperta (segnalato da Cri il
+  // 16/10/2026). Nessun comportamento legato allo scroll, su nessun
+  // dispositivo.
   const toolbarWrapRef = useRef<HTMLDivElement>(null);
-  // Stato applicativo "e' aperto un pannello filtro", non desunto dal
-  // focus DOM: il pannello mobile e' in portale fuori da toolbarWrapRef e
-  // Safari (desktop/iOS) non da' focus a un <button> al click/tap - il
-  // solo controllo di focus in useHideOnScrollDown mancava entrambi i
-  // casi, comprimendo la barra (e il popover ancorato a essa) mentre un
-  // filtro era ancora visibilmente aperto (bug reale segnalato su iOS e
-  // desktop, riprodotto con uno scroll reale a filtro aperto).
-  const [anyFilterOpen, setAnyFilterOpen] = useState(false);
-  const [toolbarVisible, setToolbarVisible] = useHideOnScrollDown(toolbarWrapRef, undefined, undefined, anyFilterOpen);
+  const [toolbarVisible, setToolbarVisible, toolbarReady] = useFiltersBarOpen();
 
   // Hero 3D decorativo, stesso flag ?three=1 e stessa disciplina di
   // ThreeCardHero (card/[id]/page.tsx, PR #6): "off" per default, passa a
@@ -366,26 +359,15 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
 
       <div ref={toolbarWrapRef} data-testid="toolbar-collapse" className="sticky top-0 z-20 -mx-5 sm:-mx-8 px-5 sm:px-8 bg-base-bg/85 backdrop-blur-sm">
         <div
-          className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+          className={`grid ${toolbarReady ? "transition-[grid-template-rows] duration-300 ease-out" : ""} ${
             toolbarVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
           }`}
         >
-          {/* overflow-hidden SOLO mentre la barra e' compressa o si sta
-              comprimendo (necessario perche' grid-template-rows a 0fr
-              collassi visivamente) - overflow-visible a barra aperta,
-              altrimenti questo stesso contenitore taglia il popover
-              desktop di FilterDropdown (position:absolute, si estende
-              sotto l'altezza naturale della barra) ogni volta che un
-              pannello filtro e' aperto, anche a barra pienamente visibile
-              (bug reale segnalato dall'utente: "i filtri sono nascosti
-              sotto" su desktop - su mobile FilterDropdown non ne soffre
-              perche' il suo pannello e' in portale su document.body,
-              fuori da questo contenitore). Sicuro cambiare la classe in
-              sincrono con toolbarVisible: un filtro aperto forza sempre
-              toolbarVisible a true PRIMA che l'utente possa vedere un
-              pannello (vedi keepVisible in useHideOnScrollDown), quindi
-              overflow-visible e' gia' attivo in quell'istante. */}
-          <div className={toolbarVisible ? "overflow-visible" : "overflow-hidden"}>
+          {/* overflow-visible a barra aperta: il popover desktop di
+              FilterDropdown (position:absolute) si estende sotto l'altezza
+              della barra e altrimenti verrebbe tagliato. Chiusa, la barra e'
+              compressa a 0 e va tagliata (overflow-hidden). */}
+          <div className={toolbarVisible ? "overflow-visible" : "overflow-hidden"} inert={!toolbarVisible}>
             <div className="py-3">
               <Toolbar
                 search={search}
@@ -417,34 +399,32 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
                 onResetAll={resetAllFilters}
                 onApplyPreset={applyPreset}
                 resultCount={resultCount}
-                onAnyFilterOpenChange={setAnyFilterOpen}
               />
             </div>
           </div>
         </div>
-        {/* Maniglia sempre visibile (fuori dal blocco che si comprime) per
-            riaprire/richiudere a mano, indipendentemente dallo scroll -
-            richiesto esplicitamente: "una tendina a scomparsa che lo fa
-            estendere o nascondere". */}
-        <button
-          type="button"
-          onClick={() => setToolbarVisible((v) => !v)}
-          aria-expanded={toolbarVisible}
-          aria-label={toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
-          className="tap-44 w-full min-h-9 sm:min-h-10 flex items-center justify-center gap-2 text-ink-faint hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 rounded"
-        >
-          <span
-            aria-hidden
-            className={`text-[10px] transition-transform duration-300 ${toolbarVisible ? "" : "rotate-180"}`}
+        {/* Tasto sempre visibile, con etichetta scritta (su ogni schermo), per
+            aprire/chiudere a mano. Chiusa, ricorda se ci sono filtri attivi. */}
+        <div className="flex justify-center pb-2">
+          <button
+            type="button"
+            onClick={() => setToolbarVisible((v) => !v)}
+            aria-expanded={toolbarVisible}
+            data-testid="filters-toggle"
+            className="tap-44 inline-flex items-center justify-center gap-2 min-h-11 rounded-full border border-base-border bg-base-surface px-4 text-xs text-ink-muted hover:text-ink-primary hover:border-accent/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
           >
-            ▲
-          </span>
-          {/* Su telefono la freccia da sola sembrava un pannello vuoto: serve
-              un'etichetta. Il nome accessibile (aria-label) ripete lo stesso testo: WCAG 2.5.3. */}
-          <span aria-hidden className="sm:hidden text-xs">
-            {toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}
-          </span>
-        </button>
+            <span
+              aria-hidden
+              className={`text-[10px] transition-transform duration-300 ${toolbarVisible ? "" : "rotate-180"}`}
+            >
+              ▲
+            </span>
+            <span>{toolbarVisible ? "Nascondi ricerca e filtri" : "Mostra ricerca e filtri"}</span>
+            {!toolbarVisible && hasActiveFilters && (
+              <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] text-accent-bright">filtri attivi</span>
+            )}
+          </button>
+        </div>
       </div>
 
       <HomeHighlights
