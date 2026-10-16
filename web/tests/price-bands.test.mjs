@@ -16,8 +16,9 @@ function load(file, context = {}) {
 test('PRICE_BANDS ha 5 fasce con le chiavi previste, nell’ordine corretto', () => {
   const { PRICE_BANDS } = load('../lib/priceBands.ts');
   assert.equal(PRICE_BANDS.length, 5);
+  // Gli array creati dentro vm hanno un prototipo diverso: li confronto come JSON.
   assert.deepEqual(
-    PRICE_BANDS.map((band) => band.key),
+    JSON.parse(JSON.stringify(PRICE_BANDS.map((band) => band.key))),
     ['0-1', '1-5', '5-20', '20-100', '100-'],
   );
 });
