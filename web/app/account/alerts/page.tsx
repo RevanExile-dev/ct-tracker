@@ -169,8 +169,10 @@ export default function PriceAlertsPage() {
     setFireMode("once"); setRearmCooldownHours("24");
   }
 
+  // Le richieste partono subito, in parallelo alla verifica della sessione
+  // (da sola e' una richiesta al database): senza accesso rispondono 401 e la
+  // pagina mostra comunque l'invito ad accedere (ramo !session sotto).
   useEffect(() => {
-    if (!session) return;
     let cancelled = false;
     fetch("/api/account/alerts")
       .then(async (res) => {
@@ -180,17 +182,16 @@ export default function PriceAlertsPage() {
       .then((data: PriceAlert[]) => { if (!cancelled) setAlerts(data); })
       .catch(() => { if (!cancelled) setError("Non riesco a caricare gli allarmi. Riprova tra poco."); });
     return () => { cancelled = true; };
-  }, [session]);
+  }, []);
 
   useEffect(() => {
-    if (!session) return;
     let cancelled = false;
     fetch("/api/account/telegram")
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { linked?: boolean } | null) => { if (!cancelled && data) setTelegramLinked(Boolean(data.linked)); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [session]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

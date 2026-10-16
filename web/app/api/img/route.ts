@@ -3,8 +3,9 @@
  * `preview_` da 180 px (nitido su schermi 1x) e quello intero da 734 px
  * (~150 KB); sui telefoni (DPR 2-3) il browser sceglie sempre l'intero, anche
  * se una tile ne usa 360-540. Qui riduciamo l'intero a 360 o 540 px in WebP
- * (15-30 KB): la risposta e' immutabile, quindi la CDN la tiene e la funzione
- * gira una volta sola per immagine e larghezza.
+ * qualita' 82 (46-86 KB contro i ~165 KB dell'originale); per le tile che
+ * ne chiedono di piu' resta l'originale. La risposta e' immutabile, quindi la
+ * CDN la tiene e la funzione gira una volta sola per immagine e larghezza.
  */
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
     if (!upstream.ok || declared > MAX_SOURCE_BYTES) throw new Error("origine non disponibile");
     const buffer = Buffer.from(await upstream.arrayBuffer());
     if (buffer.length > MAX_SOURCE_BYTES) throw new Error("origine troppo grande");
-    const body = await sharp(buffer).resize({ width, withoutEnlargement: true }).webp({ quality: 70 }).toBuffer();
+    const body = await sharp(buffer).resize({ width, withoutEnlargement: true }).webp({ quality: 82, smartSubsample: true }).toBuffer();
     return new Response(new Uint8Array(body), {
       headers: {
         "Content-Type": "image/webp",
