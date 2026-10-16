@@ -1,0 +1,83 @@
+name: Controllo immagini sito in produzione
+
+# Browser vero (Chromium) su home, scheda, movers e binder, su PC e telefono
+# emulato, da browser pulito e con lo stato di un visitatore vecchio: conta le
+# immagini rotte e misura i tempi (vedi scripts/site_images_check.mjs).
+# Frequenza bassa per risparmiare minuti Actions: una volta al giorno e dopo
+# ogni deploy di produzione riuscito (~2-3 min per esecuzione).
+on:
+  schedule:
+    - cron: "41 7 * * *"
+  # Vercel segnala i deploy a GitHub come "deployment_status".
+  deployment_status: {}
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: "URL da controllare (vuoto = produzione)"
+        required: false
+        default: ""
+      simulate_broken:
+        description: "Prova del controllo: rompe ~1 immagine su 3 nel browser di prova (non tocca il sito)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-images-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # Per deployment_status solo i deploy di produzione andati a buon fine.
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/site_images_check.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Installa Playwright (solo Chromium, senza toccare il sito)
+        working-directory: scripts
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Dopo un deploy aspetta che l'alias di produzione sia attivo
+        if: github.event_name == 'deployment_status'
+        run: sleep 20
+
+      - name: Controlla immagini e tempi
+        id: check
+        working-directory: scripts
+        env:
+          SITE_URL: ${{ github.event.inputs.site_url }}
+          SIMULATE_BROKEN: ${{ github.event.inputs.simulate_broken == 'true' && '1' || '' }}
+          FAIL_REPORT: ${{ runner.temp }}/images_fail.txt
+        run: |
+          [ -n "$SITE_URL" ] || unset SITE_URL
+          node site_images_check.mjs
+
+      - name: Avvisa su Telegram
+        if: failure() && steps.check.outcome == 'failure'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            detail="$(head -c 1500 "$RUNNER_TEMP/images_fail.txt" 2>/dev/null || true)"
+            curl -sS -o /dev/null "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=CartaViva: controllo immagini FALLITO. ${detail} ${RUN_URL}" || true
+          fi
