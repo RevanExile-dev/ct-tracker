@@ -33,13 +33,12 @@ export default function DeleteAccountPage() {
   }
 
   return (
-    <div className="min-h-screen bg-base-bg">
-      <SiteHeader />
-      <main className="max-w-xl mx-auto px-4 py-8">
-        <Link href="/" className="text-sm text-ink-muted hover:text-accent-bright inline-flex items-center min-h-11">
-          ← Torna al catalogo
-        </Link>
-        <h1 className="text-2xl font-semibold text-ink-primary mt-2 mb-4">Elimina account</h1>
+    <main className="mx-auto w-full max-w-2xl px-4 sm:px-8 py-8 sm:py-10">
+      <SiteHeader compact />
+      <Link href="/" className="text-sm text-ink-muted hover:text-accent-bright inline-flex items-center min-h-11">
+        ← Torna al catalogo
+      </Link>
+      <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink-primary mt-2 mb-4">Elimina account</h1>
 
         {status === "loading" ? (
           <p className="text-ink-muted">Caricamento…</p>
@@ -68,7 +67,7 @@ export default function DeleteAccountPage() {
               onChange={(e) => setTyped(e.target.value)}
               autoComplete="off"
               autoCapitalize="characters"
-              className="w-full min-h-11 px-3 rounded-card border border-base-border bg-base-bg text-ink-primary"
+              className="w-full min-h-11 px-3 rounded-card border border-base-border bg-base-bg text-ink-primary text-base"
             />
             {error && <p role="alert" className="text-sm text-signal-down">{error}</p>}
             <div className="flex flex-wrap gap-3">
@@ -86,7 +85,6 @@ export default function DeleteAccountPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+    </main>
   );
 }
