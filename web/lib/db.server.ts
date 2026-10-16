@@ -556,7 +556,9 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
 
   if (opts.rarities && opts.rarities.length > 0) {
     const rarityFilters = expandRarityFilters(opts.rarities);
-    where.push(`b.rarity = ANY(${p.add(rarityFilters)})`);
+    // Semi-join invece di b.rarity: cosi' i filtri (e l'ordinamento) girano
+    // sulla sola latest_prices, senza un lookup su blueprints per ogni riga.
+    where.push(`lp.blueprint_id IN (SELECT id FROM blueprints WHERE rarity = ANY(${p.add(rarityFilters)}))`);
   }
   if (opts.minDeltaCents != null && opts.minDeltaCents > 0) {
     where.push(
@@ -594,11 +596,6 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
   }
 
   const whereSql = `WHERE ${where.join(" AND ")}`;
-  const countRes = await pool.query(
-    `SELECT COUNT(*) AS c FROM blueprints b LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id ${whereSql}`,
-    p.values,
-  );
-  const totalCount = Number(countRes.rows[0].c);
 
   const deltaExpr =
     "(CAST(lp.it_nm_zero_price_cents AS REAL) - lp.prev_it_nm_zero_price_cents) / lp.prev_it_nm_zero_price_cents";
@@ -611,19 +608,41 @@ export async function fetchMoversPage(opts: MoversPageOpts): Promise<MoversPageR
   const limitPh = p.add(MOVERS_PAGE_SIZE);
   const offsetPh = p.add(offset);
 
-  const { rows } = await pool.query(
-    `
+  // latest_prices ha una riga per carta (PK = blueprint_id, FK su blueprints):
+  // contare e ordinare solo li' da' gli stessi risultati di un join con
+  // blueprints, ma senza un lookup per ognuna delle migliaia di righe che
+  // passano il filtro. Il join con blueprints avviene solo sulle 12 righe
+  // della pagina. Conteggio e pagina partono insieme (due connessioni).
+  const countValues = p.values.slice(0, p.values.length - 2);
+  const [countRes, pageRes] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS c FROM latest_prices lp ${whereSql}`, countValues),
+    pool.query(
+      `
     SELECT ${cardRowSelect()}
-    FROM blueprints b
-    LEFT JOIN latest_prices lp ON lp.blueprint_id = b.id
-    ${whereSql}
-    ORDER BY ${sortExpr} ${orderDirection}
-    LIMIT ${limitPh} OFFSET ${offsetPh}
+    FROM (
+      SELECT lp.*, ${sortExpr} AS sort_key
+      FROM latest_prices lp
+      ${whereSql}
+      ORDER BY ${sortExpr} ${orderDirection}, lp.blueprint_id
+      LIMIT ${limitPh} OFFSET ${offsetPh}
+    ) lp
+    JOIN blueprints b ON b.id = lp.blueprint_id
+    ORDER BY lp.sort_key ${orderDirection}, lp.blueprint_id
     `,
-    p.values,
-  );
+      p.values,
+    ),
+  ]);
+  const totalCount = Number(countRes.rows[0].c);
+  const rows = pageRes.rows;
 
-  return { cards: rows.map(mapCardRow), totalCount, available: true };
+  return {
+    cards: rows.map((r: CardRow & { sort_key?: unknown }) => {
+      delete r.sort_key;
+      return mapCardRow(r);
+    }),
+    totalCount,
+    available: true,
+  };
 }
 
 export async function fetchCardDetail(id: number): Promise<CardDetail | null> {
