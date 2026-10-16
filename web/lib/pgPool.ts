@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { withConnectRetry } from "@/lib/pgRetry";
 
 // Un solo pool condiviso per l'intero processo serverless (non uno per
 // richiesta): pg.Pool gestisce gia' da solo il riutilizzo/chiusura delle
@@ -28,7 +29,18 @@ export function getPgPool(): Pool {
         "POSTGRES_URL non impostata: collega un database Postgres al progetto Vercel (Storage -> Create Database) prima di usare il login."
       );
     }
-    globalForPg.pgPool = new Pool({ connectionString });
+    // Senza connectionTimeoutMillis una connessione a un database che dorme o
+    // non risponde resta appesa fino al timeout di rete (~30 s, pagina
+    // bianca). 8 s bastano a un risveglio normale di Neon; se la connessione
+    // fallisce comunque, pool.query la ripete una sola volta (vedi pgRetry).
+    const pool = new Pool({ connectionString, connectionTimeoutMillis: 8000 });
+    const query = pool.query.bind(pool) as (...args: unknown[]) => Promise<unknown>;
+    pool.query = ((...args: unknown[]) => {
+      // Forma con callback: nessun retry (non usata nel codice).
+      if (typeof args[args.length - 1] === "function") return query(...args);
+      return withConnectRetry(() => query(...args));
+    }) as typeof pool.query;
+    globalForPg.pgPool = pool;
   }
   return globalForPg.pgPool;
 }
