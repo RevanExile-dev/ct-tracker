@@ -209,6 +209,14 @@ export default function ScannerStudio() {
     warmUpOcr();
   }, []);
 
+  // Chi apre /scan lo fa per scansionare: catalogo e motori OCR si preparano
+  // subito, non solo al tocco su "Carica una foto" (spesso la foto e' gia'
+  // scelta prima che l'avvio dei motori sia finito).
+  useEffect(() => {
+    const timer = window.setTimeout(warmUp, 800);
+    return () => window.clearTimeout(timer);
+  }, [warmUp]);
+
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
