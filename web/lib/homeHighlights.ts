@@ -5,11 +5,13 @@ import type { CardRow, SortOption } from "@/lib/types";
  * di fetchCards. */
 export const HIGHLIGHT_ROW_LIMIT = 10;
 export type HighlightRowKey = "trending" | "it-premium" | "new-premium";
-type RowOpts = { sortBy: SortOption; limit: number; onlyPremium?: boolean; languages?: string[] };
+type RowOpts = { sortBy: SortOption; limit: number; onlyPremium?: boolean; languages?: string[]; minPriceCents?: number };
 export const HIGHLIGHT_ROWS: { key: HighlightRowKey; opts: RowOpts }[] = [
   { key: "trending", opts: { sortBy: "rise_first", limit: HIGHLIGHT_ROW_LIMIT } },
   { key: "it-premium", opts: { onlyPremium: true, languages: ["it"], sortBy: "price_desc", limit: HIGHLIGHT_ROW_LIMIT } },
-  { key: "new-premium", opts: { onlyPremium: true, sortBy: "expansion", limit: HIGHLIGHT_ROW_LIMIT } },
+  // minPriceCents: 1 = solo carte con il prezzo che la tile mostra (IT NM Zero):
+  // i set giapponesi recenti non ne hanno e finivano in riga come "-".
+  { key: "new-premium", opts: { onlyPremium: true, minPriceCents: 1, sortBy: "expansion_price", limit: HIGHLIGHT_ROW_LIMIT } },
 ];
 
 /** Carte delle righe gia' lette dal server (assente = il client le chiede). */
