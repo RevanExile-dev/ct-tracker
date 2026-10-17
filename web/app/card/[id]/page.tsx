@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { cache } from "react";
 import { preload } from "react-dom";
-import { fetchCardDetail } from "@/lib/db.server";
+import { fetchBestListings, fetchCardDetail, fetchPriceHistory } from "@/lib/db.server";
+import type { Listing, PricePoint } from "@/lib/types";
 import { cardImageSources } from "@/lib/cardImage";
 import { formatCents } from "@/lib/format";
-import CardDetailClient from "./CardDetailClient";
+import CardDetailClient, { type CardDetailInitialData } from "./CardDetailClient";
 
 // Una sola lettura per richiesta: la usano sia i metadati sia la pagina.
 const getCard = cache((cardId: number) => fetchCardDetail(cardId));
@@ -59,13 +60,32 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const cardId = Number(id);
   let initialCard;
+  let initialData: CardDetailInitialData | undefined;
   if (Number.isSafeInteger(cardId) && cardId > 0) {
+    // Avvia le tre letture insieme, ma aspetta SOLO la carta: uno storico
+    // lungo/lento non deve ritardare l'HTML e il preload dell'immagine.
+    // I dati gia' pronti entrano nel primo render; le altre Promise sono
+    // serializzate da React nello stream RSC e consumate dal client.
+    const cardRequest = getCard(cardId);
+    let history: PricePoint[] | undefined;
+    let listings: Listing[] | undefined;
+    const historyRequest = fetchPriceHistory(cardId)
+      .then((value) => { history = value; return value; }).catch(() => undefined);
+    const listingsRequest = fetchBestListings(cardId)
+      .then((value) => { listings = value; return value; }).catch(() => undefined);
     try {
-      initialCard = (await getCard(cardId)) ?? undefined;
+      initialCard = (await cardRequest) ?? undefined;
     } catch {
       initialCard = undefined;
     }
+    // Snapshot immutabile: non modificare le props dopo averle consegnate
+    // a React. undefined = lettura fallita/pendente, [] = successo vuoto.
+    initialData = {
+      id: cardId, history, listings,
+      historyRequest: history === undefined ? historyRequest : undefined,
+      listingsRequest: listings === undefined ? listingsRequest : undefined,
+    };
   }
   if (initialCard?.image_url) preload(cardImageSources(initialCard.image_url).src, { as: "image", fetchPriority: "high" });
-  return <CardDetailClient initialCard={initialCard} />;
+  return <CardDetailClient initialCard={initialCard} initialData={initialData} />;
 }

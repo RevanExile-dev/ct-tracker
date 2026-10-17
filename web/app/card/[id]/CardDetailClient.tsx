@@ -34,7 +34,17 @@ import { formatPriceAge } from "@/lib/moversPeriods";
 // del client finche' non serve davvero.
 const ThreeCardHero = dynamic(() => import("@/components/ThreeCardHero"), { ssr: false });
 
-function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
+export type CardDetailInitialData = {
+  id: number;
+  history?: PricePoint[];
+  listings?: Listing[];
+  historyRequest?: Promise<PricePoint[] | undefined>;
+  listingsRequest?: Promise<Listing[] | undefined>;
+};
+
+type CardDetailProps = { initialCard?: CardDetail; initialData?: CardDetailInitialData };
+
+function CardDetailContent({ initialCard, initialData }: CardDetailProps) {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const id = Number(params.id);
@@ -43,17 +53,16 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
     ? requestedReturn
     : "/";
 
-  // Scheda gia' letta dal server (stessa carta della route): serve per il primo
-  // disegno, senza aspettare le API. Il client la rilegge comunque (risposta in
-  // cache CDN) e quella piu' recente, o l'errore di rete, ha la precedenza.
+  // Il contenuto e' isolato per id dal wrapper: anche null (non trovata)
+  // deve prevalere sulla scheda iniziale dopo una richiesta esplicita.
   const [fetchedCard, setCard] = useState<CardDetail | null | undefined>(undefined);
-  const card = fetchedCard?.id === id || initialCard?.id !== id ? fetchedCard : initialCard;
+  const card = fetchedCard !== undefined ? fetchedCard : initialCard;
   // Errore di rete/server: diverso da "carta inesistente" (card === null).
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [history, setHistory] = useState<PricePoint[]>([]);
-  const [listings, setListings] = useState<Listing[]>([]);
+  const [history, setHistory] = useState<PricePoint[]>(initialData?.history ?? []);
+  const [listings, setListings] = useState<Listing[]>(initialData?.listings ?? []);
   const { data: session } = useSession();
   const { promptWishlistToggle, overlay: wishlistPromptOverlay } = useWishlistAlertPrompt();
   const { promptBinderToggle, overlay: binderPromptOverlay } = useBinderPurchasePrompt();
@@ -93,21 +102,45 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch((e) => { if (!cancelled) setLoadError(String(e?.message ?? e)); });
-    fetchPriceHistory(id).then((value) => { if (!cancelled) setHistory(value); }).catch(() => {});
-    fetchBestListings(id).then((value) => { if (!cancelled) setListings(value); }).catch(() => {});
+    const retry = reloadTick > 0;
+    if (!initialCard || retry) {
+      fetchCardDetail(id).then((value) => { if (!cancelled) setCard(value); }).catch((e) => { if (!cancelled) setLoadError(String(e?.message ?? e)); });
+    }
+    // Le Promise partono sul server senza bloccare prezzo/immagine. Riusa
+    // anche un risultato vuoto; solo undefined/errore torna alle API.
+    // Riprova ignora i dati iniziali e rilegge tutte e tre le risorse.
+    async function loadHistory() {
+      let value = retry ? undefined : initialData?.history;
+      if (!retry && value === undefined) {
+        try { value = await initialData?.historyRequest; } catch { /* fallback API */ }
+      }
+      if (cancelled) return;
+      value ??= await fetchPriceHistory(id);
+      if (!cancelled) setHistory(value);
+    }
+    async function loadListings() {
+      let value = retry ? undefined : initialData?.listings;
+      if (!retry && value === undefined) {
+        try { value = await initialData?.listingsRequest; } catch { /* fallback API */ }
+      }
+      if (cancelled) return;
+      value ??= await fetchBestListings(id);
+      if (!cancelled) setListings(value);
+    }
+    void loadHistory().catch(() => {});
+    void loadListings().catch(() => {});
     const frame = requestAnimationFrame(() => {
       setInBinder(getBinderIds().has(id));
       setInWishlist(getWishlistIds().has(id));
-      // Il componente non viene rimontato passando da una carta all'altra
-      // (stessa route dinamica) - senza reset qui, un errore di
-      // caricamento sulla carta precedente resterebbe visibile anche per
-      // la carta nuova finche' l'immagine non finisce di caricare/fallire
-      // di nuovo.
+      // Anche un tentativo esplicito ripristina il caricamento immagine.
       setImgError(false);
     });
     return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [id, reloadTick]);
+  }, [id, reloadTick, initialCard, initialData]);
+
+  useEffect(() => () => {
+    if (manualLoginToastTimerRef.current !== null) window.clearTimeout(manualLoginToastTimerRef.current);
+  }, []);
 
   // Prezzo piu' basso per lingua tra le migliori inserzioni gia' scaricate
   // (fetchBestListings): confronto "a colpo d'occhio", non un'analisi
@@ -583,10 +616,19 @@ function CardDetailContent({ initialCard }: { initialCard?: CardDetail }) {
   );
 }
 
-export default function CardDetailClient({ initialCard }: { initialCard?: CardDetail }) {
+export default function CardDetailClient({ initialCard, initialData }: CardDetailProps) {
+  const params = useParams<{ id: string }>();
+  const id = Number(params.id);
   return (
     <Suspense fallback={null}>
-      <CardDetailContent initialCard={initialCard} />
+      {/* La route dinamica riusa il wrapper. Isolare il contenuto per id
+          azzera anche filtri, grafico, overlay ed errori al cambio carta;
+          le risposte tardive della carta precedente vengono ignorate. */}
+      <CardDetailContent
+        key={params.id}
+        initialCard={initialCard?.id === id ? initialCard : undefined}
+        initialData={initialData?.id === id ? initialData : undefined}
+      />
     </Suspense>
   );
 }
