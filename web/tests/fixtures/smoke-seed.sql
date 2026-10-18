@@ -222,3 +222,34 @@ INSERT INTO price_listings (blueprint_id, captured_at, price_cents, price_curren
   (950001, CURRENT_DATE, 1100, 'EUR', 'Near Mint', 'en', 1, 'zero-us', 1, 'US'),
   (950001, CURRENT_DATE, 1500, 'EUR', 'Near Mint', 'fr', 1, 'zero-fr', 1, 'FR'),
   (950002, CURRENT_DATE, 500, 'EUR', 'Near Mint', 'it', 1, 'solo-zero', 1, 'IT');
+
+-- Scheda server/streaming: fixture dedicate, senza intercettare le API client
+-- (quando lo storico arriva dal server tali intercettazioni non girano piu').
+-- 960001: lingua EN del prezzo principale + offerta italiana distinta.
+-- 960002: venti punti con un buco di 36 giorni; 960003: 120 punti continui.
+INSERT INTO blueprints (id, name, version, game_id, category_id, expansion_id, expansion_code, expansion_name, rarity, is_premium) VALUES
+  (960001, 'Scheda Lingue', '1/3', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (960002, 'Scheda Buco Storico', '2/3', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0),
+  (960003, 'Scheda Storico Lungo', '3/3', 1, 73, 900001, 'smoketest', 'Smoke Test Set', 'Rare', 0)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO latest_prices (blueprint_id, captured_at, captured_at_ts, min_price_cents, min_price_currency, listings_count, best_price_cents, best_price_currency, best_language, best_condition, it_nm_zero_price_cents, it_nm_zero_price_currency) VALUES
+  (960001, CURRENT_DATE, now(), 353, 'EUR', 2, 353, 'EUR', 'en', 'Near Mint', 713, 'EUR'),
+  (960002, CURRENT_DATE, now(), 519, 'EUR', 12, 990, 'EUR', 'en', 'Near Mint', NULL, NULL),
+  (960003, CURRENT_DATE, now(), 619, 'EUR', 10, 719, 'EUR', 'en', 'Near Mint', NULL, NULL)
+ON CONFLICT (blueprint_id) DO NOTHING;
+INSERT INTO price_snapshots (blueprint_id, captured_at, captured_at_ts, min_price_cents, avg_price_cents, listings_count, best_price_cents)
+SELECT 960002,
+       DATE '2026-10-14' - CASE WHEN n < 15 THEN 54 - n ELSE 19 - n END,
+       (DATE '2026-10-14' - CASE WHEN n < 15 THEN 54 - n ELSE 19 - n END)::timestamptz,
+       500 + n, 900, 12, 800 + n * 10
+FROM generate_series(0, 19) AS n;
+INSERT INTO price_snapshots (blueprint_id, captured_at, captured_at_ts, min_price_cents, avg_price_cents, listings_count, best_price_cents)
+SELECT 960003, DATE '2026-10-01' - (119 - n),
+       (DATE '2026-10-01' - (119 - n))::timestamptz,
+       500 + n, 700 + n, 10 + n % 7, 600 + n
+FROM generate_series(0, 119) AS n;
+INSERT INTO price_listings (blueprint_id, captured_at, price_cents, price_currency, condition, language, quantity, seller_username, can_sell_via_hub, ships_from_country) VALUES
+  (960001, CURRENT_DATE, 353, 'EUR', 'Near Mint', 'en', 1, 'scheda-en', 1, 'DE'),
+  (960001, CURRENT_DATE, 713, 'EUR', 'Near Mint', 'it', 1, 'scheda-it', 1, 'IT'),
+  (960003, CURRENT_DATE, 700, 'EUR', 'Played', 'en', 1, 'scheda-no-hub', 0, 'DE'),
+  (960003, CURRENT_DATE, 719, 'EUR', 'Near Mint', 'en', 1, 'scheda-zero', 1, 'IT');

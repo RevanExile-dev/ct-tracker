@@ -4,23 +4,10 @@
 import { test, expect } from "@playwright/test";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
-const DAY = 86_400_000;
-
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
-const point = (offset, min, best) => ({
-  captured_at: new Date(Date.UTC(2026, 9, 14) - offset * DAY).toISOString().slice(0, 10),
-  min_price_cents: min, min_price_currency: "EUR", avg_price_cents: 900, listings_count: 12,
-  best_price_cents: best, best_price_currency: "EUR",
-  it_nm_zero_price_cents: null, it_nm_zero_price_currency: null,
-});
-
 test("il grafico mostra il prezzo in evidenza, ha 7g e segna il buco di dati", async ({ page }) => {
-  // 15 rilevazioni vecchie, poi 25 giorni senza dati, poi 5 recenti.
-  const offsets = [...Array.from({ length: 15 }, (_, i) => 54 - i), 4, 3, 2, 1, 0];
-  const history = offsets.map((o, i) => point(o, 500 + i, 800 + i * 10));
-  await page.route(/\/api\/cards\/903001\/history$/, (route) => route.fulfill({ json: history }));
-  await page.goto(`${BASE_URL}/card/903001`);
+  await page.goto(`${BASE_URL}/card/960002`);
 
   const group = page.getByRole("group", { name: "Periodo storico" });
   await expect(group).toBeVisible({ timeout: 30_000 });
