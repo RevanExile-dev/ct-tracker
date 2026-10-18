@@ -1,7 +1,8 @@
 import { cachedJson, PRICES_CACHE } from "@/lib/apiCache";
 import { NextRequest } from "next/server";
 import { fetchMoversPage } from "@/lib/db.server";
-import type { MoversDirection, MoversSort } from "@/lib/types";
+import { parsePageNumber } from "@/lib/apiParams";
+import { MOVERS_PAGE_SIZE, type MoversDirection, type MoversSort } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     maxCents: maxCentsParam ? Number(maxCentsParam) : null,
     sort,
     minDeltaCents: Number.isFinite(minDelta) ? minDelta : null,
-    page: pageParam ? Number(pageParam) : undefined,
+    page: parsePageNumber(pageParam, MOVERS_PAGE_SIZE),
     maxAgeDays: maxAgeParam ? Number(maxAgeParam) : null,
     occasioni,
   });
