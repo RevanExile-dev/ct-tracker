@@ -64,7 +64,7 @@ export function buildBinderCsv(rows: BinderCsvRow[]): string {
 }
 
 /** Divide il testo in righe di celle rispettando le virgolette. */
-function splitCsv(text: string, delimiter: string): string[][] {
+function splitCsv(text: string, delimiter: string): { records: string[][]; incompleteRow: number | null } {
   const records: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -84,23 +84,27 @@ function splitCsv(text: string, delimiter: string): string[][] {
       row = [];
     } else field += ch;
   }
+  // Non provare a recuperare le righe dentro una cella troncata: le loro
+  // colonne non sono piu' distinguibili da un valore multilinea valido.
+  // Le righe complete precedenti restano disponibili nell'anteprima.
+  if (quoted) return { records, incompleteRow: records.length + 1 };
   row.push(field);
   if (row.some((c) => c.trim() !== "")) records.push(row);
-  return records;
+  return { records, incompleteRow: null };
 }
 
 export function parseBinderCsv(input: string): ParseBinderCsvResult {
   const text = input.replace(/^﻿/, "");
-  const warnings: string[] = [];
   const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
   const delimiter = firstLine.split(";").length >= firstLine.split(",").length ? ";" : ",";
-  const records = splitCsv(text, delimiter);
-  if (records.length === 0) return { rows: [], warnings: ["Il file è vuoto."] };
+  const { records, incompleteRow } = splitCsv(text, delimiter);
+  const warnings = incompleteRow === null ? [] : [`Riga ${incompleteRow}: virgolette non chiuse, riga incompleta ignorata.`];
+  if (records.length === 0) return { rows: [], warnings: warnings.length ? warnings : ["Il file è vuoto."] };
 
   const header = records[0].map((h) => h.trim().toLowerCase());
   const col = (...names: string[]) => header.findIndex((h) => names.includes(h));
   const idCol = col("id", "blueprint_id", "blueprintid");
-  if (idCol < 0) return { rows: [], warnings: ["Manca la colonna \"id\": usa un file esportato da CartaViva."] };
+  if (idCol < 0) return { rows: [], warnings: [...warnings, "Manca la colonna \"id\": usa un file esportato da CartaViva."] };
   const langCol = col("lingua", "language");
   const condCol = col("condizione", "condition");
   const finishCol = col("finitura", "finish");
