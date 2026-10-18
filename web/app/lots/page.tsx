@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
@@ -104,7 +104,14 @@ function LotCardThumbnail({ src }: { src: string | null }) {
 
 export default function LotsPage() {
   const { data: session, status } = useSession();
-  const [lots, setLots] = useState<Lot[] | null>(null);
+  const [allLots, setLots] = useState<Lot[] | null>(null);
+  const pendingLotDeletesRef = useRef(new Set<string>());
+  const [hiddenLotIds, setHiddenLotIds] = useState<Set<string>>(new Set());
+  // Keep pending rows in their original positions. On failure, revealing
+  // just that row preserves concurrent deletions, imports and additions.
+  // Successful tombstones remain until unmount: a late import reload cannot
+  // reintroduce a deleted row or trigger another fetch of unchanged prices.
+  const lots = useMemo(() => allLots?.filter((lot) => !hiddenLotIds.has(lot.id)) ?? null, [allLots, hiddenLotIds]);
   const [error, setError] = useState<string | null>(null);
   const [cardsById, setCardsById] = useState<Map<number, CardRow>>(new Map());
   const [languagePrices, setLanguagePrices] = useState<LanguagePriceMap>({});
@@ -242,14 +249,21 @@ export default function LotsPage() {
   }
 
   async function removeLot(id: string) {
-    const previous = lots;
-    setLots((current) => current?.filter((l) => l.id !== id) ?? current);
+    if (pendingLotDeletesRef.current.has(id)) return;
+    pendingLotDeletesRef.current.add(id);
+    setHiddenLotIds((current) => new Set(current).add(id));
     try {
       const res = await fetch(`/api/account/lots/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
     } catch {
-      setLots(previous ?? null);
+      setHiddenLotIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       setError("Non sono riuscito a eliminare il lotto. Riprova.");
+    } finally {
+      pendingLotDeletesRef.current.delete(id);
     }
   }
 

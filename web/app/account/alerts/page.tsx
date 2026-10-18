@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { CardRow, fetchCards, fetchConditions, fetchLanguages } from "@/lib/db";
@@ -57,12 +57,13 @@ type AlertListItemProps = {
   alert: PriceAlert;
   card: CardRow | undefined;
   highlighted?: boolean;
+  busy: boolean;
   onToggle: (alert: PriceAlert) => void;
   onEdit: (alert: PriceAlert) => void;
   onRemove: (id: number) => void;
 };
 
-function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }: AlertListItemProps) {
+function AlertListItem({ alert, card, highlighted, busy, onToggle, onEdit, onRemove }: AlertListItemProps) {
   const status = alertStatus(alert, formatCents);
   return (
     <li
@@ -97,6 +98,7 @@ function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }:
           <span className={`text-xs font-mono uppercase tracking-wider ${STATE_CLASSES[alert.state]}`}>{STATE_LABELS[alert.state]}</span>
           <button
             type="button"
+            disabled={busy}
             onClick={() => onToggle(alert)}
             className={
               alert.state === "fired"
@@ -106,12 +108,12 @@ function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }:
           >
             {toggleActionLabel(alert)}
           </button>
-          <button type="button" onClick={() => onEdit(alert)}
+          <button type="button" disabled={busy} onClick={() => onEdit(alert)}
             aria-label={`Modifica allarme ${card?.name ?? `carta #${alert.blueprintId}`}`}
             className="text-xs text-ink-muted hover:text-accent-bright min-h-8 px-2 border border-base-border rounded-lg">
             Modifica
           </button>
-          <button type="button" onClick={() => onRemove(alert.id)}
+          <button type="button" disabled={busy} onClick={() => onRemove(alert.id)}
             className="text-xs text-ink-muted hover:text-signal-down min-h-8 px-2 border border-base-border rounded-lg">
             Elimina
           </button>
@@ -123,12 +125,57 @@ function AlertListItem({ alert, card, highlighted, onToggle, onEdit, onRemove }:
 
 export default function PriceAlertsPage() {
   const { data: session, status } = useSession();
-  const [alerts, setAlerts] = useState<PriceAlert[] | null>(null);
+  const [allAlerts, setAlerts] = useState<PriceAlert[] | null>(null);
+  const busyAlertIdsRef = useRef(new Set<number>());
+  const [busyAlertIds, setBusyAlertIds] = useState<Set<number>>(new Set());
+  const [hiddenAlertIds, setHiddenAlertIds] = useState<Set<number>>(new Set());
+  const editingAlertIdRef = useRef<number | null>(null);
+  const savingAlertIdsRef = useRef(new Set<number>());
+  // Retain tombstones after success; only a failed deletion reveals its
+  // original row, without rebuilding the list or refetching unchanged data.
+  const alerts = useMemo(() => allAlerts?.filter((alert) => !hiddenAlertIds.has(alert.id)) ?? null, [allAlerts, hiddenAlertIds]);
   const [cardsById, setCardsById] = useState<Map<number, CardRow>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [languageOptions, setLanguageOptions] = useState<string[]>([]);
   const [conditionOptions, setConditionOptions] = useState<string[]>([]);
   const [editingAlert, setEditingAlert] = useState<PriceAlert | null>(null);
+  // Serialize writes to one row, while allowing other rows to change.
+  // The ref closes the gap before React renders the disabled controls.
+  function lockAlert(id: number): boolean {
+    if (busyAlertIdsRef.current.has(id)) return false;
+    busyAlertIdsRef.current.add(id);
+    setBusyAlertIds(new Set(busyAlertIdsRef.current));
+    return true;
+  }
+
+  function unlockAlert(id: number) {
+    busyAlertIdsRef.current.delete(id);
+    setBusyAlertIds(new Set(busyAlertIdsRef.current));
+  }
+
+  function editAlert(alert: PriceAlert) {
+    if (editingAlertIdRef.current !== null) return;
+    if (!lockAlert(alert.id)) return;
+    editingAlertIdRef.current = alert.id;
+    setEditingAlert(alert);
+  }
+
+  function closeEditor(id: number) {
+    // A dismissed save can finish after the user opened a different row.
+    if (editingAlertIdRef.current !== id) return;
+    editingAlertIdRef.current = null;
+    setEditingAlert(null);
+    // Dismissing the modal does not cancel an already submitted PATCH.
+    if (!savingAlertIdsRef.current.has(id)) unlockAlert(id);
+  }
+
+  function trackEditorSave(id: number, saving: boolean) {
+    if (saving) savingAlertIdsRef.current.add(id);
+    else {
+      savingAlertIdsRef.current.delete(id);
+      if (editingAlertIdRef.current !== id) unlockAlert(id);
+    }
+  }
   // null = non ancora saputo (nessun avviso finche' non e' certo che manca il collegamento).
   const [telegramLinked, setTelegramLinked] = useState<boolean | null>(null);
 
@@ -264,8 +311,8 @@ export default function PriceAlertsPage() {
   }
 
   async function toggleAlert(alert: PriceAlert) {
+    if (!lockAlert(alert.id)) return;
     const enable = alert.state !== "armed";
-    const previous = alerts;
     setAlerts((current) => current?.map((a) => (a.id === alert.id ? { ...a, state: enable ? "armed" : "disabled" } : a)) ?? current);
     try {
       const res = await fetch(`/api/account/alerts/${alert.id}`, {
@@ -277,20 +324,29 @@ export default function PriceAlertsPage() {
       const updated: PriceAlert = await res.json();
       setAlerts((current) => current?.map((a) => (a.id === updated.id ? updated : a)) ?? current);
     } catch {
-      setAlerts(previous ?? null);
+      // Restore only the field changed optimistically, never another row.
+      setAlerts((current) => current?.map((a) => a.id === alert.id ? { ...a, state: alert.state } : a) ?? current);
       setError("Non sono riuscito ad aggiornare l'allarme. Riprova.");
+    } finally {
+      unlockAlert(alert.id);
     }
   }
 
   async function removeAlert(id: number) {
-    const previous = alerts;
-    setAlerts((current) => current?.filter((a) => a.id !== id) ?? current);
+    if (!lockAlert(id)) return;
+    setHiddenAlertIds((current) => new Set(current).add(id));
     try {
       const res = await fetch(`/api/account/alerts/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
     } catch {
-      setAlerts(previous ?? null);
+      setHiddenAlertIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       setError("Non sono riuscito a eliminare l'allarme. Riprova.");
+    } finally {
+      unlockAlert(id);
     }
   }
 
@@ -467,8 +523,9 @@ export default function PriceAlertsPage() {
                         alert={alert}
                         card={cardsById.get(alert.blueprintId)}
                         highlighted
+                        busy={busyAlertIds.has(alert.id)}
                         onToggle={toggleAlert}
-                        onEdit={setEditingAlert}
+                        onEdit={editAlert}
                         onRemove={removeAlert}
                       />
                     ))}
@@ -489,8 +546,9 @@ export default function PriceAlertsPage() {
                         key={alert.id}
                         alert={alert}
                         card={cardsById.get(alert.blueprintId)}
+                        busy={busyAlertIds.has(alert.id)}
                         onToggle={toggleAlert}
-                        onEdit={setEditingAlert}
+                        onEdit={editAlert}
                         onRemove={removeAlert}
                       />
                     ))}
@@ -505,7 +563,8 @@ export default function PriceAlertsPage() {
         <QuickAlertModal
           alert={editingAlert}
           card={cardsById.get(editingAlert.blueprintId)}
-          onClose={() => setEditingAlert(null)}
+          onClose={() => closeEditor(editingAlert.id)}
+          onSavingChange={(saving) => trackEditorSave(editingAlert.id, saving)}
           onSaved={(updated) => setAlerts((current) => current?.map((a) => (a.id === updated.id ? updated : a)) ?? current)}
         />
       )}

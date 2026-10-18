@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import {
+  concurrencyBase, mockConcurrentApi, concurrentLot,
+  concurrentLotRows, concurrentLotRow, triggerImportReload, createConcurrentThird,
+} from './collections-concurrency.helpers.mjs';
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000';
 
@@ -205,4 +209,63 @@ test('deleting a lot removes it from the table', async ({ page }) => {
   await page.getByRole('button', { name: 'Elimina' }).click();
   await expect(page.locator('tr', { hasText: 'Pikachu VMAX' })).toHaveCount(0);
   await expect(page.getByText('Non hai ancora registrato nessun lotto.')).toBeVisible();
+});
+
+
+test.describe('independent lot deletions (touch)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('failed deletion preserves a successful deletion and a new lot', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { lots: [concurrentLot(1), concurrentLot(2)] });
+    await page.goto(`${concurrencyBase}/lots`);
+    await concurrentLotRow(page, 'Pikachu').getByRole('button', { name: 'Elimina' }).tap();
+    await concurrentLotRow(page, 'Eevee').getByRole('button', { name: 'Elimina' }).tap();
+    await createConcurrentThird(page, 'lots');
+    await api.release('DELETE /api/account/lots/lot-2', 200);
+    await api.release('DELETE /api/account/lots/lot-1', 500);
+    await expect(concurrentLotRows(page)).toHaveCount(2);
+    await expect(concurrentLotRows(page).nth(0)).toContainText('Mew');
+    await expect(concurrentLotRows(page).nth(1)).toContainText('Pikachu');
+    await expect(concurrentLotRow(page, 'Eevee')).toHaveCount(0);
+  });
+
+  test('three failed deletions retain their original order', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { lots: [concurrentLot(1), concurrentLot(2), concurrentLot(3)] });
+    await page.goto(`${concurrencyBase}/lots`);
+    for (const name of ['Mew', 'Eevee', 'Pikachu']) {
+      await concurrentLotRow(page, name).getByRole('button', { name: 'Elimina' }).tap();
+    }
+    await expect(page.getByText('Non hai ancora registrato nessun lotto.')).toBeVisible();
+    for (const id of [3, 2, 1]) await api.release(`DELETE /api/account/lots/lot-${id}`, 500);
+    await expect(concurrentLotRows(page)).toHaveCount(3);
+    for (const [index, name] of ['Pikachu', 'Eevee', 'Mew'].entries()) await expect(concurrentLotRows(page).nth(index)).toContainText(name);
+  });
+
+  test('failed deletion reveals imported updates instead of a snapshot', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { lots: [concurrentLot(1)] });
+    await page.goto(`${concurrencyBase}/lots`);
+    await concurrentLotRow(page, 'Pikachu').getByRole('button', { name: 'Elimina' }).tap();
+    api.deferReload();
+    await triggerImportReload(page);
+    await api.release('reload lots', 200, [concurrentLot(3), concurrentLot(1, { quantity: 4, note: 'Aggiornato durante importazione' })]);
+    await expect(concurrentLotRow(page, 'Mew')).toBeVisible();
+    await expect(concurrentLotRow(page, 'Pikachu')).toHaveCount(0);
+    await api.release('DELETE /api/account/lots/lot-1', 500);
+    await expect(concurrentLotRow(page, 'Pikachu')).toContainText('Aggiornato durante importazione');
+    await expect(concurrentLotRow(page, 'Pikachu').locator('td').nth(1)).toHaveText('4');
+    await expect(concurrentLotRows(page).nth(0)).toContainText('Mew');
+  });
+
+  test('a stale import reload cannot resurrect a successfully deleted lot', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { lots: [concurrentLot(1)] });
+    await page.goto(`${concurrencyBase}/lots`);
+    await concurrentLotRow(page, 'Pikachu').getByRole('button', { name: 'Elimina' }).tap();
+    api.deferReload();
+    await triggerImportReload(page);
+    await api.wait('reload lots');
+    await api.release('DELETE /api/account/lots/lot-1', 200);
+    await api.release('reload lots', 200, [concurrentLot(3), concurrentLot(1)]);
+    await expect(concurrentLotRows(page)).toHaveCount(1);
+    await expect(concurrentLotRows(page).first()).toContainText('Mew');
+  });
 });

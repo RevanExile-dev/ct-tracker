@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import {
+  concurrencyBase, mockConcurrentApi, concurrentAlert,
+  concurrentAlertRows, concurrentAlertRow, createConcurrentThird,
+} from './collections-concurrency.helpers.mjs';
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000';
 
@@ -175,4 +179,77 @@ test.describe('modifica allarme prezzo (tastiera)', () => {
     await expect(dialog).toHaveCount(0);
     await expect(edit).toBeFocused();
   });
+});
+
+
+test.describe('independent alert mutations (touch)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('failed toggle preserves another successful toggle and creation', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { alerts: [concurrentAlert(1), concurrentAlert(2)] });
+    await page.goto(`${concurrencyBase}/account/alerts`);
+    await concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Disattiva', exact: true }).tap();
+    await concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Disattiva', exact: true }).tap();
+    await createConcurrentThird(page, 'alerts');
+    await api.release('PATCH /api/account/alerts/2', 200, concurrentAlert(2, { state: 'disabled' }));
+    await api.release('PATCH /api/account/alerts/1', 500);
+    await expect(concurrentAlertRow(page, 'Mew')).toBeVisible();
+    await expect(concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Attiva', exact: true })).toBeEnabled();
+    await expect(concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Disattiva', exact: true })).toBeEnabled();
+  });
+
+  test('a pending toggle locks only its own row and failure permits retry', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { alerts: [concurrentAlert(1), concurrentAlert(2)] });
+    await page.goto(`${concurrencyBase}/account/alerts`);
+    await concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Disattiva', exact: true }).tap();
+    for (const name of ['Attiva', 'Elimina', 'Modifica allarme Pikachu']) {
+      await expect(concurrentAlertRow(page, 'Pikachu').getByRole('button', { name, exact: true })).toBeDisabled();
+    }
+    await expect(concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Disattiva', exact: true })).toBeEnabled();
+    await api.release('PATCH /api/account/alerts/1', 500);
+    await expect(concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Disattiva', exact: true })).toBeEnabled();
+    await concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Disattiva', exact: true }).tap();
+    await api.release('PATCH /api/account/alerts/1', 200, concurrentAlert(1, { state: 'disabled' }));
+    await expect(concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Attiva', exact: true })).toBeEnabled();
+    expect(api.calls.filter((call) => call.method === 'PATCH')).toHaveLength(2);
+  });
+
+  test('failed deletion preserves a successful deletion and original order', async ({ page }) => {
+    const api = await mockConcurrentApi(page, { alerts: [concurrentAlert(1), concurrentAlert(2), concurrentAlert(3)] });
+    await page.goto(`${concurrencyBase}/account/alerts`);
+    await concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Elimina', exact: true }).tap();
+    await concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Elimina', exact: true }).tap();
+    await api.release('DELETE /api/account/alerts/2', 200);
+    await api.release('DELETE /api/account/alerts/1', 500);
+    await expect(concurrentAlertRow(page, 'Eevee')).toHaveCount(0);
+    await expect(concurrentAlertRows(page).first()).toContainText('Pikachu');
+    await expect(concurrentAlertRow(page, 'Mew')).toBeVisible();
+  });
+
+  for (const succeeds of [true, false]) {
+    test(`dismissed edit stays locked through ${succeeds ? 'success' : 'failure'} and cannot close another editor`, async ({ page }) => {
+      const api = await mockConcurrentApi(page, { alerts: [concurrentAlert(1), concurrentAlert(2)] });
+      await page.goto(`${concurrencyBase}/account/alerts`);
+      await concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Modifica allarme Pikachu', exact: true }).tap();
+      const dialog = page.getByRole('dialog', { name: 'Modifica allarme di prezzo' });
+      await dialog.getByPlaceholder('es. 10,00').fill('9,90');
+      await dialog.getByRole('button', { name: 'Salva', exact: true }).tap();
+      await api.wait('PATCH /api/account/alerts/1');
+      await dialog.getByRole('button', { name: 'Annulla', exact: true }).tap();
+      await expect(dialog).toHaveCount(0);
+      for (const name of ['Disattiva', 'Elimina', 'Modifica allarme Pikachu']) {
+        await expect(concurrentAlertRow(page, 'Pikachu').getByRole('button', { name, exact: true })).toBeDisabled();
+      }
+      await concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Modifica allarme Eevee', exact: true }).tap();
+      await expect(dialog).toBeVisible();
+      await api.release('PATCH /api/account/alerts/1', succeeds ? 200 : 500, succeeds ? concurrentAlert(1, { targetValue: 990 }) : { error: 'Errore di test' });
+      await expect(dialog).toBeVisible();
+      await expect(concurrentAlertRow(page, 'Pikachu').getByRole('button', { name: 'Disattiva', exact: true })).toBeEnabled();
+      await expect(concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Disattiva', exact: true })).toBeDisabled();
+      await expect(concurrentAlertRow(page, 'Pikachu')).toContainText(succeeds ? '9,90' : '12,50');
+      await dialog.getByRole('button', { name: 'Annulla', exact: true }).tap();
+      await expect(concurrentAlertRow(page, 'Eevee').getByRole('button', { name: 'Disattiva', exact: true })).toBeEnabled();
+      expect(api.calls.filter((call) => call.method === 'PATCH')).toHaveLength(1);
+    });
+  }
 });
