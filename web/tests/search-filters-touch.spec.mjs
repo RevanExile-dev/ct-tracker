@@ -60,15 +60,21 @@ test("suggerimenti: un tap fuori dal campo li chiude", async ({ page }) => {
 });
 
 test("Prezzo: 2 tocchi dalla pagina, filtra, chip, URL e conteggio coerente", async ({ page }) => {
+  const totalResponse = await page.request.get(`${BASE_URL}/api/cards/count`);
+  expect(totalResponse.ok()).toBe(true);
+  const total = await totalResponse.json();
+  expect(total.count).toBeGreaterThan(0);
   await ready(page);
-  await expect(page.locator("body")).toContainText("87 carte trovate", { timeout: 20_000 });
+  await expect(page.locator("body")).toContainText(`${total.count} carte trovate`, { timeout: 20_000 });
   let taps = 0;
   await page.getByRole("button", { name: /^Prezzo/ }).tap(); taps++;
   await page.getByRole("button", { name: "1 – 5 €" }).tap(); taps++;
   expect(taps).toBe(2);
   await expect(page).toHaveURL(/price=1-5/);
-  await expect(page.locator("body")).not.toContainText("87 carte trovate");
+  await expect(page.locator("body")).not.toContainText(`${total.count} carte trovate`);
   const count = await (await page.request.get(`${BASE_URL}/api/cards/count?minPriceCents=100&maxPriceCents=500`)).json();
+  expect(count.count).toBeGreaterThan(0);
+  expect(count.count).toBeLessThan(total.count);
   await expect(page.locator("body")).toContainText(`${count.count} carte trovate`);
   // il pannello si e' chiuso da solo (closeOnSelect) e la fascia e' rimovibile dalla pillola
   await expect(page.getByRole("button", { name: /^1 – 5 €/ }).first()).toBeVisible();
