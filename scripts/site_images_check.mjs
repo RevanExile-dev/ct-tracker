@@ -69,7 +69,7 @@ async function measure(page, url) {
   const imgResponses = [];
   const imgFailures = [];
   const onResponse = (r) => {
-    if (r.request().resourceType() === "image") imgResponses.push({ url: r.url(), status: r.status() });
+    if (r.request().resourceType() === "image") imgResponses.push({ url: r.url(), status: r.status(), server: r.headers()["server"] ?? "", cf: r.headers()["cf-ray"] ? "cf" : "" });
   };
   const onFailed = (r) => {
     if (r.resourceType() === "image") imgFailures.push({ url: r.url(), error: r.failure()?.errorText });
@@ -106,7 +106,13 @@ async function measure(page, url) {
   const brokenDom = imgs.filter((i) => !i.ok);
   const badHttp = imgResponses.filter((r) => r.status >= 400);
   const reqTotal = imgResponses.length + imgFailures.length;
-  return { total: imgs.length, reqTotal, brokenDom, badHttp, imgFailures, loadS, imagesS, settled, swCount };
+  // Dettaglio delle richieste fallite (host, stato/errore): serve a capire se
+  // a rifiutare e' il sito o un host esterno (es. CardTrader che limita gli IP
+  // dei server di GitHub).
+  const failDetail = {};
+  for (const x of badHttp) { const k = `${new URL(x.url).host} HTTP ${x.status} ${x.server}${x.cf ? " cf" : ""}`; failDetail[k] = (failDetail[k] ?? 0) + 1; }
+  for (const x of imgFailures) { const k = `${new URL(x.url).host} ${x.error}`; failDetail[k] = (failDetail[k] ?? 0) + 1; }
+  return { total: imgs.length, reqTotal, brokenDom, badHttp, imgFailures, failDetail, loadS, imagesS, settled, swCount };
 }
 
 function judge(page, r) {
@@ -171,6 +177,7 @@ for (const prof of PROFILES) {
         `${problems.length ? "FAIL" : "OK  "} ${prof.name.padEnd(8)} ${mode.padEnd(13)} ${pg.path.padEnd(14)} img ${r.total} rotte ${r.brokenDom.length} richieste ${r.reqTotal} fallite ${r.badHttp.length + r.imgFailures.length} load ${r.loadS.toFixed(1)}s img ${r.imagesS.toFixed(1)}s ${problems.join("; ")}`
       );
       for (const b of r.brokenDom.slice(0, 5)) console.log(`     rotta: ${b.src}`);
+      for (const [k, n] of Object.entries(r.failDetail ?? {})) console.log(`     richieste fallite: ${n} x ${k}`);
     }
     await ctx.close();
   }
