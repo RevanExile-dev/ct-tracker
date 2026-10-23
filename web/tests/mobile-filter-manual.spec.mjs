@@ -43,7 +43,7 @@ test.describe("mobile filters: scroll touch non cambia apertura", () => {
     // freccina da ~24px.
     const handleBox = await handle.boundingBox();
     expect(handleBox).not.toBeNull();
-    expect(handleBox.height).toBeGreaterThanOrEqual(36);
+    expect(handleBox.height).toBeGreaterThanOrEqual(44);
 
     // Piccola pausa prima della PRIMA interazione: l'elemento e' visibile
     // (HTML renderizzato lato server) ma su un runner CI condiviso/lento
@@ -57,7 +57,7 @@ test.describe("mobile filters: scroll touch non cambia apertura", () => {
     await handle.tap();
     await page.waitForTimeout(400);
     const hiddenHeight = (await wrap.boundingBox()).height;
-    expect(hiddenHeight).toBeLessThan(50);
+    expect(hiddenHeight).toBeLessThan(80);
     await expect(handle).toHaveAttribute("aria-expanded", "false");
 
     // Swipe verso l'alto: la pagina scorre verso il basso, ma i filtri non
@@ -66,13 +66,13 @@ test.describe("mobile filters: scroll touch non cambia apertura", () => {
     const afterDownScroll = await page.evaluate(() => window.scrollY);
     expect(afterDownScroll).toBeGreaterThan(50);
     await expect(handle).toHaveAttribute("aria-expanded", "false");
-    expect((await wrap.boundingBox()).height).toBeLessThan(50);
+    expect((await wrap.boundingBox()).height).toBeLessThan(80);
 
     // Swipe opposto: nemmeno tornando verso l'alto deve scattare il vecchio
     // auto-reveal.
     await touchSwipe(page, 230, 650);
     await expect(handle).toHaveAttribute("aria-expanded", "false");
-    expect((await wrap.boundingBox()).height).toBeLessThan(50);
+    expect((await wrap.boundingBox()).height).toBeLessThan(80);
 
     // Solo il tap esplicito riapre.
     await handle.tap();

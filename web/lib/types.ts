@@ -59,6 +59,7 @@ export type CardRow = {
 
 export type SortOption =
   | "expansion"
+  | "expansion_price"
   | "price_asc"
   | "price_desc"
   | "name"
@@ -77,10 +78,8 @@ export type CardsFilterOpts = {
   languages?: string[];
   conditions?: string[];
   onlyZero?: boolean;
-  // Solo carte con b.is_premium = 1 (flag gia' calcolato in sync da parole
-  // chiave sul nome: full art, illustration rare, secret rare, alternate
-  // art, ...) - usato dagli highlight in home (vedi HomeHighlights), nessun
-  // dato nuovo da raccogliere.
+  // Solo carte full art (rarita' + numero oltre il totale del set, vedi
+  // FULL_ART_SQL in db.server.ts) - usato dagli highlight in home.
   onlyPremium?: boolean;
   // Fascia di prezzo in centesimi (estremi inclusi) sul prezzo mostrato in
   // griglia: IT NM Zero, oppure l'inserzione piu' economica che rispetta i
