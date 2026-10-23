@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDialogA11y } from "@/lib/useDialogA11y";
 import AlertLanguagePicker from "@/components/AlertLanguagePicker";
 import type { CardRow, PriceAlert, PriceAlertFireMode, PriceAlertTargetType } from "@/lib/types";
@@ -50,12 +50,15 @@ export default function QuickAlertModal({
   onClose,
   onCreated,
   onSaved,
+  onSavingChange,
 }: {
   card?: CardRow;
   alert?: PriceAlert;
   onClose: () => void;
   onCreated?: () => void;
   onSaved?: (updated: PriceAlert) => void;
+  /** Keep the owning row locked if the dialog is dismissed mid-request. */
+  onSavingChange?: (saving: boolean) => void;
 }) {
   const editing = alert !== undefined;
   const cardName = card?.name ?? (alert ? `Carta #${alert.blueprintId}` : "");
@@ -80,6 +83,7 @@ export default function QuickAlertModal({
   const [fireMode, setFireMode] = useState<PriceAlertFireMode>(alert?.fireMode ?? "once");
   const [rearmCooldownHours, setRearmCooldownHours] = useState(String(alert?.rearmCooldownHours ?? 24));
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   // null = non ancora saputo: nel dubbio si mantiene il testo con Telegram.
@@ -128,6 +132,7 @@ export default function QuickAlertModal({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submittingRef.current) return;
     setError(null);
 
     let targetValue: number;
@@ -148,7 +153,9 @@ export default function QuickAlertModal({
       rearmHours = parsed;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
+    onSavingChange?.(true);
     try {
       const res = await fetch(editing ? `/api/account/alerts/${alert.id}` : "/api/account/alerts", {
         method: editing ? "PATCH" : "POST",
@@ -179,7 +186,9 @@ export default function QuickAlertModal({
     } catch {
       setError("Errore di rete. Riprova tra poco.");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
+      onSavingChange?.(false);
     }
   }
 
