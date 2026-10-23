@@ -54,3 +54,34 @@ test('import: missing id column and empty file give a clear message', () => {
   assert.match(parseBinderCsv('carta;set\nA;B').warnings[0], /id/);
   assert.equal(parseBinderCsv('').rows.length, 0);
 });
+
+test('import: an unterminated quoted row never becomes a default-quantity card', () => {
+  const { rows, warnings } = parseBinderCsv('id;carta;quantita\n7;"Pikachu;99\n8;Mew;2');
+  assert.deepEqual(rows, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Riga 2.*virgolette non chiuse/);
+});
+
+test('import: complete records remain available before an unterminated quoted tail', () => {
+  const { rows, warnings } = parseBinderCsv('id;carta;quantita;lingua\r\n5;Eevee;3;it\r\n7;"Pikachu;99;en\r\n8;Mew;2;fr');
+  assert.deepEqual(rows.map((row) => [row.id, row.quantity, row.language]), [[5, 3, 'it']]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Riga 3.*virgolette non chiuse/);
+});
+
+test('import: valid quoted multiline fields and escaped quotes still round-trip', () => {
+  const csv = buildBinderCsv([row({ name: 'Pikachu\n"Speciale"', condition: 'NM\ncontrollata' }), row({ id: 8 })]);
+  const { rows, warnings } = parseBinderCsv(csv);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].condition, 'NM\ncontrollata');
+  assert.equal(rows[0].quantity, 3);
+  assert.equal(rows[1].id, 8);
+  assert.deepEqual(warnings, []);
+});
+
+test('import: a truncated header reports the syntax error instead of an empty file', () => {
+  const { rows, warnings } = parseBinderCsv('"id;carta;quantita');
+  assert.deepEqual(rows, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Riga 1.*virgolette non chiuse/);
+});

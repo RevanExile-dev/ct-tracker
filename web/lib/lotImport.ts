@@ -15,6 +15,7 @@
 // per riga cosa il matching NON riconosceva automaticamente.
 
 import { normalizeRarity } from "./rarity";
+import { isValidCalendarDate } from "./calendarDate";
 
 export type ParsedImportRow = {
   rowNumber: number; // 1-based, posizione nella tabella (non il valore della colonna "#" se presente)
@@ -101,11 +102,12 @@ function parseDateCell(cell: string): string | null {
   const trimmed = cell.trim();
   if (!trimmed) return null;
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) return trimmed;
+  if (isoMatch) return isValidCalendarDate(trimmed) ? trimmed : null;
   const dmyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (dmyMatch) {
     const [, d, m, y] = dmyMatch;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    const iso = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    return isValidCalendarDate(iso) ? iso : null;
   }
   return null;
 }
@@ -161,12 +163,17 @@ export function parseLotImportMarkdown(text: string): ParseLotImportResult {
     if (priceCents === null) {
       warnings.push(`Riga ${rowNumber} ("${name}"): prezzo non riconosciuto ("${cells[priceCol]}"), verrà importata senza costo.`);
     }
+    const dateCell = dateCol !== -1 ? (cells[dateCol] ?? "").trim() : "";
+    const acquiredAt = parseDateCell(dateCell);
+    if (dateCell && acquiredAt === null) {
+      warnings.push(`Riga ${rowNumber} ("${name}"): data non valida ("${dateCell}"), ignorata. Una data già registrata resta invariata.`);
+    }
     rows.push({
       rowNumber,
       name,
       set: setCol !== -1 ? (cells[setCol]?.trim() || null) : null,
       priceCents,
-      acquiredAt: dateCol !== -1 ? parseDateCell(cells[dateCol] ?? "") : null,
+      acquiredAt,
       type: typeCol !== -1 ? (cells[typeCol]?.trim() || null) : null,
     });
   }

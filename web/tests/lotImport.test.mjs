@@ -14,11 +14,10 @@ function transpileToModule(relativePath) {
   const code = ts.transpileModule(readFileSync(new URL(relativePath, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
-  // require() minimo: lotImport.ts importa web/lib/rarity.ts (anch'esso
-  // puro, nessun import a sua volta) - basta risolvere quell'unico
-  // percorso relativo, non un vero sistema di moduli.
+  // Risolve solo le dipendenze pure del parser, senza avviare Next o il DB.
   function localRequire(spec) {
     if (spec === './rarity') return transpileToModule('../lib/rarity.ts');
+    if (spec === './calendarDate') return transpileToModule('../lib/calendarDate.ts');
     throw new Error(`require non gestito nel test: ${spec}`);
   }
   const context = { exports, module: { exports }, require: localRequire };
@@ -108,6 +107,65 @@ test('a row with no date value in an existing Data column leaves acquiredAt null
 `;
   const { rows } = parseLotImportMarkdown(md);
   assert.equal(rows[0].acquiredAt, null);
+});
+
+test('invalid calendar dates are omitted with a row warning instead of reaching the database', () => {
+  const invalid = ['2026-02-29', '31/02/2026', '2026-04-31', '2026-13-01', '00/10/2026', '0000-01-01', 'ieri'];
+  const md = `| Carta | Prezzo | Data |\n|---|---|---|\n${invalid.map((date, i) => `| Carta ${i + 1} | 1,25 | ${date} |`).join('\n')}`;
+  const { rows, warnings } = parseLotImportMarkdown(md);
+  assert.equal(rows.length, invalid.length, 'invalid date does not discard the card or its cost');
+  rows.forEach((row) => {
+    assert.equal(row.acquiredAt, null);
+    assert.equal(row.priceCents, 125);
+  });
+  assert.equal(warnings.length, invalid.length);
+  warnings.forEach((warning, i) => {
+    assert.ok(warning.includes(`Riga ${i + 1}`));
+    assert.ok(warning.includes(invalid[i]));
+    assert.ok(warning.includes('già registrata resta invariata'));
+  });
+});
+
+test('valid leap dates and calendar boundaries retain their exact dates without warnings', () => {
+  const dates = ['2024-02-29', '29/2/2000', '1900-02-28', '1/1/0001', '9999-12-31'];
+  const md = `| Carta | Prezzo | Data |\n|---|---|---|\n${dates.map((date) => `| Pikachu | 1 | ${date} |`).join('\n')}`;
+  const { rows, warnings } = parseLotImportMarkdown(md);
+  assert.equal(JSON.stringify(rows.map((row) => row.acquiredAt)), JSON.stringify(['2024-02-29', '2000-02-29', '1900-02-28', '0001-01-01', '9999-12-31']));
+  assert.equal(warnings.length, 0);
+});
+
+test('blank or missing date cells do not produce invalid-date warnings', () => {
+  const { rows, warnings } = parseLotImportMarkdown('| Carta | Prezzo | Data |\n|---|---|---|\n| Mew | 1 |   |\n| Eevee | 2 |');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].acquiredAt, null);
+  assert.equal(rows[1].acquiredAt, null);
+  assert.equal(warnings.length, 0);
+});
+
+test('an invalid imported date leaves the stored purchase date out of the update patch', async () => {
+  const { rows } = parseLotImportMarkdown('| Carta | Prezzo | Data |\n|---|---|---|\n| Mew | 2,50 | 31/02/2026 |');
+  const patches = [];
+  const account = {
+    upsertBinderEntry: async () => {},
+    upsertPurchaseLot: async (_userId, _id, patch) => { patches.push(patch); return { created: false }; },
+  };
+  const exports = {};
+  const code = ts.transpileModule(readFileSync(new URL('../lib/lotImport.server.ts', import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  vm.runInNewContext(code, {
+    exports,
+    require: (specifier) => {
+      if (specifier === 'server-only' || specifier === './db.server') return {};
+      if (specifier === './account.server') return account;
+      if (specifier === './lotImport') return { narrowByDeclaredType };
+      throw new Error(`Unexpected import dependency: ${specifier}`);
+    },
+  });
+  await exports.writeImportedCard('test-user', 7, { costTotalCents: rows[0].priceCents, acquiredAt: rows[0].acquiredAt });
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0].costTotalCents, 250);
+  assert.equal(Object.hasOwn(patches[0], 'acquiredAt'), false, 'existing date cannot be cleared or replaced');
 });
 
 test('an unparseable price still imports the row (priceCents null) with a warning, not a dropped row', () => {

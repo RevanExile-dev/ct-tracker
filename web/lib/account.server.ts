@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { getPgPool } from "./pgPool";
 import { AccountLimitError, exceedsLimit, limitMessage } from "./accountLimits";
 import { PLAN_LIMITS, PLUS_FOR_EVERYONE, effectivePlan, type PlanLimits } from "./plans";
+import { isValidCalendarDate } from "./calendarDate";
 import type { BinderEntry } from "./binder";
 import type { FilterPreset } from "./filterPreset";
 import type {
@@ -261,7 +262,7 @@ export function isValidLotProvenance(value: unknown): value is LotProvenance {
  * gia' usato da binder_value_snapshots.captured_at, vedi normalizeCollectionHistory
  * in web/lib/collectionHistory.ts sul perche' importa non passare per Date. */
 export function isValidLotDate(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+  return isValidCalendarDate(value);
 }
 
 /** Costo dichiarato: NULL = sconosciuto (mai inserito), un intero >= 0 se
