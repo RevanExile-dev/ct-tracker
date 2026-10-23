@@ -31,6 +31,82 @@ function loadLotImportModule() {
 
 const { parseLotImportMarkdown, narrowByDeclaredType } = loadLotImportModule();
 
+function loadLotImportServer(candidates) {
+  const writes = [];
+  const account = {
+    getExistingPurchaseInfo: async () => ({ inBinder: false, costTotalCents: null, acquiredAt: null }),
+    upsertBinderEntry: async (_userId, blueprintId) => { writes.push({ kind: 'binder', blueprintId }); },
+    upsertPurchaseLot: async (_userId, blueprintId) => { writes.push({ kind: 'lot', blueprintId }); return { created: true }; },
+  };
+  const db = {
+    findBlueprintMatches: async () => candidates,
+    findBlueprintById: async () => null,
+  };
+  const exports = {};
+  const code = ts.transpileModule(readFileSync(new URL('../lib/lotImport.server.ts', import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  vm.runInNewContext(code, {
+    exports,
+    require: (specifier) => {
+      if (specifier === 'server-only') return {};
+      if (specifier === './db.server') return db;
+      if (specifier === './account.server') return account;
+      if (specifier === './lotImport') return { narrowByDeclaredType };
+      throw new Error(`Unexpected import dependency: ${specifier}`);
+    },
+  });
+  return { server: exports, writes };
+}
+
+const importRow = (overrides = {}) => ({
+  rowNumber: 1, name: 'Pikachu', set: 'Base Set', type: null,
+  priceCents: 100, acquiredAt: null, ...overrides,
+});
+
+const candidate = (id, expansionName) => ({
+  id, name: 'Pikachu', expansionName, rarity: 'Common', imageUrl: null,
+});
+
+test('a declared set never auto-accepts a unique candidate whose expansion is null or empty', async (t) => {
+  for (const expansionName of [null, '', '   ']) {
+    await t.test(`expansion ${JSON.stringify(expansionName)}`, async () => {
+      const { server, writes } = loadLotImportServer([candidate(1, expansionName)]);
+      const [outcome] = await server.applyLotImport('test-user', [importRow()]);
+      assert.equal(outcome.status, 'ambiguous');
+      assert.equal(writes.length, 0, 'manual proposal must not write automatically');
+    });
+  }
+});
+
+test('with multiple candidates, missing expansions are ignored and the sole compatible set can match', async () => {
+  const candidates = [candidate(1, null), candidate(2, ''), candidate(3, 'Base Set')];
+  const { server, writes } = loadLotImportServer(candidates);
+  const [outcome] = await server.applyLotImport('test-user', [importRow()]);
+  assert.equal(outcome.status, 'imported');
+  assert.equal(outcome.matchedExpansion, 'Base Set');
+  assert.equal(writes.filter((write) => write.blueprintId === 3).length, 2);
+});
+
+test('a unique candidate with an incompatible declared set stays manual', async () => {
+  const { server, writes } = loadLotImportServer([candidate(1, 'Jungle')]);
+  const [outcome] = await server.applyLotImport('test-user', [importRow()]);
+  assert.equal(outcome.status, 'ambiguous');
+  assert.equal(writes.length, 0);
+});
+
+test('a unique candidate with a compatible declared set is still imported automatically', async () => {
+  const { server } = loadLotImportServer([candidate(1, 'Base Set')]);
+  const [outcome] = await server.applyLotImport('test-user', [importRow({ set: 'base' })]);
+  assert.equal(outcome.status, 'imported');
+});
+
+test('without a declared set, a unique candidate with no expansion remains an automatic match', async () => {
+  const { server } = loadLotImportServer([candidate(1, null)]);
+  const [outcome] = await server.applyLotImport('test-user', [importRow({ set: null })]);
+  assert.equal(outcome.status, 'imported');
+});
+
 test('parses the exact table format from the user-provided collection Markdown', () => {
   const md = `# Contesto
 

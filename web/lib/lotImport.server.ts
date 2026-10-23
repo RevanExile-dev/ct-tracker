@@ -72,9 +72,14 @@ async function matchRow(row: ParsedImportRow): Promise<
   if (candidates.length === 0) return { ok: false, reason: "unmatched" };
 
   if (row.set) {
-    const setLower = row.set.toLowerCase();
+    const setLower = row.set.trim().toLowerCase();
     const narrowed = candidates.filter((c) => {
-      const expLower = (c.expansionName ?? "").toLowerCase();
+      const expLower = c.expansionName?.trim().toLowerCase();
+      // Un'espansione assente non puo' confermare un Set dichiarato. In
+      // particolare, normalizzarla a "" renderebbe setLower.includes("")
+      // sempre vero e trasformerebbe una proposta manuale nel match
+      // automatico della carta sbagliata.
+      if (!expLower) return false;
       return expLower.includes(setLower) || setLower.includes(expLower);
     });
     // Un Set DICHIARATO che non trova nessun candidato compatibile resta
