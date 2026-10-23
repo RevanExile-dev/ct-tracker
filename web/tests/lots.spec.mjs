@@ -269,3 +269,94 @@ test.describe('independent lot deletions (touch)', () => {
     await expect(concurrentLotRows(page).first()).toContainText('Mew');
   });
 });
+
+test.describe('lot import manual search races (touch)', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('keeps the latest response and deduplicates repeated Enter', async ({ page }) => {
+    const pendingSearches = new Map();
+    const searchCalls = [];
+
+    await page.route('**/api/**', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const path = url.pathname;
+      const search = url.searchParams.get('search');
+
+      if (path === '/api/cards' && search) {
+        searchCalls.push(search);
+        pendingSearches.set(search, route);
+        return;
+      }
+      if (path === '/api/auth/session') {
+        await route.fulfill({ status: 200, json: { user: { name: 'Test', email: 'import@example.test' }, expires: '2099-01-01T00:00:00Z' } });
+        return;
+      }
+      if (path === '/api/account/lots/import' && request.method() === 'POST') {
+        await route.fulfill({
+          status: 200,
+          json: {
+            warnings: [],
+            outcomes: [{ status: 'unmatched', rowNumber: 1, name: 'Missing', priceCents: 100, acquiredAt: null }],
+          },
+        });
+        return;
+      }
+      if (path === '/api/account/lots' || path === '/api/cards') {
+        await route.fulfill({ status: 200, json: [] });
+        return;
+      }
+      if (path === '/api/cards/language-prices') {
+        await route.fulfill({ status: 200, json: {} });
+        return;
+      }
+      if (path === '/api/account/telegram') {
+        await route.fulfill({ status: 200, json: { linked: true } });
+        return;
+      }
+      if (path === '/api/languages' || path === '/api/conditions') {
+        await route.fulfill({ status: 200, json: [] });
+        return;
+      }
+      await route.fulfill({ status: 200, json: [] });
+    });
+
+    const waitForSearch = async (term) => {
+      await expect.poll(() => pendingSearches.has(term)).toBe(true);
+      return pendingSearches.get(term);
+    };
+
+    await page.goto(`${BASE}/lots`);
+    await page.getByRole('button', { name: 'Importa da Markdown' }).tap();
+    await page.locator('textarea').fill('| Carta | Set | Prezzo pagato |\n|---|---|---|\n| Missing | Unknown | 1 |');
+    await page.getByRole('button', { name: 'Importa', exact: true }).tap();
+
+    const input = page.getByPlaceholder('Cerca la carta nel catalogo…');
+    await input.tap();
+    await input.fill('slow A');
+    await page.getByRole('button', { name: 'Cerca', exact: true }).tap();
+    const slowA = await waitForSearch('slow A');
+
+    await input.fill('fast B');
+    await page.getByRole('button', { name: 'Cerca', exact: true }).tap();
+    const fastB = await waitForSearch('fast B');
+    await fastB.fulfill({
+      status: 200,
+      json: [{ id: 2, name: 'Fast B', expansion_name: 'Set B' }],
+    });
+    await expect(page.getByRole('button', { name: /Fast B/ })).toBeVisible();
+
+    // La richiesta A termina dopo B e fallisce: non deve cancellare il
+    // risultato nuovo, ne' cambiare lo stato di caricamento della richiesta B.
+    await slowA.fulfill({ status: 500, json: { error: 'late failure' } });
+    await expect(page.getByRole('button', { name: /Fast B/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cerca', exact: true })).toBeEnabled();
+
+    await input.fill('same term');
+    await input.press('Enter');
+    await input.press('Enter');
+    const sameTerm = await waitForSearch('same term');
+    expect(searchCalls.filter((term) => term === 'same term')).toHaveLength(1);
+    await sameTerm.fulfill({ status: 200, json: [] });
+  });
+});

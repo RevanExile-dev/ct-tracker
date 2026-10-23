@@ -55,20 +55,31 @@ function ResolveRow({
   );
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<CardRow[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [activeSearchTerm, setActiveSearchTerm] = useState<string | null>(null);
+  const searchRequestRef = useRef(0);
+  const activeSearchRef = useRef<{ id: number; term: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function runSearch() {
-    if (!searchTerm.trim()) return;
-    setSearching(true);
+    const term = searchTerm.trim();
+    // Il ref rende atomico il controllo anche per due Enter nello stesso
+    // tick. Un termine diverso puo' invece avviare subito una nuova ricerca:
+    // sara' quest'ultima, e soltanto questa, a governare risultati/loading.
+    if (!term || activeSearchRef.current?.term === term) return;
+    const requestId = ++searchRequestRef.current;
+    activeSearchRef.current = { id: requestId, term };
+    setActiveSearchTerm(term);
     try {
-      const cards = await fetchCards({ search: searchTerm, limit: 8 });
-      setSearchResults(cards);
+      const cards = await fetchCards({ search: term, limit: 8 });
+      if (searchRequestRef.current === requestId) setSearchResults(cards);
     } catch {
-      setSearchResults([]);
+      if (searchRequestRef.current === requestId) setSearchResults([]);
     } finally {
-      setSearching(false);
+      if (searchRequestRef.current === requestId) {
+        activeSearchRef.current = null;
+        setActiveSearchTerm(null);
+      }
     }
   }
 
@@ -136,10 +147,10 @@ function ResolveRow({
             <button
               type="button"
               onClick={runSearch}
-              disabled={searching}
+              disabled={!searchTerm.trim() || activeSearchTerm === searchTerm.trim()}
               className="text-xs px-3 py-1.5 rounded-card border border-base-border bg-base-surface2 text-ink-muted hover:text-ink-primary transition-colors disabled:opacity-50"
             >
-              {searching ? "…" : "Cerca"}
+              {activeSearchTerm === searchTerm.trim() ? "…" : "Cerca"}
             </button>
           </div>
           {searchResults.length > 0 && (
