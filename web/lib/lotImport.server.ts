@@ -71,8 +71,8 @@ async function matchRow(row: ParsedImportRow): Promise<
   const candidates = await findBlueprintMatches(row.name);
   if (candidates.length === 0) return { ok: false, reason: "unmatched" };
 
-  if (row.set) {
-    const setLower = row.set.trim().toLowerCase();
+  const setLower = row.set?.trim().toLowerCase();
+  if (setLower) {
     const narrowed = candidates.filter((c) => {
       const expLower = c.expansionName?.trim().toLowerCase();
       // Un'espansione assente non puo' confermare un Set dichiarato. In

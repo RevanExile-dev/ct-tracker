@@ -107,6 +107,20 @@ test('without a declared set, a unique candidate with no expansion remains an au
   assert.equal(outcome.status, 'imported');
 });
 
+// Rilievo review (Gemini su PR #241, verificato: in pratica non raggiungibile
+// da web/lib/lotImport.ts, che scrive sempre null per una cella Set vuota o
+// di soli spazi - cells[setCol]?.trim() || null - ma matchRow non deve
+// comunque fidarsi di quella garanzia a monte: un row.set non-null ma vuoto
+// dopo il trim produrrebbe lo stesso setLower.includes("") sempre vero del
+// bug originale, stavolta sul lato del Set invece che dell'espansione).
+test('a whitespace-only declared set behaves like no declared set at all, not like an empty one that matches everything', async () => {
+  const candidates = [candidate(1, null), candidate(2, 'Base Set')];
+  const { server, writes } = loadLotImportServer(candidates);
+  const [outcome] = await server.applyLotImport('test-user', [importRow({ set: '   ' })]);
+  assert.equal(outcome.status, 'ambiguous', 'must not silently prefer the candidate with a real expansion');
+  assert.equal(writes.length, 0);
+});
+
 test('parses the exact table format from the user-provided collection Markdown', () => {
   const md = `# Contesto
 
