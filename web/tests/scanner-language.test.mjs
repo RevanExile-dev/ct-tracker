@@ -33,3 +33,14 @@ test('parita tra due lingue: incerta, non italiano per default', () => {
   assert.equal(ocr.detectLanguage('nel the').code, null);
   assert.equal(ocr.detectLanguage('Pokemon Nintendo').code, null);
 });
+
+test('con la sigla stampata gia\' letta in nome/numero la fascia testo non cambia la lingua (si puo\' non aspettarla)', () => {
+  const early = 'Fungofurioso\nPAR IT 123/182';
+  assert.equal(ocr.hasPrintedLanguage(early), true);
+  // Qualunque testo della fascia (inglese, giapponese, vuoto) viene dopo: stessa lingua.
+  for (const body of ['', 'Weakness resistance retreat damage opponent the your deck', 'ワザ はばたく 相手のバトルポケモンに ダメージ 弱点 抵抗力 にげる HP 90 ワザ']) {
+    assert.equal(ocr.detectLanguage(early + '\n' + body).code, ocr.detectLanguage(early).code);
+  }
+  assert.equal(ocr.hasPrintedLanguage('Alolan Meowth\n139/128'), false);
+  assert.equal(ocr.hasPrintedLanguage('Pikachu\n1 s4 oy Weness'), false);
+});

@@ -8,6 +8,11 @@
 const CT_HOST = /^https:\/\/(?:www\.)?cardtrader\.com\//;
 const BLUEPRINT_FILE = /^https:\/\/www\.cardtrader\.com\/uploads\/blueprints\/image\/(\d+\/[\w.()%+-]+\.(?:jpe?g|png|webp))$/i;
 
+// Cambia quando cambia la qualita' delle miniature: la risposta di /api/img e'
+// immutabile (un anno) e i browser terrebbero per sempre la versione vecchia
+// dello stesso URL.
+const IMG_VERSION = 2;
+
 function withFilePrefix(url: string, prefix: string): string {
   const slash = url.lastIndexOf("/");
   return `${url.slice(0, slash + 1)}${prefix}${url.slice(slash + 1)}`;
@@ -24,9 +29,9 @@ export function cardImageSources(url: string): CardImageSources {
   const preview = `${withFilePrefix(full, "preview_")} 180w`;
   const blueprint = BLUEPRINT_FILE.exec(full)?.[1];
   // Per gli schermi 2x/3x una variante a misura (360/540 px) al posto
-  // dell'intera da 734 px: tre volte meno byte per la stessa nitidezza.
+  // dell'intera in JPG; l'originale resta per le tile che ne chiedono di piu'.
   const sized = blueprint
-    ? [360, 540].map((w) => `/api/img?p=${encodeURIComponent(blueprint)}&w=${w} ${w}w`)
+    ? [...[360, 540].map((w) => `/api/img?p=${encodeURIComponent(blueprint)}&w=${w}&v=${IMG_VERSION} ${w}w`), `${full} 734w`]
     : [`${full} 734w`];
   return { src: full, srcSet: [preview, ...sized].join(", ") };
 }

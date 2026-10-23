@@ -161,9 +161,9 @@ function getBodyWorker(): Promise<TesseractWorker> {
 // l'utente sta per scegliere una foto, cosi' il tempo del selettore/fotocamera
 // non e' sprecato. Errori ignorati: li ritrova recognizeText.
 export function warmUpOcr(): void {
-  getLatinWorker()
-    .then(() => getBodyWorker())
-    .catch(() => undefined);
+  // I due motori partono insieme: in fila il secondo aspettava il primo.
+  getLatinWorker().catch(() => undefined);
+  getBodyWorker().catch(() => undefined);
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -350,21 +350,32 @@ async function readField(
 export function recognizeText(image: string, check: FieldCheck = {}): Promise<OcrResult> {
   const job = recognitionTail.then(async () => {
     const source = await loadImage(image);
+    // Il worker multilingue parte insieme a quello latino (senza warm-up
+    // scaricare e avviare i due motori in fila costava qualche secondo).
+    const bodyReady = getBodyWorker();
+    bodyReady.catch(() => undefined);
     // Fallisce subito (e con il messaggio giusto) se il motore non si carica.
     await getLatinWorker();
     // La lingua si legge sul worker multilingua mentre nome e numero sono sul
     // worker latino: stessi risultati, in parallelo (e' gia' un Web Worker).
-    const bodyJob = getBodyWorker()
+    const bodyJob = bodyReady
       .then((worker) => runField(worker, makeCrop(source, BODY), "6", false))
       .catch(() => ({ text: "", confidence: 0 }));
     const name = await readField(source, NAME_READS, false, check.name);
     const number = await readField(source, NUMBER_READS, true, check.number);
-    // La lingua e' un di piu': senza, il match di nome e numero resta valido.
-    const body = await bodyJob;
+    // Se la sigla con la lingua stampata ("PAR IT 123/182") e' gia' stata letta
+    // in nome o numero, detectLanguage la usa comunque per prima e la fascia
+    // testo non puo' cambiare la lingua: inutile aspettarla (e' la lettura piu'
+    // lunga, 4 modelli linguistici). Altrimenti serve: la lingua e' un di piu',
+    // senza il match di nome e numero resta valido.
+    const early = [name.text, number.text].filter(Boolean).join("\n");
+    const skipBody = hasPrintedLanguage(early);
+    const body = skipBody ? { text: "", confidence: 0 } : await bodyJob;
+    const bodyWeight = skipBody ? 0 : 0.18;
 
     return {
       text: [name.text, number.text, body.text].filter(Boolean).join("\n"),
-      confidence: name.confidence * 0.5 + number.confidence * 0.32 + body.confidence * 0.18,
+      confidence: (name.confidence * 0.5 + number.confidence * 0.32 + body.confidence * bodyWeight) / (0.82 + bodyWeight),
       fields: { name: name.text, number: number.text, body: body.text },
     };
   });
@@ -407,6 +418,13 @@ function normalize(value: string) {
     .toLowerCase();
 }
 
+const PRINTED_LANGUAGE = /(?<![A-Za-z0-9])[A-Z0-9]{3}\s?(EN|IT|FR|DE|ES|PT)\s*[0-9O]{3}(?![0-9])/;
+
+/** True se il testo contiene la sigla con la lingua stampata sulla carta. */
+export function hasPrintedLanguage(text: string): boolean {
+  return PRINTED_LANGUAGE.test(text);
+}
+
 export function detectLanguage(text: string): DetectedLanguage {
   // Il modello giapponese/coreano "vede" qualche carattere CJK anche nel
   // rumore di una carta inglese (es. "い", "上" tra le righe di una full-art):
@@ -416,7 +434,7 @@ export function detectLanguage(text: string): DetectedLanguage {
   // Dalle carte Scarlatto e Violetto in poi la lingua e' stampata accanto
   // alla sigla dell'espansione, in basso a sinistra: "PAR IT 123/182",
   // "MEG EN 111/132". Quando si legge vale piu' delle parole del testo.
-  const printed = text.match(/(?<![A-Za-z0-9])[A-Z0-9]{3}\s?(EN|IT|FR|DE|ES|PT)\s*[0-9O]{3}(?![0-9])/);
+  const printed = text.match(PRINTED_LANGUAGE);
   if (printed) {
     const rule = LANGUAGE_RULES.find((language) => language.code === printed[1].toLowerCase());
     if (rule) return { code: rule.code, label: rule.label, confidence: 0.96 };

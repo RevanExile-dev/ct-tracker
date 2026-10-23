@@ -19,7 +19,7 @@ test('immagine CardTrader: salta il redirect verso www e offre la variante previ
   assert.equal(r.src, 'https://www.cardtrader.com/uploads/blueprints/image/1/a-b(2).jpg');
   assert.equal(
     r.srcSet,
-    'https://www.cardtrader.com/uploads/blueprints/image/1/preview_a-b(2).jpg 180w, /api/img?p=1%2Fa-b(2).jpg&w=360 360w, /api/img?p=1%2Fa-b(2).jpg&w=540 540w',
+    'https://www.cardtrader.com/uploads/blueprints/image/1/preview_a-b(2).jpg 180w, /api/img?p=1%2Fa-b(2).jpg&w=360&v=2 360w, /api/img?p=1%2Fa-b(2).jpg&w=540&v=2 540w, https://www.cardtrader.com/uploads/blueprints/image/1/a-b(2).jpg 734w',
   );
 });
 

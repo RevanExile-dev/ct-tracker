@@ -125,6 +125,7 @@ jobs:
             tests/alert-flow.spec.mjs \
             tests/weekly-digest-toggle.spec.mjs \
             tests/account-delete.spec.mjs \
+            tests/layout-edges.spec.mjs \
             tests/search-filters-touch.spec.mjs \
             tests/pwa-cleanup.spec.mjs \
             tests/share-link.spec.mjs \

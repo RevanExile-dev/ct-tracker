@@ -32,6 +32,7 @@ import type {
 } from "@/lib/scanner/types";
 import type { CardRow } from "@/lib/db";
 import styles from "@/app/scan/Scanner.module.css";
+import ScanLoader from "./ScanLoader";
 
 type ScanItem = {
   id: string;
@@ -208,6 +209,14 @@ export default function ScannerStudio() {
     void loadScannerCatalog().catch(() => undefined);
     warmUpOcr();
   }, []);
+
+  // Chi apre /scan lo fa per scansionare: catalogo e motori OCR si preparano
+  // subito, non solo al tocco su "Carica una foto" (spesso la foto e' gia'
+  // scelta prima che l'avvio dei motori sia finito).
+  useEffect(() => {
+    const timer = window.setTimeout(warmUp, 800);
+    return () => window.clearTimeout(timer);
+  }, [warmUp]);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -716,13 +725,9 @@ export default function ScannerStudio() {
                             <h3 className="font-display text-xl font-semibold">{item.verdict === "probable" ? "Quale di queste è la tua carta?" : "Carta non riconosciuta con certezza"}</h3>
                           </div>
                         ) : (
-                          <div className="mt-5">
-                            <h3 className="font-display text-xl font-semibold">Sto cercando la carta…</h3>
-                            <p className="text-sm text-ink-muted mt-2">Nome e numero vengono letti separatamente e confrontati con il catalogo e con l&apos;immagine.</p>
-                          </div>
+                          <ScanLoader status={item.status} />
                         )}
 
-                        {(item.status === "reading" || item.status === "matching") && <div className={`${styles.progressRail} h-1 rounded-full mt-5`} />}
                         {item.error && <div className="mt-4 text-xs text-accent-bright leading-relaxed">{item.error}</div>}
 
                         {(selected ? item.candidates.length > 1 : item.candidates.length > 0) && (

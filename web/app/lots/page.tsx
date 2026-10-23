@@ -153,18 +153,25 @@ export default function LotsPage() {
   // che questo effetto debba conoscere i dettagli di quella richiesta.
   const [reloadTick, setReloadTick] = useState(0);
 
+  // L'elenco parte subito, in parallelo alla verifica della sessione (che da
+  // sola e' una richiesta al database): aspettarla prima raddoppiava l'attesa
+  // di "Carico i lotti…". Senza accesso la risposta e' 401 e la pagina mostra
+  // comunque l'invito ad accedere (ramo !session sotto).
   useEffect(() => {
-    if (!session) return;
     let cancelled = false;
     fetch("/api/account/lots")
       .then(async (res) => {
+        if (res.status === 401) throw new Error("Sessione non valida: esci e accedi di nuovo.");
         if (!res.ok) throw new Error(`Lotti non disponibili (${res.status}).`);
         return res.json();
       })
       .then((data: Lot[]) => { if (!cancelled) setLots(data); })
-      .catch(() => { if (!cancelled) setError("Non riesco a caricare i lotti. Riprova tra poco."); });
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setError(err.message.startsWith("Sessione") ? err.message : "Non riesco a caricare i lotti. Riprova tra poco.");
+      });
     return () => { cancelled = true; };
-  }, [session, reloadTick]);
+  }, [reloadTick]);
 
   useEffect(() => {
     // ids sempre passato esplicitamente (anche [] quando lots e' vuoto/non
