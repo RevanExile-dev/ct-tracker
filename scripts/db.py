@@ -22,6 +22,7 @@ principio delle migrazioni incrementali gia' in uso prima con SQLite.
 import html
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,6 +33,8 @@ CARDTRADER_ORIGIN = "https://cardtrader.com"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "web" / "db" / "schema.sql"
+
+SCHEMA_LOCK_ID = 7305210001  # chiave arbitraria per pg_advisory_xact_lock in init_db()
 
 RETENTION_DAILY_DAYS = 120  # oltre questa soglia lo storico si comprime a 1 punto/settimana
 
@@ -50,13 +53,28 @@ def init_db():
     web/. Va rilanciato ad ogni avvio dei sync, non solo una volta - stesso
     principio del vecchio init_db() SQLite che riallineava lo schema prima
     di ogni run."""
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
-        conn.commit()
-    finally:
-        conn.close()
+    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    for attempt in range(3):
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Piu' sync possono partire insieme (es. giro prezzi e sync
+                # Cardmarket): senza questo lock due init_db() prendono i
+                # lock delle tabelle in ordine diverso e Postgres ne
+                # abortisce uno con "deadlock detected" (25/10/2026). Il lock
+                # si rilascia da solo al commit/rollback.
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (SCHEMA_LOCK_ID,))
+                cur.execute(schema_sql)
+            conn.commit()
+            return
+        except psycopg2.errors.DeadlockDetected:
+            # Rete di sicurezza se qualcosa fuori da init_db() tocca lo schema.
+            conn.rollback()
+            if attempt == 2:
+                raise
+            time.sleep(2 * (attempt + 1))
+        finally:
+            conn.close()
 
 
 def upsert_expansion(conn, exp: dict):
