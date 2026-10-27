@@ -24,6 +24,7 @@ import SiteHeader from "@/components/SiteHeader";
 import CountUp from "@/components/CountUp";
 import HomeHighlights from "@/components/HomeHighlights";
 import { formatPercent } from "@/lib/format";
+import AddToProjectModal from "@/components/AddToProjectModal";
 import type { InitialHighlights } from "@/lib/homeHighlights";
 
 // Spike Three.js isolato (PR #6, stesso flag di ThreeCardHero in
@@ -305,6 +306,25 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
     setWishlistIds((prev) => new Set(promptWishlistToggle(card, prev.has(card.id))));
   }, [promptWishlistToggle, setWishlistIds]);
 
+  // Progetti di desideri: tre puntini su una carta o selezione multipla.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Map<number, CardRow>>(new Map());
+  const [projectCards, setProjectCards] = useState<CardRow[] | null>(null);
+  const handleProjectMenu = useCallback((card: CardRow) => setProjectCards([card]), [setProjectCards]);
+  const handleSelectCard = useCallback((card: CardRow) => {
+    setSelectMode(true);
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(card.id)) next.delete(card.id);
+      else next.set(card.id, card);
+      return next;
+    });
+  }, [setSelectMode, setSelected]);
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Map());
+  }
+
   const hasActiveFilters = Boolean(
     search || expansionCode || selectedRarities.length || selectedArtists.length || selectedLanguages.length ||
       selectedConditions.length || onlyZero || exactName || priceBand || sortBy !== "expansion"
@@ -405,7 +425,7 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
         </div>
         {/* Tasto sempre visibile, con etichetta scritta (su ogni schermo), per
             aprire/chiudere a mano. Chiusa, ricorda se ci sono filtri attivi. */}
-        <div className="flex justify-center pb-2">
+        <div className="flex flex-wrap justify-center gap-2 pb-2">
           <button
             type="button"
             onClick={() => setToolbarVisible((v) => !v)}
@@ -423,6 +443,17 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
             {!toolbarVisible && hasActiveFilters && (
               <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] text-accent-bright">filtri attivi</span>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            aria-pressed={selectMode}
+            data-testid="select-toggle"
+            className={`tap-44 inline-flex items-center justify-center gap-2 min-h-11 rounded-full border px-4 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
+              selectMode ? "border-accent/60 bg-accent/15 text-accent-bright" : "border-base-border bg-base-surface text-ink-muted hover:text-ink-primary hover:border-accent/60"
+            }`}
+          >
+            {selectMode ? "Esci dalla selezione" : "Selezione multipla"}
           </button>
         </div>
       </div>
@@ -537,6 +568,10 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
                   inWishlist={wishlistIds.has(card.id)}
                   onToggleWishlist={handleToggleWishlistCard}
                   returnTo={returnTo}
+                  onProjectMenu={handleProjectMenu}
+                  selectMode={selectMode}
+                  selected={selected.has(card.id)}
+                  onSelect={handleSelectCard}
                 />
               ))}
           </div>
@@ -556,6 +591,41 @@ function HomeContent({ initialHighlights }: { initialHighlights?: InitialHighlig
       )}
       {wishlistPromptOverlay}
       {binderPromptOverlay}
+      {selectMode && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-base-border bg-base-surface/95 backdrop-blur px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          data-testid="select-bar"
+        >
+          <div className="max-w-7xl mx-auto flex items-center gap-2">
+            <span className="text-sm text-ink-primary mr-auto whitespace-nowrap" aria-live="polite">
+              {selected.size === 0 ? "Tocca le carte da scegliere" : `${selected.size} ${selected.size === 1 ? "selezionata" : "selezionate"}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelected(new Map((visible ?? []).map((c) => [c.id, c])))}
+              aria-label="Seleziona tutte le carte visibili"
+              className="min-h-11 px-3 text-xs rounded-card border border-base-border text-ink-muted"
+            >
+              Tutte
+            </button>
+            <button
+              type="button"
+              disabled={selected.size === 0}
+              onClick={() => setProjectCards(Array.from(selected.values()))}
+              className="min-h-11 px-4 text-sm rounded-card border border-accent/30 bg-accent/10 text-accent-bright disabled:opacity-40"
+            >
+              Metti in un progetto
+            </button>
+          </div>
+        </div>
+      )}
+      {projectCards && projectCards.length > 0 && (
+        <AddToProjectModal
+          cards={projectCards}
+          onClose={() => setProjectCards(null)}
+          onDone={exitSelectMode}
+        />
+      )}
     </main>
   );
 }

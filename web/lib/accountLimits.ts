@@ -23,6 +23,11 @@ export const MAX_WISHLIST_CARDS = 2_000;
 export const MAX_LOTS = 5_000;
 export const MAX_PRICE_ALERTS = 100;
 export const MAX_FILTER_PRESETS = 10;
+/** Progetti di desideri (web/lib/projects.server.ts): pochi per account e con
+ * un tetto di carte ciascuno, cosi' non pesano sul database condiviso. */
+export const MAX_WISHLIST_PROJECTS = 30;
+export const MAX_PROJECT_CARDS = 500;
+export const MAX_PROJECT_NAME_LENGTH = 60;
 /** Un filtro salvato reale pesa poche centinaia di byte. */
 export const MAX_FILTER_PRESET_BYTES = 8_192;
 export const MAX_PRESET_SCOPE_LENGTH = 40;

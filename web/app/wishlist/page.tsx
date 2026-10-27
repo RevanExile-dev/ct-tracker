@@ -173,6 +173,13 @@ function WishlistContent() {
         </div>
       )}
 
+      <Link
+        href="/wishlist/progetti"
+        className="mt-5 inline-flex items-center min-h-11 px-4 text-sm rounded-card border border-accent/30 bg-accent/10 text-accent-bright hover:border-accent/60 transition-colors"
+      >
+        📁 Progetti (sottocartelle dei desideri)
+      </Link>
+
       {sorted && sorted.length > 0 && <div className="mt-5"><ShareLinkPanel kind="wishlist" /></div>}
 
       {error && (

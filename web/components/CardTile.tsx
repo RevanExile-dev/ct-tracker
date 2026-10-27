@@ -43,6 +43,10 @@ function CardTile({
   hasAlert,
   onCreateAlert,
   alertTarget,
+  onProjectMenu,
+  selectMode,
+  selected,
+  onSelect,
 }: {
   card: CardRow;
   index?: number;
@@ -63,6 +67,13 @@ function CardTile({
   onCreateAlert?: (card: CardRow) => void;
   /** Solo /wishlist: prezzo obiettivo (soglia dell'allarme) e quanto manca. */
   alertTarget?: { thresholdText: string; missingText: string | null; met: boolean } | null;
+  /** Tre puntini "Aggiungi a un progetto" (ricerca). */
+  onProjectMenu?: (card: CardRow) => void;
+  /** Selezione multipla: in selectMode un tocco sulla tile la (de)seleziona
+   * invece di aprire la scheda; il tasto destro (desktop) avvia la selezione. */
+  selectMode?: boolean;
+  selected?: boolean;
+  onSelect?: (card: CardRow) => void;
   // "best": prezzo a cascata (Near Mint + CardTrader Zero quando esiste,
   // qualunque lingua, altrimenti il piu' economico salvato) - usato SOLO dal
   // binder, dove la domanda e' "quanto vale la mia collezione" e serve
@@ -215,13 +226,35 @@ function CardTile({
   );
 
   const delayMs = Math.min(index, STAGGER_CAP) * STAGGER_MS;
-  const hasActions = Boolean(onToggleBinder || onToggleWishlist || onCreateAlert);
+  const hasActions = Boolean(onToggleBinder || onToggleWishlist || onCreateAlert || onProjectMenu);
 
   return (
     <div
       className="group relative card-enter"
       style={{ "--enter-delay": `${delayMs}ms` } as React.CSSProperties}
+      onContextMenu={onSelect ? (e) => { e.preventDefault(); onSelect(card); } : undefined}
     >
+      {selectMode && onSelect && (
+        <button
+          type="button"
+          onClick={() => onSelect(card)}
+          aria-pressed={Boolean(selected)}
+          aria-label={`${selected ? "Deseleziona" : "Seleziona"} ${card.name}`}
+          data-testid="select-tile"
+          className={`absolute inset-0 z-20 rounded-card border-2 transition-colors ${
+            selected ? "border-accent bg-accent/15" : "border-transparent bg-black/10"
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold border ${
+              selected ? "bg-accent text-black border-accent" : "bg-black/60 text-transparent border-white/40"
+            }`}
+          >
+            ✓
+          </span>
+        </button>
+      )}
       {/* InteractiveCard avvolge l'INTERA tile (immagine+nome+prezzo+
           bottoni), non solo la parte cliccabile: e' lei a portare bordo,
           sfondo, angoli arrotondati e il bagliore/tilt al passaggio del
@@ -403,6 +436,16 @@ function CardTile({
                   🔕
                 </button>
               ))}
+              {onProjectMenu && (
+                <button
+                  type="button"
+                  onClick={() => onProjectMenu(card)}
+                  aria-label="Aggiungi a un progetto"
+                  className="tap-44 w-9 h-9 rounded-full flex items-center justify-center border bg-base-surface2 border-base-border text-ink-faint hover:text-ink-primary hover:border-accent/40 transition-colors active:scale-90"
+                >
+                  ⋯
+                </button>
+              )}
               {onToggleBinder && (
                 <button
                   type="button"
