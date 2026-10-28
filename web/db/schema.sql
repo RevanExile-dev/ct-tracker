@@ -84,6 +84,26 @@ CREATE TABLE IF NOT EXISTS wishlist_cards (
   PRIMARY KEY (user_id, blueprint_id)
 );
 
+-- Progetti di desideri: sottocartelle della lista desideri (es. "completare
+-- un binder"), ognuna con le sue carte. Solo tabelle NUOVE e additive: nessuna
+-- tabella esistente viene toccata. Cancellando l'account (o un progetto) le
+-- righe collegate spariscono con ON DELETE CASCADE.
+CREATE TABLE IF NOT EXISTS wishlist_projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wishlist_projects_user ON wishlist_projects (user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS wishlist_project_cards (
+  project_id UUID NOT NULL REFERENCES wishlist_projects (id) ON DELETE CASCADE,
+  blueprint_id INTEGER NOT NULL,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_id, blueprint_id)
+);
+
 -- "scope" rispecchia le chiavi gia' usate in localStorage da
 -- web/lib/filterPreset.ts ("catalog", ...): stesso identificatore, cosi'
 -- web/lib/account.server.ts mappa 1:1 senza inventare una nuova
