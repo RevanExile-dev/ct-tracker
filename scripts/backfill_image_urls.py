@@ -27,6 +27,9 @@ rielabora le immagini in piu' modi diversi, non solo uno:
 Uso:
   python scripts/backfill_image_urls.py              # applica le correzioni
   python scripts/backfill_image_urls.py --dry-run     # mostra solo cosa cambierebbe
+  python scripts/backfill_image_urls.py --ids 200557,406815   # ricontrolla solo questi blueprint
+                                                              # (anche se l'URL non ha il pattern
+                                                              # e l'espansione non e' recente)
 """
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -89,25 +92,42 @@ def _update_image_url(conn, bp_id, new_url):
 
 
 def main():
-    dry_run = "--dry-run" in sys.argv[1:]
-    unknown = [a for a in sys.argv[1:] if a != "--dry-run"]
-    if unknown:
-        print(f"Argomenti non riconosciuti: {' '.join(unknown)}", file=sys.stderr)
+    args = sys.argv[1:]
+    dry_run = "--dry-run" in args
+    only_ids = None
+    rest = [a for a in args if a != "--dry-run"]
+    if rest and rest[0] == "--ids" and len(rest) == 2:
+        try:
+            only_ids = [int(x) for x in rest[1].split(",") if x.strip()]
+        except ValueError:
+            only_ids = None
+        if not only_ids:
+            print("--ids vuole una lista di numeri separati da virgola", file=sys.stderr)
+            sys.exit(2)
+        rest = []
+    if rest:
+        print(f"Argomenti non riconosciuti: {' '.join(rest)}", file=sys.stderr)
         sys.exit(2)
 
     conn = db.get_connection()
     cur = conn.cursor()
-    recent_codes = _recently_released_codes(datetime.now(timezone.utc).date())
-    cur.execute(
-        "SELECT id, name, image_url FROM blueprints "
-        "WHERE image_url LIKE %s OR expansion_code = ANY(%s) ORDER BY id",
-        ("%(2).jpg", recent_codes),
-    )
-    rows = cur.fetchall()
-    print(f"{len(rows)} blueprint da ricontrollare (URL sospetto '(2).jpg', o "
-          f"appartenenti a {len(recent_codes)} espansioni uscite negli ultimi "
-          f"{IMAGE_RECHECK_GRACE_DAYS} giorni: {', '.join(recent_codes) or 'nessuna'})."
-          + (" [DRY RUN, nessuna scrittura]" if dry_run else ""))
+    if only_ids:
+        cur.execute("SELECT id, name, image_url FROM blueprints WHERE id = ANY(%s) ORDER BY id", (only_ids,))
+        rows = cur.fetchall()
+        print(f"{len(rows)} blueprint da ricontrollare (richiesti con --ids)."
+              + (" [DRY RUN, nessuna scrittura]" if dry_run else ""))
+    else:
+        recent_codes = _recently_released_codes(datetime.now(timezone.utc).date())
+        cur.execute(
+            "SELECT id, name, image_url FROM blueprints "
+            "WHERE image_url LIKE %s OR expansion_code = ANY(%s) ORDER BY id",
+            ("%(2).jpg", recent_codes),
+        )
+        rows = cur.fetchall()
+        print(f"{len(rows)} blueprint da ricontrollare (URL sospetto '(2).jpg', o "
+              f"appartenenti a {len(recent_codes)} espansioni uscite negli ultimi "
+              f"{IMAGE_RECHECK_GRACE_DAYS} giorni: {', '.join(recent_codes) or 'nessuna'})."
+              + (" [DRY RUN, nessuna scrittura]" if dry_run else ""))
 
     client = CardTraderClient()
     updated = unchanged = missing = errors = 0

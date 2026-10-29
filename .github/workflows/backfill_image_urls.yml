@@ -16,6 +16,10 @@ on:
         description: "Mostra solo cosa cambierebbe, senza scrivere sul DB"
         type: boolean
         default: true
+      ids:
+        description: "Opzionale: solo questi blueprint, separati da virgola (es. 200557)"
+        type: string
+        default: ""
   schedule:
     - cron: "0 3 * * 0"
 
@@ -45,11 +49,14 @@ jobs:
       - name: Backfill
         env:
           CARDTRADER_API_TOKEN: ${{ secrets.CARDTRADER_API_TOKEN }}
+          IDS: ${{ inputs.ids }}
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         working-directory: scripts
         run: |
+          extra=""
+          if [ -n "$IDS" ]; then extra="--ids $IDS"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python backfill_image_urls.py --dry-run
+            python backfill_image_urls.py --dry-run $extra
           else
-            python backfill_image_urls.py
+            python backfill_image_urls.py $extra
           fi
