@@ -2,7 +2,7 @@ name: Crea VM Oracle (riprova finche' c'e' posto)
 
 # Prova a creare la VM Oracle Always Free "ct-runner" ogni ~10 minuti finche'
 # Oracle ha posto (Arm gratuito spesso esaurito: "Out of host capacity").
-# La crea da sola; quando ci riesce avvisa su Telegram (se i secret ci sono) e
+# La crea da sola; quando ci riesce scrive l'IP nel log (nessun Telegram) e
 # si disattiva. Senza i secret OCI_* non fa nulla (esce subito, senza errori).
 # Richiesto esplicitamente da Cri il 2026-10-13. Guida: docs/oracle_runner_setup.md.
 # Gira SEMPRE su ubuntu-latest, mai sul runner proprio (la VM non esiste ancora).
@@ -91,18 +91,11 @@ jobs:
             exit "$rc"
           fi
 
-      - name: Avvisa su Telegram
+      - name: Mostra IP della VM nel log
         if: steps.vm.outputs.created == 'true'
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           VM_IP: ${{ steps.vm.outputs.ip }}
-        run: |
-          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-            curl -sS -o /dev/null "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-              --data-urlencode "text=VM Oracle ct-runner creata. IP pubblico: ${VM_IP:-vedi log del workflow}" || true
-          fi
+        run: echo "VM Oracle ct-runner creata. IP pubblico: ${VM_IP:-vedi log del workflow}"
 
       - name: Disattiva questo workflow (VM creata)
         if: steps.vm.outputs.created == 'true'
