@@ -5,6 +5,8 @@ name: Controllo immagini sito in produzione
 # immagini rotte e misura i tempi (vedi scripts/site_images_check.mjs).
 # Frequenza bassa per risparmiare minuti Actions: una volta al giorno e dopo
 # ogni deploy di produzione riuscito (~2-3 min per esecuzione).
+# Se trova problemi il workflow diventa rosso su GitHub: nessun avviso Telegram
+# (su Telegram arrivano solo gli avvisi sui prezzi).
 on:
   schedule:
     - cron: "41 7 * * *"
@@ -16,10 +18,6 @@ on:
         description: "URL da controllare (vuoto = produzione)"
         required: false
         default: ""
-      test_telegram:
-        description: "Manda solo un messaggio Telegram di prova (senza controllare il sito)"
-        type: boolean
-        default: false
       simulate_broken:
         description: "Prova del controllo: rompe ~1 immagine su 3 nel browser di prova (non tocca il sito)"
         type: boolean
@@ -46,7 +44,6 @@ jobs:
         with:
           sparse-checkout: |
             scripts/site_images_check.mjs
-            scripts/alert_telegram.py
           sparse-checkout-cone-mode: false
 
       - uses: actions/setup-node@v4
@@ -64,7 +61,6 @@ jobs:
         run: sleep 20
 
       - name: Controlla immagini e tempi
-        if: github.event.inputs.test_telegram != 'true'
         id: check
         working-directory: scripts
         env:
@@ -74,22 +70,3 @@ jobs:
         run: |
           [ -n "$SITE_URL" ] || unset SITE_URL
           node site_images_check.mjs
-
-      - name: Avvisa su Telegram
-        if: (failure() && steps.check.outcome == 'failure') || github.event.inputs.test_telegram == 'true'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          IS_TEST: ${{ github.event.inputs.test_telegram }}
-        run: |
-          pip install --quiet psycopg2-binary requests
-          if [ "$IS_TEST" = "true" ]; then
-            msg="CartaViva: PROVA dell'avviso del controllo immagini. Se leggi questo, l'avviso arriva. ${RUN_URL}"
-          else
-            detail="$(head -c 1500 "$RUNNER_TEMP/images_fail.txt" 2>/dev/null || true)"
-            msg="CartaViva: controllo immagini FALLITO. ${detail} ${RUN_URL}"
-          fi
-          python3 scripts/alert_telegram.py "$msg"
